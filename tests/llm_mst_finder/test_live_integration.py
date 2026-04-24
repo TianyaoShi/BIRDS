@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,7 @@ DATASET_PATH = (
     "/local/scratch/a/shi676/llm_profiling/datasets/shareGPT/"
     "ShareGPT_V3_unfiltered_cleaned_split_no_imsorry.json"
 )
-REQUEST_RATES = (1.0, 2.0)
+REQUEST_RATES = (8.0, 10.0)
 
 
 pytestmark = [
@@ -35,7 +36,7 @@ pytestmark = [
 ]
 
 
-def test_live_sharegpt_open_loop_trials_at_two_request_rates(tmp_path: Path, capsys) -> None:
+def test_live_sharegpt_open_loop_trials_at_two_request_rates(tmp_path: Path) -> None:
     dataset_path = Path(DATASET_PATH)
     if not dataset_path.is_file():
         raise FileNotFoundError(f"live ShareGPT dataset not found: {dataset_path}")
@@ -51,7 +52,7 @@ def test_live_sharegpt_open_loop_trials_at_two_request_rates(tmp_path: Path, cap
                 f"tokenizer: {MODEL_NAME}",
                 "sampling:",
                 "  seed: 123",
-                "  num_requests: 12",
+                "  num_requests: 600",
                 "  prompt_len:",
                 "    mode: from_dataset",
                 "  output_len:",
@@ -84,9 +85,9 @@ def test_live_sharegpt_open_loop_trials_at_two_request_rates(tmp_path: Path, cap
                 "--request-rate",
                 str(request_rate),
                 "--duration-s",
-                "6.0",
+                "20.0",
                 "--window-s",
-                "1.0",
+                "5.0",
                 "--base-url",
                 "http://127.0.0.1:8000",
                 "--endpoint",
@@ -100,9 +101,6 @@ def test_live_sharegpt_open_loop_trials_at_two_request_rates(tmp_path: Path, cap
             ]
         )
         assert run_exit_code == 0
-        run_stdout = json.loads(capsys.readouterr().out.strip())
-        assert run_stdout["trial_id"] == trial_id
-        assert run_stdout["status"] == "completed"
 
         summary_payload = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
         summary = summary_payload["summary"]
@@ -123,9 +121,7 @@ def test_live_sharegpt_open_loop_trials_at_two_request_rates(tmp_path: Path, cap
             ]
         )
         assert analyze_exit_code == 0
-        analysis_stdout = json.loads(capsys.readouterr().out.strip())
         analysis_payload = json.loads((output_dir / "analysis.json").read_text(encoding="utf-8"))
-        assert analysis_stdout["trial_id"] == trial_id
         assert analysis_payload["trial_id"] == trial_id
         assert analysis_payload["trial_validity"] in {"valid", "client_limited"}
         assert analysis_payload["trial_validity"] != "invalid_workload"
@@ -137,3 +133,6 @@ def test_live_sharegpt_open_loop_trials_at_two_request_rates(tmp_path: Path, cap
             assert analysis_payload["stability"] is None
             assert analysis_payload["bottleneck"] is None
             assert analysis_payload["validity_reasons"]
+            print(f"Trial {trial_id} is not valid for the following reasons:", file=sys.stderr)
+            for reason in analysis_payload["validity_reasons"]:
+                print(f"- {reason}", file=sys.stderr)

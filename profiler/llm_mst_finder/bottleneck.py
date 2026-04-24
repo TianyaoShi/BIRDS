@@ -33,7 +33,7 @@ class BottleneckConfig:
     flat_latency_relative_change: float = 0.10
     token_plateau_relative_range: float = 0.15
     completion_arrival_tolerance: float = 0.03
-    open_loop_send_rate_tolerance: float = 0.03
+    open_loop_send_rate_tolerance: float = 0.05
     scheduling_delay_warning_s: float = 0.25
 
     def __post_init__(self) -> None:
@@ -220,32 +220,35 @@ def _classify_client_limited(
 
     if trial_summary is None:
         return None
-    client_evidence: list[str] = []
-    if (
+    send_rate_lagged = (
         trial_summary.mode == "open-loop"
         and trial_summary.requested_request_rate is not None
         and trial_summary.actual_send_rate
         < trial_summary.requested_request_rate * (1.0 - config.open_loop_send_rate_tolerance)
-    ):
+    )
+    scheduling_delay_high = (
+        trial_summary.max_scheduling_delay_s is not None
+        and trial_summary.max_scheduling_delay_s > config.scheduling_delay_warning_s
+    )
+    if not (send_rate_lagged and scheduling_delay_high):
+        return None
+
+    client_evidence: list[str] = []
+    if send_rate_lagged:
         client_evidence.append(
             "actual open-loop send rate lagged configured rate: "
             f"actual={trial_summary.actual_send_rate:.3f} req/s, "
             f"configured={trial_summary.requested_request_rate:.3f} req/s"
         )
-    if (
-        trial_summary.max_scheduling_delay_s is not None
-        and trial_summary.max_scheduling_delay_s > config.scheduling_delay_warning_s
-    ):
+    if scheduling_delay_high:
         client_evidence.append(
             "client scheduling delay was high: "
             f"max={trial_summary.max_scheduling_delay_s:.3f}s "
             f"> {config.scheduling_delay_warning_s:.3f}s"
         )
-    if not client_evidence:
-        return None
     return BottleneckResult(
         bottleneck_class="client_limited",
-        confidence="high" if len(client_evidence) >= 2 else "medium",
+        confidence="high",
         evidence=client_evidence,
     )
 

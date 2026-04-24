@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from llm_mst_finder.bottleneck import classify_bottleneck
-from llm_mst_finder.records import RequestRecord, StabilityResult, WindowSummary
+from llm_mst_finder.bottleneck import BottleneckConfig, classify_bottleneck
+from llm_mst_finder.records import BenchmarkMetrics, RequestRecord, StabilityResult, TrialSummary, WindowSummary
 
 
 def _window(
@@ -162,6 +162,70 @@ def test_aborted_safety_precedes_server_bottleneck_inference() -> None:
     assert any("safety cap invalidated" in item for item in result.evidence)
 
 
+def test_open_loop_send_rate_lag_alone_does_not_imply_client_limited() -> None:
+    summary = TrialSummary(
+        trial_id="trial-bottleneck",
+        mode="open-loop",
+        status="completed",
+        requested_request_rate=2.0,
+        requested_concurrency=None,
+        target_duration_s=20.0,
+        wall_time_s=20.0,
+        started_requests=38,
+        successful_requests=38,
+        failed_requests=0,
+        actual_send_rate=1.91,
+        successful_completion_rate=1.9,
+        error_rate=0.0,
+        mean_scheduling_delay_s=0.001,
+        max_scheduling_delay_s=0.002,
+        max_observed_outstanding=2,
+        metrics_sample_count=0,
+        abort_reason=None,
+        benchmark_metrics=_benchmark_metrics(),
+        metadata={},
+    )
+
+    result = classify_bottleneck(_stable_windows(), trial_summary=summary)
+
+    assert result.bottleneck_class != "client_limited"
+
+
+def test_open_loop_send_rate_lag_with_high_scheduling_delay_is_client_limited() -> None:
+    summary = TrialSummary(
+        trial_id="trial-bottleneck",
+        mode="open-loop",
+        status="completed",
+        requested_request_rate=10.0,
+        requested_concurrency=None,
+        target_duration_s=20.0,
+        wall_time_s=20.0,
+        started_requests=160,
+        successful_requests=160,
+        failed_requests=0,
+        actual_send_rate=8.9,
+        successful_completion_rate=8.0,
+        error_rate=0.0,
+        mean_scheduling_delay_s=0.15,
+        max_scheduling_delay_s=0.4,
+        max_observed_outstanding=10,
+        metrics_sample_count=0,
+        abort_reason=None,
+        benchmark_metrics=_benchmark_metrics(),
+        metadata={},
+    )
+
+    result = classify_bottleneck(
+        _stable_windows(),
+        trial_summary=summary,
+        config=BottleneckConfig(open_loop_send_rate_tolerance=0.05),
+    )
+
+    assert result.bottleneck_class == "client_limited"
+    assert any("actual open-loop send rate lagged configured rate" in item for item in result.evidence)
+    assert any("client scheduling delay was high" in item for item in result.evidence)
+
+
 def test_context_length_errors_are_not_bottleneck_evidence() -> None:
     failed_record = RequestRecord(
         request_id="request-1",
@@ -203,3 +267,35 @@ def test_conflicting_server_metadata_fails_fast() -> None:
                 "server_config": {"max_num_seqs": 16},
             },
         )
+
+
+def _benchmark_metrics() -> BenchmarkMetrics:
+    return BenchmarkMetrics(
+        successful_requests=1,
+        failed_requests=0,
+        total_input_tokens=10,
+        total_output_tokens=2,
+        request_throughput=1.0,
+        successful_request_throughput=1.0,
+        prompt_token_throughput=10.0,
+        generation_token_throughput=2.0,
+        total_token_throughput=12.0,
+        mean_ttft_ms=100.0,
+        median_ttft_ms=100.0,
+        std_ttft_ms=0.0,
+        percentiles_ttft_ms=[(50.0, 100.0)],
+        mean_tpot_ms=20.0,
+        median_tpot_ms=20.0,
+        std_tpot_ms=0.0,
+        percentiles_tpot_ms=[(50.0, 20.0)],
+        mean_itl_ms=18.0,
+        median_itl_ms=18.0,
+        std_itl_ms=0.0,
+        percentiles_itl_ms=[(50.0, 18.0)],
+        mean_e2e_ms=600.0,
+        median_e2e_ms=600.0,
+        std_e2e_ms=0.0,
+        percentiles_e2e_ms=[(50.0, 600.0)],
+        prompt_length_summary={"mean": 10.0, "median": 10.0, "p90": 10.0, "p99": 10.0},
+        output_length_summary={"mean": 2.0, "median": 2.0, "p90": 2.0, "p99": 2.0},
+    )

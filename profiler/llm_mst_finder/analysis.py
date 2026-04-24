@@ -9,6 +9,9 @@ from .bottleneck import classify_bottleneck
 from .records import RequestRecord, TrialAnalysisResult, TrialSummary
 from .stability import classify_stability, load_window_summaries_csv
 
+_OPEN_LOOP_SEND_RATE_TOLERANCE = 0.05
+_SCHEDULING_DELAY_WARNING_S = 0.25
+
 
 def analyze_trial_dir(trial_dir: str | Path) -> TrialAnalysisResult:
     directory = Path(trial_dir)
@@ -188,14 +191,18 @@ def _client_limited_reasons(summary: TrialSummary) -> list[str]:
     if (
         summary.mode == "open-loop"
         and summary.requested_request_rate is not None
-        and summary.actual_send_rate < summary.requested_request_rate
+        and summary.actual_send_rate
+        < summary.requested_request_rate * (1.0 - _OPEN_LOOP_SEND_RATE_TOLERANCE)
     ):
         reasons.append(
             "actual open-loop send rate lagged the configured rate: "
             f"actual={summary.actual_send_rate:.3f} req/s, "
             f"configured={summary.requested_request_rate:.3f} req/s"
         )
-    if summary.max_scheduling_delay_s is not None and summary.max_scheduling_delay_s > 0.25:
+    if (
+        summary.max_scheduling_delay_s is not None
+        and summary.max_scheduling_delay_s > _SCHEDULING_DELAY_WARNING_S
+    ):
         reasons.append(
             "client scheduling delay was elevated: "
             f"max_scheduling_delay_s={summary.max_scheduling_delay_s:.3f}"
@@ -210,11 +217,11 @@ def _is_client_limited(summary: TrialSummary) -> bool:
         return True
     if summary.mode != "open-loop" or summary.requested_request_rate is None:
         return False
-    if summary.actual_send_rate >= summary.requested_request_rate * 0.97:
+    if summary.actual_send_rate >= summary.requested_request_rate * (1.0 - _OPEN_LOOP_SEND_RATE_TOLERANCE):
         return False
     return (
         summary.max_scheduling_delay_s is not None
-        and summary.max_scheduling_delay_s > 0.25
+        and summary.max_scheduling_delay_s > _SCHEDULING_DELAY_WARNING_S
     )
 
 
