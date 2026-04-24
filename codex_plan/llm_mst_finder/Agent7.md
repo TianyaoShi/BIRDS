@@ -119,7 +119,7 @@ def hybrid_search(config):
 ```
 
 ## Example
-You may inspect older binary-search code if it exists locally, but do not copy health-check, restart, broad-retry, or defensive fallback machinery into this package.
+You may inspect older binary-search code at `profiler/deprecated/pre_profiling_engine.py`, but do not copy health-check, restart, broad-retry, or defensive fallback machinery into this package.
 
 ## Local consistency constraints
 

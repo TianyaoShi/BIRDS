@@ -12,6 +12,7 @@ from .loadgen import cycling_request_source
 from .metrics_polling import PrometheusMetricsPoller
 from .records import TrialConfig
 from .request_client import RequestClient
+from .search import SearchConfig, SearchController
 from .trial_runner import TrialRunner
 from .windowing import FixedWindowAggregator
 from .workload import prepare_workload_for_trial
@@ -79,6 +80,44 @@ def build_parser() -> argparse.ArgumentParser:
     analyze = subparsers.add_parser("analyze")
     analyze.add_argument("--trial-dir", type=Path, required=True)
     analyze.set_defaults(handler=_analyze_command)
+
+    search = subparsers.add_parser("search")
+    search.add_argument("--search-id", default=_default_search_id())
+    search.add_argument("--search-mode", choices=("closed-loop", "open-loop", "hybrid"), default="hybrid")
+    search.add_argument("--output-dir", type=Path, required=True)
+    search.add_argument(
+        "--workload",
+        "--workload-config",
+        dest="workload",
+        type=Path,
+        default=_default_workload_path(),
+        help="workload YAML path",
+    )
+    search.add_argument("--base-url", default="http://127.0.0.1:8000")
+    search.add_argument("--endpoint", default="/v1/completions")
+    search.add_argument("--model", required=True)
+    search.add_argument("--trial-min-duration-s", type=float, default=60.0)
+    search.add_argument("--trial-max-duration-s", type=float, default=None)
+    search.add_argument("--final-confirmation-duration-s", type=float, default=None)
+    search.add_argument("--rate-precision", type=float, default=0.03)
+    search.add_argument("--initial-request-rate", type=float, default=1.0)
+    search.add_argument("--max-request-rate", type=float, default=None)
+    search.add_argument("--max-binary-steps", type=int, default=24)
+    search.add_argument("--max-bracket-trials", type=int, default=16)
+    search.add_argument("--closed-loop-initial-concurrency", type=int, default=1)
+    search.add_argument("--max-closed-loop-concurrency", type=int, default=128)
+    search.add_argument("--closed-loop-plateau-relative-gain", type=float, default=0.05)
+    search.add_argument("--think-time-s", type=float, default=0.0)
+    search.add_argument("--burstiness", type=float, default=1.0)
+    search.add_argument("--request-timeout-s", type=float, default=6 * 60 * 60)
+    search.add_argument("--api-key", default=None)
+    search.add_argument("--extra-header", action="append", default=[])
+    search.add_argument("--extra-body-json", default=None)
+    search.add_argument("--safety-max-outstanding", type=int, default=None)
+    search.add_argument("--metrics-url", "--server-metrics-url", dest="metrics_url", default=None)
+    search.add_argument("--metrics-interval-s", type=float, default=1.0)
+    search.add_argument("--window-s", type=float, default=10.0)
+    search.set_defaults(handler=_search_command)
     return parser
 
 
@@ -171,9 +210,89 @@ async def _analyze_command(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _search_command(args: argparse.Namespace) -> int:
+    prepared_workload = prepare_workload_for_trial(
+        args.workload,
+        model_name=args.model,
+    )
+    request_source = cycling_request_source(prepared_workload.samples)
+    request_client = RequestClient(
+        base_url=args.base_url,
+        endpoint=args.endpoint,
+        model=args.model,
+        timeout_s=args.request_timeout_s,
+        api_key=args.api_key,
+        extra_headers=_parse_extra_headers(args.extra_header),
+        extra_body=_parse_json_mapping(args.extra_body_json, field_name="--extra-body-json"),
+    )
+    metrics_poller = (
+        PrometheusMetricsPoller(
+            metrics_url=args.metrics_url,
+            interval_s=args.metrics_interval_s,
+        )
+        if args.metrics_url is not None
+        else None
+    )
+    runner = TrialRunner(
+        request_client,
+        metrics_poller=metrics_poller,
+        window_aggregator=FixedWindowAggregator(window_s=args.window_s),
+    )
+    config = SearchConfig(
+        search_id=args.search_id,
+        search_mode=args.search_mode,
+        base_url=args.base_url,
+        endpoint=args.endpoint,
+        model=args.model,
+        trial_duration_s=args.trial_min_duration_s,
+        final_confirmation_duration_s=(
+            args.final_confirmation_duration_s
+            if args.final_confirmation_duration_s is not None
+            else args.trial_max_duration_s
+        ),
+        rate_precision=args.rate_precision,
+        initial_request_rate=args.initial_request_rate,
+        max_request_rate=args.max_request_rate,
+        max_binary_steps=args.max_binary_steps,
+        max_bracket_trials=args.max_bracket_trials,
+        closed_loop_initial_concurrency=args.closed_loop_initial_concurrency,
+        max_closed_loop_concurrency=args.max_closed_loop_concurrency,
+        closed_loop_plateau_relative_gain=args.closed_loop_plateau_relative_gain,
+        think_time_s=args.think_time_s,
+        burstiness=args.burstiness,
+        request_timeout_s=args.request_timeout_s,
+        api_key=args.api_key,
+        extra_headers=_parse_extra_headers(args.extra_header),
+        extra_body=_parse_json_mapping(args.extra_body_json, field_name="--extra-body-json"),
+        safety_max_outstanding=args.safety_max_outstanding,
+        metrics_url=args.metrics_url,
+        metrics_interval_s=args.metrics_interval_s,
+        window_s=args.window_s,
+        metadata=prepared_workload.metadata,
+    )
+    controller = SearchController(
+        runner,
+        request_source=request_source,
+        output_dir=args.output_dir,
+    )
+    try:
+        result = await controller.search(config)
+    finally:
+        await request_client.close()
+        if metrics_poller is not None:
+            await metrics_poller.close()
+    print(json.dumps(result.to_dict(), sort_keys=True))
+    return 0
+
+
 def _default_trial_id() -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"trial-{ts}"
+
+
+def _default_search_id() -> str:
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"search-{ts}"
 
 
 def _default_workload_path() -> Path:

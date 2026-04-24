@@ -22,6 +22,15 @@ from .records import (
     WindowSummary,
 )
 from .request_client import RequestClient
+from .search import (
+    ClosedLoopScoutResult,
+    InvalidSearchTrial,
+    SearchConfig,
+    SearchController,
+    SearchConvergenceError,
+    SearchError,
+    SearchResult,
+)
 from .trial_runner import TrialArtifacts, TrialRunResult, TrialRunner
 from .workload import (
     PreparedWorkload,
@@ -36,15 +45,22 @@ __all__ = [
     "BenchmarkMetrics",
     "BottleneckResult",
     "ClosedLoopLoadGenerator",
+    "ClosedLoopScoutResult",
     "ContextPolicy",
     "ContextValidationReport",
     "ContextValidationResult",
+    "InvalidSearchTrial",
     "OpenLoopLoadGenerator",
     "PreparedWorkload",
     "PrometheusMetricsPoller",
     "RequestClient",
     "RequestRecord",
     "SampleRequest",
+    "SearchConfig",
+    "SearchController",
+    "SearchConvergenceError",
+    "SearchError",
+    "SearchResult",
     "ScheduledRequest",
     "ServerMetricSample",
     "StabilityResult",
