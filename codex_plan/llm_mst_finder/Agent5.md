@@ -10,6 +10,8 @@ slo_violation
 uncertain
 aborted_safety
 ```
+
+This classifier assumes the trial is workload-valid. Context-length failures from the serving API are not stability evidence. They should be caught before dispatch by the workload/model compatibility step; if discovered in saved request records, trial analysis should report `trial_validity=invalid_workload` and skip stability classification or return low-confidence `uncertain` with an explicit invalid-workload reason.
 ## Files
 ```
 stability.py
@@ -75,6 +77,8 @@ Do not overfit the first version. A robust monotonic trend rule is enough.
 
 If required request/window fields are missing or internally inconsistent, raise. If optional server-side evidence is missing, classify from available evidence, lower confidence, and include that limitation in `reasons`.
 
+Do not classify model context-limit validation failures as `unstable`, `slo_violation`, KV saturation, or scheduler overload. Those failures mean the workload is invalid for the selected model configuration.
+
 ## Return object
 ```Python
 @dataclass
@@ -89,4 +93,5 @@ class StabilityResult:
 
 + Use `WindowSummary` from `records.py` or `windowing.py`; do not invent a duplicate schema.
 + `uncertain` is for insufficient measurement evidence, not for hidden exceptions.
++ Treat context-limit/server validation errors as invalid workload metadata supplied by trial analysis, not as queueing drift.
 + Follow `Rules.md` for `/local/scratch/a/shi676/.venv`, `PYTHONPATH`, and fail-fast behavior.

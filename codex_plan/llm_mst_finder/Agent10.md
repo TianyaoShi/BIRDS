@@ -36,6 +36,27 @@ SLO violation -> slo_violation
 scheduler cap -> unstable + bottleneck scheduler_cap
 ```
 
+### `test_model_context.py`
+
+Create fixture samples and fake tokenizers for:
+```
+fits context
+over limit with over_limit=fail
+over limit with over_limit=skip_sample
+over limit with over_limit=truncate_prompt
+missing max_model_len
+missing model-compatible tokenizer
+```
+
+Expected outputs:
+```
+fits context -> unchanged samples
+fail -> raises before trial dispatch
+skip_sample -> removes only explicit over-limit samples and records counts/source indexes
+truncate_prompt -> shortens prompt and records counts/source indexes
+missing metaconfig -> raises
+```
+
 ### `test_search.py`
 
 Mock run_trial(rate) with threshold behavior:
@@ -69,4 +90,5 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler /local/scratch/a/shi676/.venv/
 + Do not require a live vLLM server, GPU, NVML, Hugging Face download, or network access in default tests.
 + Add live-server smoke tests only behind explicit opt-in.
 + Tests should assert fail-fast behavior for malformed configs and invalid records; do not encode defensive placeholder behavior as expected output.
++ Tests should assert context-limit failures are invalid workload conditions, not stability or bottleneck evidence.
 + Follow `Rules.md` for `/local/scratch/a/shi676/.venv`, `PYTHONPATH`, and fail-fast behavior.

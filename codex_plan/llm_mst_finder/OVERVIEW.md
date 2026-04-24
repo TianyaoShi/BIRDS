@@ -8,6 +8,8 @@ Reuse the design of  `profiler/benchmark_serving.py` where appropriate, especial
 
 The final estimator must use open-loop request-rate trials for max sustainable external arrival rate. Closed-loop concurrency sweep is only a scouting phase. Do not silently throttle open-loop request rate with max_concurrency. If a safety outstanding cap is used, abort and classify the trial as unstable/safety-aborted.
 
+Live ShareGPT testing exposed an important boundary: workload/model context compatibility is not part of stability classification. Before a trial starts, sampled prompts must be validated against the selected serving model, tokenizer behavior, max context length, and requested output length. Context-limit failures indicate invalid workload samples for the selected model configuration, not throughput instability.
+
 ## Local repo alignment decisions
 
 - Keep the implementation under `profiler/llm_mst_finder/` so it lives beside the existing profiler scripts.
@@ -18,13 +20,15 @@ The final estimator must use open-loop request-rate trials for max sustainable e
 - Use one CLI module: `llm_mst_finder.cli`. Do not create a parallel `profile.py` CLI.
 - V1 config sweep records externally supplied server metadata only. Do not add automatic vLLM launch, health checks, or restart logic in the first implementation.
 - Default tests must not require a live server, GPU, Hugging Face download, or network access.
+- Do not rely on config-level `tokenizer: whitespace` for production context validation. Real workload validation must use the serving/model-compatible tokenizer, ideally through vLLM-compatible tokenizer utilities when available.
 
 Implement milestones:
 1. run one open-loop or closed-loop trial and save request/server/window data;
-2. analyze one trial for stability and bottleneck class;
-3. hybrid search for max sustainable rate;
-4. optional metadata-only config sweep over max_num_seqs and max_num_batched_tokens;
-5. Markdown/JSON report and plots.
+2. validate workload/model context compatibility before real dataset trials;
+3. analyze one trial for stability and bottleneck class;
+4. hybrid search for max sustainable rate;
+5. optional metadata-only config sweep over max_num_seqs and max_num_batched_tokens;
+6. Markdown/JSON report and plots.
 
 Use robust windowed drift criteria:
 - arrival vs completion rate;
@@ -103,6 +107,7 @@ profiler/llm_mst_finder/
   request_client.py
   loadgen.py
   metrics_polling.py
+  model_context.py
   records.py
   trial_runner.py
   windowing.py
@@ -126,6 +131,7 @@ The architecture should be:
 CLI
  └── SearchController
       ├── WorkloadProvider
+      ├── WorkloadCompatibilityValidator
       ├── TrialRunner
       │    ├── LoadGenerator
       │    ├── RequestClient
@@ -135,6 +141,30 @@ CLI
       ├── BottleneckClassifier
       └── Reporter
 ```
+
+### Workload/model context compatibility
+
+Context validation is an explicit pre-trial step. It is owned by workload/model configuration, not by the stability classifier.
+
+Example YAML:
+
+```YAML
+context_policy:
+  max_model_len: 4096
+  tokenizer_source: vllm_model_config
+  tokenizer: meta-llama/Llama-2-7b-chat-hf
+  over_limit: fail  # fail | skip_sample | truncate_prompt
+  truncation_side: left
+```
+
+Rules:
+
+- Compute `prompt_tokens + requested_output_tokens` with the serving/model-compatible tokenizer.
+- Default `over_limit` is `fail`.
+- `skip_sample` and `truncate_prompt` are allowed only when explicitly configured.
+- Any skipped or truncated samples must be recorded in workload metadata, trial config, final JSON, and final report.
+- If tokenizer or max context length cannot be determined for real dataset validation, fail before starting the trial.
+- If a live server still returns model context-length validation errors, mark the trial as `invalid_workload` in analysis and exclude it from search bounds.
 
 ### Minimal CLI surface
 ```bash
@@ -183,7 +213,14 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
     "name": "fixed_512_128",
     "num_requests": 20000,
     "prompt_len_summary": {},
-    "output_len_summary": {}
+    "output_len_summary": {},
+    "context_policy": {
+      "max_model_len": 4096,
+      "tokenizer_source": "vllm_model_config",
+      "over_limit": "fail",
+      "skipped_samples": 0,
+      "truncated_samples": 0
+    }
   },
   "server_config": {
     "model": "meta-llama/Llama-3.1-8B-Instruct",

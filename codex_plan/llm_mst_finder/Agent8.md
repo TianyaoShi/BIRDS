@@ -68,4 +68,5 @@ best config by energy consumption per token
 
 + Config sweep results are only comparable when workload, SLOs, duration, and search settings match; validate and report mismatches.
 + Treat each supplied config as metadata. Do not infer missing serving flags.
++ Include `max_model_len` and context policy in config-sweep metadata comparisons. A sweep result with skipped/truncated workload samples is not directly comparable to one using the full workload unless the report says so explicitly.
 + Follow `Rules.md` for `/local/scratch/a/shi676/.venv`, `PYTHONPATH`, and fail-fast behavior.

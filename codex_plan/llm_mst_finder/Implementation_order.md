@@ -42,6 +42,37 @@ summary.json
 
 No adaptive search yet. If a live server is unavailable, unit tests should still cover the load generator, record serialization, parser, and window aggregation with synthetic data.
 
+## Milestone 1.5 - Workload/Model Context Compatibility
+
+Agents: 2 with Agent 1 integration; Agent 10 tests.
+
+Deliver:
+
+```text
+profiler/llm_mst_finder/model_context.py
+context_policy support in workload/config loading
+pre-trial context validation in CLI/search/trial setup
+```
+
+Required behavior:
+
+```text
+prompt_tokens + requested_output_tokens <= max_model_len
+```
+
+must be checked with a serving/model-compatible tokenizer before real dataset trials. Default policy is `fail`. Explicit policies may be:
+
+```YAML
+context_policy:
+  max_model_len: 4096
+  tokenizer_source: vllm_model_config
+  tokenizer: meta-llama/Llama-2-7b-chat-hf
+  over_limit: fail | skip_sample | truncate_prompt
+  truncation_side: left
+```
+
+`skip_sample` and `truncate_prompt` must record counts and affected source indexes in metadata. Silent skip/truncation is forbidden. If the server still returns context-length validation failures, the trial analysis marks `trial_validity=invalid_workload` and search excludes that trial from bounds.
+
 ## Milestone 2 - Trial Analysis
 
 Agents: 5 and 6.
@@ -56,6 +87,7 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 Must output:
 
 ```text
+trial_validity: valid | invalid_workload | client_limited | metrics_invalid
 stable | unstable | slo_violation | uncertain | aborted_safety
 reasons
 bottleneck_class
@@ -122,7 +154,7 @@ Add live-server smoke tests only behind an explicit opt-in marker or environment
 | Agent | Scope | Suggested model | Reasoning effort |
 | --- | --- | --- | --- |
 | Agent 1 | Async client, open/closed loadgen, records adapter | `gpt-5.3-codex` | high |
-| Agent 2 | Workload YAML, deterministic sampling, token lengths | `gpt-5.3-codex` | medium |
+| Agent 2 | Workload YAML, deterministic sampling, model context validation | `gpt-5.3-codex` | high |
 | Agent 3 | Prometheus polling and metric normalization | `gpt-5.3-codex` | medium |
 | Agent 4 | Fixed-window aggregation and CSV/summary output | `gpt-5.3-codex` | high |
 | Agent 5 | Stability classification and trend rules | `GPT-5.5` | high |

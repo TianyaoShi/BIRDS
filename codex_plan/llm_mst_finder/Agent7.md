@@ -104,6 +104,8 @@ def hybrid_search(config):
             bracket.low = rate
         elif result.status in {"unstable", "slo_violation", "aborted_safety"}:
             bracket.high = rate
+        elif result.trial_validity == "invalid_workload":
+            raise InvalidSearchTrial("workload is invalid for this model config")
         else:
             trial = extend_or_repeat(rate)
             update_bracket_conservatively(trial)
@@ -123,5 +125,6 @@ You may inspect older binary-search code if it exists locally, but do not copy h
 
 + Search must call the shared `TrialRunner`, `StabilityClassifier`, and `BottleneckClassifier` contracts.
 + Unknown or contradictory trial statuses should update bounds conservatively or request a repeat, but implementation errors should raise.
++ `invalid_workload` trials must not update low/high throughput bounds. Fail the search with a clear remediation message.
 + Every tested rate and classification must be written to `search_trace.json`.
 + Follow `Rules.md` for `/local/scratch/a/shi676/.venv`, `PYTHONPATH`, and fail-fast behavior.

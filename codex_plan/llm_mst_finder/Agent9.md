@@ -44,19 +44,21 @@ bottleneck class by config
 final_report.md should include:
 
 1. Workload definition
-2. Server configuration
-3. Search trace
-4. Closed-loop scouting result
-5. Open-loop stability boundary
-6. Max no-drift request rate
-7. Max SLO-satisfying request rate
-8. Bottleneck diagnosis
-9. Recommended next config sweep
-10. Limitations
+2. Workload/model context compatibility summary
+3. Server configuration
+4. Search trace
+5. Closed-loop scouting result
+6. Open-loop stability boundary
+7. Max no-drift request rate
+8. Max SLO-satisfying request rate
+9. Bottleneck diagnosis
+10. Recommended next config sweep
+11. Limitations
 
 ## Local consistency constraints
 
 + Reports consume saved artifacts; they should not rerun trials or mutate search results.
 + Missing plots should fail report generation unless plots are explicitly disabled.
 + Markdown and JSON reports must agree on headline rates, bottleneck class, confidence, and trial statuses.
++ Reports must include `context_policy`, tokenizer source, max model length, and skipped/truncated sample counts. If a trial was `invalid_workload`, make that prominent and do not present its rate as an overload boundary.
 + Follow `Rules.md` for `/local/scratch/a/shi676/.venv`, `PYTHONPATH`, and fail-fast behavior.

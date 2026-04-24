@@ -41,6 +41,9 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler /local/scratch/a/shi676/.venv/
 - Do not silently throttle open-loop traffic. If client scheduling delay or a safety outstanding cap prevents the configured arrival rate, classify the trial as `client_limited` or `aborted_safety`.
 - Optional subsystems must be explicit. If GPU monitoring is not requested, skip it. If it is requested and unavailable, fail immediately.
 - Missing optional Prometheus metrics may be represented as `None`, but the analysis must add a reason and lower confidence when those metrics affect classification.
+- Do not silently skip or truncate real workload samples. Context-limit handling must be controlled by an explicit `context_policy`.
+- Do not use workload sampling tokenizers such as `whitespace` as proof that a prompt fits a production model context. Context validation must use the serving/model-compatible tokenizer.
+- If model max context length or a compatible tokenizer cannot be determined for a real dataset run, fail before trial dispatch unless the user explicitly disables validation and accepts the invalid-workload risk in recorded metadata.
 
 ## Measurement Rules
 
@@ -105,3 +108,13 @@ absolute max sustainable rate of the model/GPU
 ```
 
 unless a configuration sweep was performed.
+
+5. Separate invalid workload samples from throughput instability.
+
+Context-length errors such as:
+
+```text
+prompt_tokens + requested_output_tokens > max_model_len
+```
+
+mean the workload is invalid for the selected model configuration. They must not be counted as evidence of overload, SLO drift, KV saturation, or scheduler bottleneck. The trial should be rejected before dispatch when possible. If discovered from server responses, analysis should mark the trial as `invalid_workload` and exclude it from search decisions.

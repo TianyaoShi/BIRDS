@@ -85,10 +85,14 @@ client CPU/network saturated
 actual arrival rate < configured arrival rate
 many client-side scheduling delays
 ```
+### Invalid workload
+
+Not a bottleneck class. If failures are caused by model context validation, malformed prompts, or request parameters that are impossible for the selected model config, report trial validity as `invalid_workload` and do not infer scheduler, KV, prefill, or decode bottlenecks from those failures.
 
 ## Local consistency constraints
 
 + Bottleneck output must include evidence strings tied to observed window/server/request metrics.
 + Do not infer server config values that were not measured or supplied as metadata.
 + If a safety cap or client scheduling delay invalidates the configured open-loop arrival rate, prefer `client_limited` or `aborted_safety` over a server bottleneck class.
++ If model context-length errors are present, separate them from overload evidence and require workload/model compatibility remediation.
 + Follow `Rules.md` for `/local/scratch/a/shi676/.venv`, `PYTHONPATH`, and fail-fast behavior.

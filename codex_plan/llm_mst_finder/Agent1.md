@@ -93,4 +93,6 @@ Important: do not use max_concurrency to estimate open-loop max sustainable rate
 + Reuse current profiler code as reference material, not by importing `benchmark_serving.py`.
 + `request_client.py` may adapt behavior from `profiler/backend_request_func.py`, but internal implementation errors must raise. Only real request/API failures become failed `RequestRecord`s.
 + `trial_runner.py` is the single orchestrator used by both `run-trial` modes and later search.
++ CLI/trial setup must call workload/model context validation before dispatching real dataset samples. Do not let known over-context samples reach `TrialRunner`.
++ If the live server exposes `/v1/models` with `max_model_len`, capture it as server metadata, but do not assume it supplies tokenizer behavior.
 + Follow `Rules.md` for `/local/scratch/a/shi676/.venv`, `PYTHONPATH`, and fail-fast behavior.
