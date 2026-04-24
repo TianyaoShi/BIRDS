@@ -13,7 +13,7 @@ from .records import TrialConfig
 from .request_client import RequestClient
 from .trial_runner import TrialRunner
 from .windowing import FixedWindowAggregator
-from .workload import load_workload_samples
+from .workload import prepare_workload_for_trial
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -84,7 +84,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 async def _run_trial_command(args: argparse.Namespace) -> int:
-    request_samples = load_workload_samples(args.workload)
+    prepared_workload = prepare_workload_for_trial(
+        args.workload,
+        model_name=args.model,
+    )
+    request_samples = prepared_workload.samples
     request_source = cycling_request_source(request_samples)
     request_client = RequestClient(
         base_url=args.base_url,
@@ -127,6 +131,7 @@ async def _run_trial_command(args: argparse.Namespace) -> int:
         metrics_url=args.metrics_url,
         metrics_interval_s=args.metrics_interval_s,
         window_s=args.window_s,
+        metadata=prepared_workload.metadata,
     )
     output_dir = args.output_dir if args.output_dir is not None else Path("results") / args.trial_id
 

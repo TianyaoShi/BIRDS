@@ -8,6 +8,7 @@ from llm_mst_finder.workload import (
     generate_sample_requests,
     load_workload_config,
     load_workload_samples,
+    prepare_workload_for_trial,
 )
 
 
@@ -165,3 +166,13 @@ def test_context_policy_missing_max_model_len_raises_from_yaml(tmp_path: Path) -
 
     with pytest.raises(ValueError, match="context_policy.max_model_len is required"):
         load_workload_config(workload_path)
+
+
+def test_prepare_workload_for_trial_requires_context_policy_for_real_dataset() -> None:
+    workload_path = FIXTURES_ROOT / "workloads" / "jsonl_from_dataset.yaml"
+
+    with pytest.raises(
+        ValueError,
+        match="real dataset workloads require context_policy for pre-trial context validation",
+    ):
+        prepare_workload_for_trial(workload_path, model_name="fake-model")

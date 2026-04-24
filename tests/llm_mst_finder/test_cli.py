@@ -89,3 +89,68 @@ def test_cli_run_trial_closed_loop_writes_artifacts(
     captured = json.loads(capsys.readouterr().out.strip())
     assert captured["status"] == "completed"
     assert captured["trial_id"] == "cli-trial"
+
+
+def test_cli_run_trial_records_context_policy_metadata(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr("llm_mst_finder.cli.RequestClient", StubRequestClient)
+    workload_path = tmp_path / "context_workload.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: context-aware-synthetic",
+                "dataset:",
+                "  type: synthetic-fixed",
+                "  prompt: alpha beta gamma delta epsilon",
+                "tokenizer: whitespace",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 1",
+                "  prompt_len:",
+                "    mode: fixed",
+                "    value: 5",
+                "  output_len:",
+                "    mode: fixed",
+                "    value: 2",
+                "context_policy:",
+                "  max_model_len: 5",
+                "  tokenizer_source: workload_tokenizer",
+                "  over_limit: truncate_prompt",
+                "  truncation_side: left",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "cli-context-trial"
+
+    exit_code = main(
+        [
+            "run-trial",
+            "--trial-id",
+            "cli-context-trial",
+            "--mode",
+            "closed-loop",
+            "--concurrency",
+            "1",
+            "--duration-s",
+            "0.01",
+            "--model",
+            "fake-model",
+            "--workload",
+            str(workload_path),
+            "--output-dir",
+            str(output_dir),
+        ]
+    )
+
+    assert exit_code == 0
+    summary_payload = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
+    context_policy = summary_payload["config"]["metadata"]["workload"]["context_policy"]
+    assert context_policy["max_model_len"] == 5
+    assert context_policy["truncated_samples"] == 1
+    assert context_policy["skipped_samples"] == 0
+    request_records = (output_dir / "request_records.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    assert request_records
+    assert all(json.loads(line)["prompt_len"] == 3 for line in request_records)

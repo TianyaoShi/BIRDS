@@ -22,7 +22,13 @@ from .records import (
 )
 from .request_client import RequestClient
 from .trial_runner import TrialArtifacts, TrialRunResult, TrialRunner
-from .workload import generate_sample_requests, load_workload_config, load_workload_samples
+from .workload import (
+    PreparedWorkload,
+    generate_sample_requests,
+    load_workload_config,
+    load_workload_samples,
+    prepare_workload_for_trial,
+)
 
 __all__ = [
     "BenchmarkMetrics",
@@ -32,6 +38,7 @@ __all__ = [
     "ContextValidationReport",
     "ContextValidationResult",
     "OpenLoopLoadGenerator",
+    "PreparedWorkload",
     "PrometheusMetricsPoller",
     "RequestClient",
     "RequestRecord",
@@ -49,6 +56,7 @@ __all__ = [
     "generate_sample_requests",
     "load_workload_config",
     "load_workload_samples",
+    "prepare_workload_for_trial",
     "parse_context_policy",
     "parse_prometheus_text",
     "parse_server_metrics_sample",

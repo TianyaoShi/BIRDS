@@ -8,7 +8,13 @@ from typing import Any, Protocol
 
 import yaml
 
-from .model_context import ContextPolicy, parse_context_policy
+from .model_context import (
+    ContextPolicy,
+    ContextValidationReport,
+    parse_context_policy,
+    resolve_model_tokenizer_for_policy,
+    validate_samples_against_context_window,
+)
 from .records import SampleRequest
 
 
@@ -18,13 +24,47 @@ class PromptTokenizer(Protocol):
 
 
 class WhitespaceTokenizer:
+    def __init__(self) -> None:
+        self._token_to_id: dict[str, int] = {}
+        self._id_to_token: dict[int, str] = {}
+        self._next_id = 1
+
     def encode(self, text: str) -> list[int]:
-        return [index for index, _ in enumerate(text.split())]
+        token_ids: list[int] = []
+        for token in text.split():
+            token_id = self._token_to_id.get(token)
+            if token_id is None:
+                token_id = self._next_id
+                self._next_id += 1
+                self._token_to_id[token] = token_id
+                self._id_to_token[token_id] = token
+            token_ids.append(token_id)
+        return token_ids
+
+    def decode(self, token_ids: list[int]) -> str:
+        return " ".join(self._id_to_token[token_id] for token_id in token_ids)
 
 
 class CharacterTokenizer:
+    def __init__(self) -> None:
+        self._char_to_id: dict[str, int] = {}
+        self._id_to_char: dict[int, str] = {}
+        self._next_id = 1
+
     def encode(self, text: str) -> list[int]:
-        return [index for index, _ in enumerate(text)]
+        token_ids: list[int] = []
+        for character in text:
+            token_id = self._char_to_id.get(character)
+            if token_id is None:
+                token_id = self._next_id
+                self._next_id += 1
+                self._char_to_id[character] = token_id
+                self._id_to_char[token_id] = character
+            token_ids.append(token_id)
+        return token_ids
+
+    def decode(self, token_ids: list[int]) -> str:
+        return "".join(self._id_to_char[token_id] for token_id in token_ids)
 
 
 class HuggingFaceTokenizer:
@@ -188,6 +228,14 @@ class WorkloadConfig:
     request: RequestConfig
     context_policy: ContextPolicy | None
     source_path: Path
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedWorkload:
+    config: WorkloadConfig
+    samples: list[SampleRequest]
+    metadata: dict[str, Any]
+    context_validation_report: ContextValidationReport | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -524,3 +572,87 @@ def load_workload_samples(
 ) -> list[SampleRequest]:
     config = load_workload_config(path)
     return generate_sample_requests(config, tokenizer=tokenizer)
+
+
+def _build_workload_metadata(
+    config: WorkloadConfig,
+    *,
+    sample_count: int,
+    context_validation_report: ContextValidationReport | None,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "workload": {
+            "name": config.name,
+            "source_path": str(config.source_path),
+            "dataset_type": config.dataset.type,
+            "num_requests": sample_count,
+        }
+    }
+    if config.context_policy is not None:
+        report = context_validation_report
+        metadata["workload"]["context_policy"] = {
+            "max_model_len": config.context_policy.max_model_len,
+            "tokenizer_source": config.context_policy.tokenizer_source,
+            "tokenizer": config.context_policy.tokenizer,
+            "over_limit": config.context_policy.over_limit,
+            "truncation_side": config.context_policy.truncation_side,
+            "total_samples": report.total_samples if report is not None else sample_count,
+            "kept_samples": report.kept_samples if report is not None else sample_count,
+            "skipped_samples": report.skipped_samples if report is not None else 0,
+            "truncated_samples": report.truncated_samples if report is not None else 0,
+            "skipped_source_indexes": list(report.skipped_source_indexes) if report is not None else [],
+            "truncated_source_indexes": list(report.truncated_source_indexes) if report is not None else [],
+        }
+    return metadata
+
+
+def prepare_workload_for_trial(
+    path: str | Path,
+    *,
+    model_name: str,
+) -> PreparedWorkload:
+    config = load_workload_config(path)
+    workload_tokenizer = resolve_tokenizer(config.tokenizer)
+    samples = generate_sample_requests(config, tokenizer=workload_tokenizer)
+    requires_context_validation = config.dataset.type in {"jsonl", "sharegpt"}
+
+    if config.context_policy is None:
+        if requires_context_validation:
+            raise ValueError(
+                "real dataset workloads require context_policy for pre-trial context validation"
+            )
+        return PreparedWorkload(
+            config=config,
+            samples=samples,
+            metadata=_build_workload_metadata(
+                config,
+                sample_count=len(samples),
+                context_validation_report=None,
+            ),
+            context_validation_report=None,
+        )
+
+    model_tokenizer = resolve_model_tokenizer_for_policy(
+        config.context_policy,
+        workload_tokenizer=workload_tokenizer,
+        model_name=model_name,
+    )
+    validation_result = validate_samples_against_context_window(
+        samples,
+        tokenizer=model_tokenizer,
+        policy=config.context_policy,
+    )
+    if not validation_result.samples:
+        raise ValueError(
+            "context validation removed all workload samples; no requests remain for the trial"
+        )
+    return PreparedWorkload(
+        config=config,
+        samples=validation_result.samples,
+        metadata=_build_workload_metadata(
+            config,
+            sample_count=len(validation_result.samples),
+            context_validation_report=validation_result.report,
+        ),
+        context_validation_report=validation_result.report,
+    )
