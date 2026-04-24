@@ -105,3 +105,63 @@ def test_invalid_fixed_or_bucketed_raises(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="fixed_or_bucketed requires value or buckets"):
         load_workload_config(workload_path)
+
+
+def test_context_policy_is_loaded_from_yaml(tmp_path: Path) -> None:
+    workload_path = tmp_path / "with_context_policy.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: with-context-policy",
+                "dataset:",
+                "  type: synthetic-fixed",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 2",
+                "  prompt_len:",
+                "    mode: fixed",
+                "    value: 3",
+                "  output_len:",
+                "    mode: fixed",
+                "    value: 4",
+                "context_policy:",
+                "  max_model_len: 16",
+                "  tokenizer_source: workload_tokenizer",
+                "  over_limit: fail",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_workload_config(workload_path)
+    assert config.context_policy is not None
+    assert config.context_policy.max_model_len == 16
+    assert config.context_policy.tokenizer_source == "workload_tokenizer"
+
+
+def test_context_policy_missing_max_model_len_raises_from_yaml(tmp_path: Path) -> None:
+    workload_path = tmp_path / "bad_context_policy.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: bad-context-policy",
+                "dataset:",
+                "  type: synthetic-fixed",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 2",
+                "  prompt_len:",
+                "    mode: fixed",
+                "    value: 3",
+                "  output_len:",
+                "    mode: fixed",
+                "    value: 4",
+                "context_policy:",
+                "  over_limit: fail",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="context_policy.max_model_len is required"):
+        load_workload_config(workload_path)

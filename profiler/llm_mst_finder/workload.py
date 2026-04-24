@@ -8,6 +8,7 @@ from typing import Any, Protocol
 
 import yaml
 
+from .model_context import ContextPolicy, parse_context_policy
 from .records import SampleRequest
 
 
@@ -185,6 +186,7 @@ class WorkloadConfig:
     tokenizer: str | None
     sampling: SamplingConfig
     request: RequestConfig
+    context_policy: ContextPolicy | None
     source_path: Path
 
 
@@ -293,7 +295,11 @@ def load_workload_config(path: str | Path) -> WorkloadConfig:
     with workload_path.open("r", encoding="utf-8") as handle:
         payload = yaml.safe_load(handle)
     root = _expect_mapping(payload, "workload")
-    _check_allowed_keys(root, "workload", {"name", "dataset", "tokenizer", "sampling", "request"})
+    _check_allowed_keys(
+        root,
+        "workload",
+        {"name", "dataset", "tokenizer", "sampling", "request", "context_policy"},
+    )
     name = _expect_string(root.get("name"), "name")
     tokenizer = root.get("tokenizer")
     if tokenizer is not None and not isinstance(tokenizer, str):
@@ -312,6 +318,7 @@ def load_workload_config(path: str | Path) -> WorkloadConfig:
         tokenizer=tokenizer,
         sampling=sampling,
         request=_parse_request(root.get("request")),
+        context_policy=parse_context_policy(root.get("context_policy")),
         source_path=workload_path.resolve(),
     )
     if config.dataset.type.startswith("synthetic") and config.sampling.prompt_len.mode == "from_dataset":
