@@ -372,3 +372,27 @@ class TrialSummary:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True, slots=True)
+class TrialAnalysisResult:
+    trial_id: str
+    trial_validity: Literal["valid", "invalid_workload", "client_limited", "metrics_invalid"]
+    validity_reasons: list[str]
+    stability: StabilityResult | None
+    bottleneck: BottleneckResult | None
+
+    def __post_init__(self) -> None:
+        if not self.trial_id:
+            raise ValueError("trial_id must be non-empty")
+        if not self.validity_reasons:
+            raise ValueError("validity_reasons must be non-empty")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "trial_id": self.trial_id,
+            "trial_validity": self.trial_validity,
+            "validity_reasons": list(self.validity_reasons),
+            "stability": None if self.stability is None else self.stability.to_dict(),
+            "bottleneck": None if self.bottleneck is None else self.bottleneck.to_dict(),
+        }

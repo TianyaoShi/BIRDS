@@ -154,3 +154,51 @@ def test_cli_run_trial_records_context_policy_metadata(
     request_records = (output_dir / "request_records.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert request_records
     assert all(json.loads(line)["prompt_len"] == 3 for line in request_records)
+
+
+def test_cli_analyze_writes_analysis_artifact(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.setattr("llm_mst_finder.cli.RequestClient", StubRequestClient)
+    workload_path = Path("profiler/llm_mst_finder/workloads/synthetic_fixed_512_128.yaml")
+    output_dir = tmp_path / "cli-analyze-trial"
+
+    run_exit_code = main(
+        [
+            "run-trial",
+            "--trial-id",
+            "cli-analyze-trial",
+            "--mode",
+            "closed-loop",
+            "--concurrency",
+            "1",
+            "--duration-s",
+            "0.01",
+            "--model",
+            "fake-model",
+            "--workload",
+            str(workload_path),
+            "--output-dir",
+            str(output_dir),
+        ]
+    )
+    assert run_exit_code == 0
+    capsys.readouterr()
+
+    analyze_exit_code = main(
+        [
+            "analyze",
+            "--trial-dir",
+            str(output_dir),
+        ]
+    )
+
+    assert analyze_exit_code == 0
+    analysis_payload = json.loads((output_dir / "analysis.json").read_text(encoding="utf-8"))
+    assert analysis_payload["trial_validity"] == "valid"
+    assert analysis_payload["stability"]["status"] in {"stable", "uncertain"}
+    captured = json.loads(capsys.readouterr().out.strip())
+    assert captured["trial_id"] == "cli-analyze-trial"
+    assert captured["trial_validity"] == "valid"

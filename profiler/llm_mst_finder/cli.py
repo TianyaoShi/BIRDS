@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
+from .analysis import analyze_trial_dir, write_analysis_artifact
 from .loadgen import cycling_request_source
 from .metrics_polling import PrometheusMetricsPoller
 from .records import TrialConfig
@@ -74,6 +75,10 @@ def build_parser() -> argparse.ArgumentParser:
     run_trial.add_argument("--metrics-interval-s", type=float, default=1.0)
     run_trial.add_argument("--window-s", type=float, default=10.0)
     run_trial.set_defaults(handler=_run_trial_command)
+
+    analyze = subparsers.add_parser("analyze")
+    analyze.add_argument("--trial-dir", type=Path, required=True)
+    analyze.set_defaults(handler=_analyze_command)
     return parser
 
 
@@ -156,6 +161,13 @@ async def _run_trial_command(args: argparse.Namespace) -> int:
             sort_keys=True,
         )
     )
+    return 0
+
+
+async def _analyze_command(args: argparse.Namespace) -> int:
+    result = analyze_trial_dir(args.trial_dir)
+    write_analysis_artifact(args.trial_dir, result)
+    print(json.dumps(result.to_dict(), sort_keys=True))
     return 0
 
 

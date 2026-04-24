@@ -17,6 +17,7 @@ from .records import (
     ServerMetricSample,
     StabilityResult,
     TrialConfig,
+    TrialAnalysisResult,
     TrialSummary,
     WindowSummary,
 )
@@ -48,6 +49,7 @@ __all__ = [
     "ServerMetricSample",
     "StabilityResult",
     "TrialArtifacts",
+    "TrialAnalysisResult",
     "TrialConfig",
     "TrialRunResult",
     "TrialRunner",
