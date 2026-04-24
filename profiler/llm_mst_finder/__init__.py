@@ -1,4 +1,5 @@
 from .loadgen import ClosedLoopLoadGenerator, OpenLoopLoadGenerator, cycling_request_source
+from .metrics_polling import PrometheusMetricsPoller, parse_prometheus_text, parse_server_metrics_sample
 from .records import (
     BenchmarkMetrics,
     BottleneckResult,
@@ -20,6 +21,7 @@ __all__ = [
     "BottleneckResult",
     "ClosedLoopLoadGenerator",
     "OpenLoopLoadGenerator",
+    "PrometheusMetricsPoller",
     "RequestClient",
     "RequestRecord",
     "SampleRequest",
@@ -36,4 +38,6 @@ __all__ = [
     "generate_sample_requests",
     "load_workload_config",
     "load_workload_samples",
+    "parse_prometheus_text",
+    "parse_server_metrics_sample",
 ]
