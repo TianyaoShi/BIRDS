@@ -2,6 +2,8 @@
 
 Use this order for dispatch and integration. It intentionally collapses some generated design into fewer integration milestones, while preserving the `Agent*.md` files as scoped briefs.
 
+For every dispatch or continuation, use `codex_plan/llm_mst_finder/Dispatch_prompt_template.md`. Agents must re-read `Rules.md` from disk each time they resume work, because these rules are expected to evolve as live profiling exposes new project constraints.
+
 ## Milestone 0 - Package Skeleton And Contracts
 
 Owner: lead or Agent 1 before parallel work starts.

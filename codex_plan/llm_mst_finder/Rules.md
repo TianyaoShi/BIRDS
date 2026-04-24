@@ -2,6 +2,13 @@
 
 These rules override individual agent plans when they conflict.
 
+## Agent Continuation Discipline
+
+- At the start of every new dispatch, resumed task, or continuation after another agent has changed files, re-read this `Rules.md` before editing.
+- Also re-read `Implementation_order.md`, `OVERVIEW.md`, and the relevant `AgentN.md` brief for the current scope.
+- Treat this file as live. If a rule changed since your last work session, follow the newest version and mention the rule-relevant adjustment in your final handoff.
+- Do not rely on memory of earlier prompts when it conflicts with these docs.
+
 ## Local Environment
 
 - Use the shared uv-managed environment at `/local/scratch/a/shi676/.venv`.
@@ -43,6 +50,7 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler /local/scratch/a/shi676/.venv/
 - Missing optional Prometheus metrics may be represented as `None`, but the analysis must add a reason and lower confidence when those metrics affect classification.
 - Do not silently skip or truncate real workload samples. Context-limit handling must be controlled by an explicit `context_policy`.
 - Do not use workload sampling tokenizers such as `whitespace` as proof that a prompt fits a production model context. Context validation must use the serving/model-compatible tokenizer.
+- `whitespace` and other toy tokenizers are allowed only in synthetic/offline unit tests or clearly labeled example workloads. They must not be used as production context validators for JSONL, ShareGPT, or any live profiling run.
 - If model max context length or a compatible tokenizer cannot be determined for a real dataset run, fail before trial dispatch unless the user explicitly disables validation and accepts the invalid-workload risk in recorded metadata.
 
 ## Measurement Rules
