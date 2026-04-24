@@ -3,8 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 
+import pytest
+
 from llm_mst_finder.records import SampleRequest
 from llm_mst_finder.request_client import RequestClient
+from llm_mst_finder import request_client as request_client_module
 
 
 class FakeStream:
@@ -44,6 +47,27 @@ class FakeSession:
     def post(self, **kwargs) -> FakeResponse:
         self.requests.append(kwargs)
         return self._response
+
+
+class OwnedFakeSession(FakeSession):
+    def __init__(self, response: FakeResponse) -> None:
+        super().__init__(response)
+        self.closed = False
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class FakeClientSessionFactory:
+    def __init__(self, response: FakeResponse) -> None:
+        self._response = response
+        self.instances: list[OwnedFakeSession] = []
+
+    def __call__(self, **kwargs) -> OwnedFakeSession:
+        del kwargs
+        session = OwnedFakeSession(self._response)
+        self.instances.append(session)
+        return session
 
 
 def test_request_client_parses_streaming_chat_response() -> None:
@@ -128,5 +152,67 @@ def test_request_client_raises_on_malformed_stream_payload() -> None:
             except json.JSONDecodeError:
                 return
             raise AssertionError("expected malformed stream payload to raise JSONDecodeError")
+
+    asyncio.run(run())
+
+
+def test_request_client_accepts_usage_only_stream_chunk() -> None:
+    async def run() -> None:
+        response = FakeResponse(
+            status=200,
+            chunks=[
+                b'data: {"choices": [{"delta": {"content": "hello"}}]}\n\n',
+                (
+                    b'data: {"choices": [], '
+                    b'"usage": {"prompt_tokens": 5, "completion_tokens": 4}}\n\n'
+                ),
+                b"data: [DONE]\n\n",
+            ],
+        )
+        session = FakeSession(response)
+        async with RequestClient(
+            base_url="http://unit-test",
+            endpoint="/v1/chat/completions",
+            model="fake-model",
+            session=session,
+        ) as client:
+            record = await client.send_request(
+                SampleRequest(prompt="hello", prompt_len=5, expected_output_len=4),
+                request_id="req-004",
+                trial_id="trial-001",
+                scheduled_send_ts=0.0,
+            )
+        assert record.success is True
+        assert record.actual_output_len == 4
+        assert len(record.output_token_timestamps) == 1
+
+    asyncio.run(run())
+
+
+def test_request_client_closes_owned_session_on_parser_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run() -> None:
+        factory = FakeClientSessionFactory(
+            FakeResponse(
+                status=200,
+                chunks=[b"data: {not-json}\n\n", b"data: [DONE]\n\n"],
+            )
+        )
+        monkeypatch.setattr(request_client_module, "_build_connector", lambda: None)
+        monkeypatch.setattr(request_client_module.aiohttp, "ClientSession", factory)
+        client = RequestClient(
+            base_url="http://unit-test",
+            endpoint="/v1/chat/completions",
+            model="fake-model",
+        )
+        with pytest.raises(json.JSONDecodeError):
+            await client.send_request(
+                SampleRequest(prompt="hello", prompt_len=5, expected_output_len=4),
+                request_id="req-005",
+                trial_id="trial-001",
+                scheduled_send_ts=0.0,
+            )
+        assert len(factory.instances) == 1
+        assert factory.instances[0].closed is True
+        assert client._session is None
 
     asyncio.run(run())

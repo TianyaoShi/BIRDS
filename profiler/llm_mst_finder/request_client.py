@@ -223,3 +223,7 @@ class RequestClient:
                 output_token_timestamps=output_token_timestamps,
                 metadata=sample_request.metadata,
             )
+        except Exception:
+            if self._provided_session is None:
+                await self.close()
+            raise

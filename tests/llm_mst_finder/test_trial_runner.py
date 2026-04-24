@@ -5,8 +5,10 @@ import json
 import time
 from pathlib import Path
 
+import pytest
+
 from llm_mst_finder.loadgen import cycling_request_source
-from llm_mst_finder.records import RequestRecord, SampleRequest, ServerMetricSample, TrialConfig
+from llm_mst_finder.records import RequestRecord, SampleRequest, ScheduledRequest, ServerMetricSample, TrialConfig
 from llm_mst_finder.trial_runner import TrialRunner
 
 
@@ -118,5 +120,92 @@ def test_trial_runner_runs_closed_loop_trial(tmp_path: Path) -> None:
         assert result.artifacts.request_records_path.exists()
         summary_payload = json.loads(result.artifacts.summary_path.read_text(encoding="utf-8"))
         assert summary_payload["config"]["trial_id"] == "trial-closed"
+
+    asyncio.run(run())
+
+
+def test_trial_runner_open_loop_send_rate_uses_send_timestamps_not_completion_tail(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeOpenLoopLoadGenerator:
+        def __init__(self, **kwargs) -> None:
+            del kwargs
+
+        async def run(
+            self,
+            request_source,
+            dispatch,
+            *,
+            duration_s: float,
+            start_ts: float | None = None,
+            should_abort=None,
+        ):
+            del duration_s, should_abort
+            assert start_ts is not None
+            first = ScheduledRequest(
+                request_index=0,
+                scheduled_send_ts=start_ts,
+                sample=request_source(),
+            )
+            second = ScheduledRequest(
+                request_index=1,
+                scheduled_send_ts=start_ts + 1.0,
+                sample=request_source(),
+            )
+            return [await dispatch(first), await dispatch(second)]
+
+    class TailHeavyRequestClient:
+        async def open(self) -> None:
+            return None
+
+        async def send_request(
+            self,
+            sample_request: SampleRequest,
+            *,
+            request_id: str,
+            trial_id: str,
+            scheduled_send_ts: float,
+        ) -> RequestRecord:
+            actual_send_ts = scheduled_send_ts
+            first_token_ts = actual_send_ts + 0.2
+            end_ts = actual_send_ts + 5.0
+            return RequestRecord(
+                request_id=request_id,
+                trial_id=trial_id,
+                scheduled_send_ts=scheduled_send_ts,
+                actual_send_ts=actual_send_ts,
+                first_token_ts=first_token_ts,
+                end_ts=end_ts,
+                success=True,
+                error=None,
+                prompt_len=sample_request.prompt_len,
+                expected_output_len=sample_request.expected_output_len,
+                actual_output_len=2,
+                ttft_s=first_token_ts - actual_send_ts,
+                e2e_s=end_ts - actual_send_ts,
+                tpot_s=end_ts - first_token_ts,
+                itl_s=[end_ts - first_token_ts],
+                output_token_timestamps=[first_token_ts, end_ts],
+                metadata=sample_request.metadata,
+            )
+
+    monkeypatch.setattr("llm_mst_finder.trial_runner.OpenLoopLoadGenerator", FakeOpenLoopLoadGenerator)
+
+    async def run() -> None:
+        runner = TrialRunner(TailHeavyRequestClient(), time_fn=lambda: 100.0)
+        config = TrialConfig(
+            trial_id="trial-rate",
+            mode="open-loop",
+            duration_s=2.0,
+            request_rate=1.0,
+            base_url="http://127.0.0.1:8000",
+            endpoint="/v1/completions",
+            model="fake-model",
+        )
+        source = cycling_request_source([SampleRequest(prompt="hello", prompt_len=5, expected_output_len=4)])
+        result = await runner.run_trial(config, request_source=source, output_dir=tmp_path / "trial-rate")
+        assert result.summary.wall_time_s == pytest.approx(6.0)
+        assert result.summary.actual_send_rate == pytest.approx(1.0)
 
     asyncio.run(run())

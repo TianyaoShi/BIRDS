@@ -66,7 +66,11 @@ def extract_text_from_chunk(endpoint: str, chunk: dict[str, Any]) -> str | None:
     endpoint_kind = detect_endpoint_kind(endpoint)
     if endpoint_kind == "chat":
         choices = chunk["choices"]
-        if not isinstance(choices, list) or not choices:
+        if not isinstance(choices, list):
+            raise TypeError("chat completion chunk choices must be a list")
+        if not choices:
+            if chunk.get("usage") is not None:
+                return None
             raise KeyError("chat completion chunk missing choices[0]")
         delta = choices[0]["delta"]
         content = delta.get("content")
@@ -77,7 +81,11 @@ def extract_text_from_chunk(endpoint: str, chunk: dict[str, Any]) -> str | None:
         return content
 
     choices = chunk["choices"]
-    if not isinstance(choices, list) or not choices:
+    if not isinstance(choices, list):
+        raise TypeError("completion chunk choices must be a list")
+    if not choices:
+        if chunk.get("usage") is not None:
+            return None
         raise KeyError("completion chunk missing choices[0]")
     text = choices[0]["text"]
     if not isinstance(text, str):

@@ -193,6 +193,11 @@ class TrialRunner:
         wall_time_s = run_end_ts - run_start_ts
         if wall_time_s <= 0:
             raise RuntimeError(f"wall_time_s must be positive, got {wall_time_s}")
+        actual_send_rate = self._calculate_actual_send_rate(
+            config=config,
+            request_records=records,
+            wall_time_s=wall_time_s,
+        )
 
         benchmark_metrics = calculate_benchmark_metrics(records, wall_time_s)
         scheduling_delays = [
@@ -213,7 +218,7 @@ class TrialRunner:
             started_requests=len(records),
             successful_requests=successful_requests,
             failed_requests=failed_requests,
-            actual_send_rate=len(records) / wall_time_s,
+            actual_send_rate=actual_send_rate,
             successful_completion_rate=successful_requests / wall_time_s,
             error_rate=failed_requests / len(records),
             mean_scheduling_delay_s=(
@@ -263,3 +268,28 @@ class TrialRunner:
         with path.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2, sort_keys=True)
             handle.write("\n")
+
+    @staticmethod
+    def _calculate_actual_send_rate(
+        *,
+        config: TrialConfig,
+        request_records: Sequence[RequestRecord],
+        wall_time_s: float,
+    ) -> float:
+        if config.mode != "open-loop":
+            return len(request_records) / wall_time_s
+        send_timestamps = [
+            record.actual_send_ts
+            for record in request_records
+            if record.actual_send_ts is not None
+        ]
+        if len(send_timestamps) < 2:
+            return 0.0
+        first_send_ts = min(send_timestamps)
+        last_send_ts = max(send_timestamps)
+        send_span_s = last_send_ts - first_send_ts
+        if send_span_s <= 0:
+            raise RuntimeError(
+                "open-loop actual_send_rate requires strictly increasing actual_send_ts"
+            )
+        return (len(send_timestamps) - 1) / send_span_s
