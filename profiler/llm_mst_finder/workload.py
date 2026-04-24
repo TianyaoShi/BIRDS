@@ -565,13 +565,27 @@ def generate_sample_requests(
     return samples
 
 
+def load_workload_samples_for_sampling_only(
+    path: str | Path,
+    *,
+    tokenizer: PromptTokenizer | None = None,
+) -> list[SampleRequest]:
+    """Sampling-only helper.
+
+    This function intentionally does not apply model-context validation.
+    Use prepare_workload_for_trial() for trial execution paths.
+    """
+    config = load_workload_config(path)
+    return generate_sample_requests(config, tokenizer=tokenizer)
+
+
 def load_workload_samples(
     path: str | Path,
     *,
     tokenizer: PromptTokenizer | None = None,
 ) -> list[SampleRequest]:
-    config = load_workload_config(path)
-    return generate_sample_requests(config, tokenizer=tokenizer)
+    """Backward-compatible alias for sampling-only behavior."""
+    return load_workload_samples_for_sampling_only(path, tokenizer=tokenizer)
 
 
 def _build_workload_metadata(
@@ -596,6 +610,9 @@ def _build_workload_metadata(
             "tokenizer": config.context_policy.tokenizer,
             "over_limit": config.context_policy.over_limit,
             "truncation_side": config.context_policy.truncation_side,
+            "unsafe_allow_workload_tokenizer_for_real_datasets": (
+                config.context_policy.unsafe_allow_workload_tokenizer_for_real_datasets
+            ),
             "total_samples": report.total_samples if report is not None else sample_count,
             "kept_samples": report.kept_samples if report is not None else sample_count,
             "skipped_samples": report.skipped_samples if report is not None else 0,
@@ -630,6 +647,17 @@ def prepare_workload_for_trial(
                 context_validation_report=None,
             ),
             context_validation_report=None,
+        )
+
+    if (
+        requires_context_validation
+        and config.context_policy.tokenizer_source == "workload_tokenizer"
+        and not config.context_policy.unsafe_allow_workload_tokenizer_for_real_datasets
+    ):
+        raise ValueError(
+            "real dataset workloads must not use context_policy.tokenizer_source=workload_tokenizer. "
+            "Set context_policy.unsafe_allow_workload_tokenizer_for_real_datasets=true only for "
+            "explicitly unsafe test-only runs."
         )
 
     model_tokenizer = resolve_model_tokenizer_for_policy(

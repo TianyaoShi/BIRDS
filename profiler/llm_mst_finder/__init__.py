@@ -27,6 +27,7 @@ from .workload import (
     generate_sample_requests,
     load_workload_config,
     load_workload_samples,
+    load_workload_samples_for_sampling_only,
     prepare_workload_for_trial,
 )
 
@@ -56,6 +57,7 @@ __all__ = [
     "generate_sample_requests",
     "load_workload_config",
     "load_workload_samples",
+    "load_workload_samples_for_sampling_only",
     "prepare_workload_for_trial",
     "parse_context_policy",
     "parse_prometheus_text",

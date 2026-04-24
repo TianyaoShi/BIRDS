@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -23,6 +25,7 @@ class ContextPolicy:
     tokenizer: str | None = None
     over_limit: str = "fail"
     truncation_side: str = "left"
+    unsafe_allow_workload_tokenizer_for_real_datasets: bool = False
 
     def __post_init__(self) -> None:
         if self.max_model_len <= 0:
@@ -41,6 +44,10 @@ class ContextPolicy:
             raise ValueError("context_policy.truncation_side must be one of {'left', 'right'}")
         if self.tokenizer_source == "explicit" and not self.tokenizer:
             raise ValueError("context_policy.tokenizer is required when tokenizer_source=explicit")
+        if not isinstance(self.unsafe_allow_workload_tokenizer_for_real_datasets, bool):
+            raise ValueError(
+                "context_policy.unsafe_allow_workload_tokenizer_for_real_datasets must be a boolean"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,7 +111,14 @@ def parse_context_policy(payload: Any | None) -> ContextPolicy | None:
     _check_allowed_keys(
         policy_payload,
         "context_policy",
-        {"max_model_len", "tokenizer_source", "tokenizer", "over_limit", "truncation_side"},
+        {
+            "max_model_len",
+            "tokenizer_source",
+            "tokenizer",
+            "over_limit",
+            "truncation_side",
+            "unsafe_allow_workload_tokenizer_for_real_datasets",
+        },
     )
     if "max_model_len" not in policy_payload:
         raise ValueError("context_policy.max_model_len is required")
@@ -121,13 +135,38 @@ def parse_context_policy(payload: Any | None) -> ContextPolicy | None:
     truncation_side = policy_payload.get("truncation_side", "left")
     if not isinstance(truncation_side, str):
         raise ValueError("context_policy.truncation_side must be a string")
+    unsafe_override = policy_payload.get("unsafe_allow_workload_tokenizer_for_real_datasets", False)
+    if not isinstance(unsafe_override, bool):
+        raise ValueError(
+            "context_policy.unsafe_allow_workload_tokenizer_for_real_datasets must be a boolean"
+        )
     return ContextPolicy(
         max_model_len=max_model_len,
         tokenizer_source=tokenizer_source,
         tokenizer=tokenizer,
         over_limit=over_limit,
         truncation_side=truncation_side,
+        unsafe_allow_workload_tokenizer_for_real_datasets=unsafe_override,
     )
+
+
+@contextmanager
+def _force_hf_offline_mode():
+    prior_hf_hub_offline = os.environ.get("HF_HUB_OFFLINE")
+    prior_transformers_offline = os.environ.get("TRANSFORMERS_OFFLINE")
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    try:
+        yield
+    finally:
+        if prior_hf_hub_offline is None:
+            os.environ.pop("HF_HUB_OFFLINE", None)
+        else:
+            os.environ["HF_HUB_OFFLINE"] = prior_hf_hub_offline
+        if prior_transformers_offline is None:
+            os.environ.pop("TRANSFORMERS_OFFLINE", None)
+        else:
+            os.environ["TRANSFORMERS_OFFLINE"] = prior_transformers_offline
 
 
 def _truncate_prompt_tokens(
@@ -277,11 +316,12 @@ def resolve_model_tokenizer_for_policy(
             "vLLM tokenizer utilities are unavailable; cannot resolve "
             "context_policy.tokenizer_source=vllm_model_config"
         ) from exc
-    tokenizer = get_tokenizer(
-        tokenizer_name=resolved_name,
-        tokenizer_mode="auto",
-        trust_remote_code=False,
-    )
+    with _force_hf_offline_mode():
+        tokenizer = get_tokenizer(
+            tokenizer_name=resolved_name,
+            tokenizer_mode="auto",
+            trust_remote_code=False,
+        )
     if not hasattr(tokenizer, "encode"):
         raise TypeError("resolved tokenizer does not implement encode(text)")
     return tokenizer

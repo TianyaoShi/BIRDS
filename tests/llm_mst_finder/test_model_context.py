@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+import sys
+import types
+
 import pytest
 
 from llm_mst_finder.model_context import (
@@ -131,3 +135,51 @@ def test_resolve_model_tokenizer_missing_workload_tokenizer_raises() -> None:
         match="tokenizer_source=workload_tokenizer requires workload_tokenizer",
     ):
         resolve_model_tokenizer_for_policy(policy)
+
+
+def test_parse_context_policy_parses_unsafe_override_flag() -> None:
+    policy = parse_context_policy(
+        {
+            "max_model_len": 8192,
+            "tokenizer_source": "workload_tokenizer",
+            "unsafe_allow_workload_tokenizer_for_real_datasets": True,
+        }
+    )
+    assert policy is not None
+    assert policy.unsafe_allow_workload_tokenizer_for_real_datasets is True
+
+
+def test_resolve_model_tokenizer_vllm_forces_offline_env(monkeypatch) -> None:
+    observed: dict[str, str | None] = {}
+
+    class FakeTokenizer:
+        def encode(self, text: str) -> list[int]:
+            return [len(text)]
+
+    def fake_get_tokenizer(*, tokenizer_name: str, tokenizer_mode: str, trust_remote_code: bool):
+        del tokenizer_name, tokenizer_mode, trust_remote_code
+        observed["HF_HUB_OFFLINE"] = os.environ.get("HF_HUB_OFFLINE")
+        observed["TRANSFORMERS_OFFLINE"] = os.environ.get("TRANSFORMERS_OFFLINE")
+        return FakeTokenizer()
+
+    fake_vllm_module = types.ModuleType("vllm")
+    fake_transformers_utils = types.ModuleType("vllm.transformers_utils")
+    fake_tokenizer_module = types.ModuleType("vllm.transformers_utils.tokenizer")
+    fake_tokenizer_module.get_tokenizer = fake_get_tokenizer
+    fake_transformers_utils.tokenizer = fake_tokenizer_module
+    fake_vllm_module.transformers_utils = fake_transformers_utils
+
+    monkeypatch.setitem(sys.modules, "vllm", fake_vllm_module)
+    monkeypatch.setitem(sys.modules, "vllm.transformers_utils", fake_transformers_utils)
+    monkeypatch.setitem(sys.modules, "vllm.transformers_utils.tokenizer", fake_tokenizer_module)
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+
+    policy = ContextPolicy(max_model_len=4096, tokenizer_source="vllm_model_config")
+    tokenizer = resolve_model_tokenizer_for_policy(policy, model_name="fake-model")
+
+    assert tokenizer.encode("abc") == [3]
+    assert observed["HF_HUB_OFFLINE"] == "1"
+    assert observed["TRANSFORMERS_OFFLINE"] == "1"
+    assert os.environ.get("HF_HUB_OFFLINE") is None
+    assert os.environ.get("TRANSFORMERS_OFFLINE") is None
