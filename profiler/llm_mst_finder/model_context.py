@@ -310,12 +310,15 @@ def resolve_model_tokenizer_for_policy(
             "context_policy.tokenizer or model_name"
         )
     try:
-        from vllm.transformers_utils.tokenizer import get_tokenizer
-    except ImportError as exc:
-        raise RuntimeError(
-            "vLLM tokenizer utilities are unavailable; cannot resolve "
-            "context_policy.tokenizer_source=vllm_model_config"
-        ) from exc
+        from vllm.tokenizers import get_tokenizer
+    except ImportError:
+        try:
+            from vllm.transformers_utils.tokenizer import get_tokenizer
+        except ImportError as exc:
+            raise RuntimeError(
+                "vLLM tokenizer utilities are unavailable; cannot resolve "
+                "context_policy.tokenizer_source=vllm_model_config"
+            ) from exc
     with _force_hf_offline_mode():
         tokenizer = get_tokenizer(
             tokenizer_name=resolved_name,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import time
 from typing import Any
 
@@ -19,15 +20,19 @@ from .vllm_compat import (
 
 
 def _build_connector() -> aiohttp.TCPConnector:
+    connector_kwargs = {
+        "limit": 2000,
+        "limit_per_host": 1000,
+        "ttl_dns_cache": 300,
+        "use_dns_cache": True,
+        "keepalive_timeout": 60,
+        "force_close": False,
+        "ssl": False,
+    }
+    if sys.version_info < (3, 12, 13):
+        connector_kwargs["enable_cleanup_closed"] = True
     return aiohttp.TCPConnector(
-        limit=2000,
-        limit_per_host=1000,
-        ttl_dns_cache=300,
-        use_dns_cache=True,
-        keepalive_timeout=60,
-        enable_cleanup_closed=True,
-        force_close=False,
-        ssl=False,
+        **connector_kwargs,
     )
 
 
