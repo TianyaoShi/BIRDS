@@ -1,0 +1,135 @@
+# Implementation Order
+
+Use this order for dispatch and integration. It intentionally collapses some generated design into fewer integration milestones, while preserving the `Agent*.md` files as scoped briefs.
+
+## Milestone 0 - Package Skeleton And Contracts
+
+Owner: lead or Agent 1 before parallel work starts.
+
+Deliver:
+
+```text
+profiler/llm_mst_finder/__init__.py
+profiler/llm_mst_finder/records.py
+profiler/llm_mst_finder/cli.py
+tests/llm_mst_finder/
+```
+
+Define dataclasses and stable function boundaries first. Other agents must import these contracts instead of inventing local duplicates.
+
+## Milestone 1 - Single Trial Runner
+
+Agents: 1, 2, 3, 4.
+
+Deliver:
+
+```bash
+PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
+/local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli run-trial --mode open-loop --request-rate X
+
+PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
+/local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli run-trial --mode closed-loop --concurrency N
+```
+
+Must save:
+
+```text
+request_records.jsonl
+server_metrics.jsonl
+windows.csv
+summary.json
+```
+
+No adaptive search yet. If a live server is unavailable, unit tests should still cover the load generator, record serialization, parser, and window aggregation with synthetic data.
+
+## Milestone 2 - Trial Analysis
+
+Agents: 5 and 6.
+
+Deliver:
+
+```bash
+PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
+/local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli analyze --trial-dir results/trial_001
+```
+
+Must output:
+
+```text
+stable | unstable | slo_violation | uncertain | aborted_safety
+reasons
+bottleneck_class
+confidence
+```
+
+## Milestone 3 - Hybrid Search
+
+Agent: 7.
+
+Deliver:
+
+```bash
+PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
+/local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli search --search-mode hybrid
+```
+
+Must output final max sustainable rate under the supplied workload and server configuration.
+
+## Milestone 4 - Reporting And Optional Config Sweep
+
+Agents: 8 and 9.
+
+Deliver:
+
+```bash
+PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
+/local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli report --result-dir results/run_001
+```
+
+Also support metadata-only config sweeps:
+
+```bash
+PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
+/local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli config-sweep --config-list server_configs.yaml
+```
+
+V1 config sweep does not launch, health-check, or restart vLLM. The user starts the server for each config and the tool records the declared metadata.
+
+## Milestone 5 - Test Hardening
+
+Agent: 10 plus lead integration.
+
+Required checks:
+
+```bash
+PYTHONPATH=/local/scratch/a/shi676/arr26/profiler /local/scratch/a/shi676/.venv/bin/python -m compileall profiler/llm_mst_finder tests/llm_mst_finder
+PYTHONPATH=/local/scratch/a/shi676/arr26/profiler /local/scratch/a/shi676/.venv/bin/python -m pytest tests/llm_mst_finder -q
+```
+
+Add live-server smoke tests only behind an explicit opt-in marker or environment variable.
+
+## Redundancy Removed From Generated Plan
+
+- Use `run-trial`, `analyze`, `search`, `report`, and `config-sweep` subcommands only. Do not add separate `profile_once`, `profile_search`, or `analyze_trial` executables.
+- Keep `TrialRunner` as the shared orchestrator for open-loop and closed-loop trials.
+- Keep dataclasses in `records.py`; do not redefine request/window/result schemas in each module.
+- Keep Prometheus text parsing inside `metrics_polling.py` unless it becomes large enough to justify `prometheus_parser.py`.
+- Treat plotting as report support, not a separate runtime path.
+- Keep server launching/restarting out of v1.
+
+## Agent Model And Reasoning Recommendations
+
+| Agent | Scope | Suggested model | Reasoning effort |
+| --- | --- | --- | --- |
+| Agent 1 | Async client, open/closed loadgen, records adapter | `gpt-5.3-codex` | high |
+| Agent 2 | Workload YAML, deterministic sampling, token lengths | `gpt-5.3-codex` | medium |
+| Agent 3 | Prometheus polling and metric normalization | `gpt-5.3-codex` | medium |
+| Agent 4 | Fixed-window aggregation and CSV/summary output | `gpt-5.3-codex` | high |
+| Agent 5 | Stability classification and trend rules | `GPT-5.5` | high |
+| Agent 6 | Bottleneck classification and evidence strings | `GPT-5.5` | high |
+| Agent 7 | Hybrid search controller and convergence tests | `GPT-5.5` | high |
+| Agent 8 | Metadata-only config sweep | `gpt-5.3-codex` | medium |
+| Agent 9 | Markdown/JSON reporting and plots | `gpt-5.4` | medium |
+| Agent 10 | Unit tests, fixtures, import/CLI checks | `gpt-5.3-codex` | high |
+
+Use the lead agent for final integration review with `GPT-5.5` at high reasoning effort. Reserve `xhigh` for a focused debugging pass only if stability/search behavior is contradictory after tests.
