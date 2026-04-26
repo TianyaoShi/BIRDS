@@ -115,7 +115,7 @@ not:
 absolute max sustainable rate of the model/GPU
 ```
 
-unless a configuration sweep was performed.
+Comparisons across server configurations may be reported only when those result directories were produced by an external orchestrator and carry enough metadata to prove they are comparable. MST finder itself must not claim to have searched server configuration space.
 
 5. Separate invalid workload samples from throughput instability.
 

@@ -46,7 +46,7 @@ No adaptive search yet. If a live server is unavailable, unit tests should still
 
 ## Milestone 1.5 - Workload/Model Context Compatibility
 
-Agents: 2 with Agent 1 integration; Agent 10 tests.
+Agents: 2 with Agent 1 integration. The lead agent owns final integrated test review.
 
 Deliver:
 
@@ -109,9 +109,9 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 
 Must output final max sustainable rate under the supplied workload and server configuration.
 
-## Milestone 4 - Reporting And Optional Config Sweep
+## Milestone 4 - Reporting And Result Comparison
 
-Agents: 8 and 9.
+Agent: 9.
 
 Deliver:
 
@@ -120,18 +120,11 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 /local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli report --result-dir results/run_001
 ```
 
-Also support metadata-only config sweeps:
-
-```bash
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli config-sweep --config-list server_configs.yaml
-```
-
-V1 config sweep does not launch, health-check, or restart vLLM. The user starts the server for each config and the tool records the declared metadata.
+Reporting may compare multiple completed result directories when they were produced by an external orchestrator, but MST finder does not own server configuration search. There is no `config-sweep` module or CLI in this package. Server restarts, GPU allocation, dataset/model scheduling, and non-default vLLM configuration experiments belong to an upper orchestration layer.
 
 ## Milestone 5 - Test Hardening
 
-Agent: 10 plus lead integration.
+Owner: each implementation agent for its own slice, plus lead integration review. Do not dispatch a separate Agent 10.
 
 Required checks:
 
@@ -144,7 +137,7 @@ Add live-server smoke tests only behind an explicit opt-in marker or environment
 
 ## Redundancy Removed From Generated Plan
 
-- Use `run-trial`, `analyze`, `search`, `report`, and `config-sweep` subcommands only. Do not add separate `profile_once`, `profile_search`, or `analyze_trial` executables.
+- Use `run-trial`, `analyze`, `search`, and `report` subcommands only. Do not add separate `profile_once`, `profile_search`, `analyze_trial`, or `config-sweep` executables.
 - Keep `TrialRunner` as the shared orchestrator for open-loop and closed-loop trials.
 - Keep dataclasses in `records.py`; do not redefine request/window/result schemas in each module.
 - Keep Prometheus text parsing inside `metrics_polling.py` unless it becomes large enough to justify `prometheus_parser.py`.
@@ -162,8 +155,8 @@ Add live-server smoke tests only behind an explicit opt-in marker or environment
 | Agent 5 | Stability classification and trend rules | `GPT-5.5` | high |
 | Agent 6 | Bottleneck classification and evidence strings | `GPT-5.5` | high |
 | Agent 7 | Hybrid search controller and convergence tests | `GPT-5.5` | high |
-| Agent 8 | Metadata-only config sweep | `gpt-5.3-codex` | medium |
-| Agent 9 | Markdown/JSON reporting and plots | `gpt-5.4` | medium |
-| Agent 10 | Unit tests, fixtures, import/CLI checks | `gpt-5.3-codex` | high |
+| Agent 8 | Retired: metadata-only config sweep is out of scope | do not dispatch | n/a |
+| Agent 9 | Markdown/JSON reporting, plots, and optional comparison of externally produced result dirs | `gpt-5.4` | medium |
+| Agent 10 | Retired: lead agent owns final integrated testing | do not dispatch | n/a |
 
 Use the lead agent for final integration review with `GPT-5.5` at high reasoning effort. Reserve `xhigh` for a focused debugging pass only if stability/search behavior is contradictory after tests.

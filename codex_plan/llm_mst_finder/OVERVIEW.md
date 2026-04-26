@@ -18,7 +18,7 @@ Live ShareGPT testing exposed an important boundary: workload/model context comp
 - Reuse `profiler/gpu_monitor.py` only behind an explicit GPU-monitor flag. If GPU monitoring is requested and NVML is unavailable, fail the run instead of silently reporting zero power.
 - Omit structured-output/xgrammar benchmark logic from this package.
 - Use one CLI module: `llm_mst_finder.cli`. Do not create a parallel `profile.py` CLI.
-- V1 config sweep records externally supplied server metadata only. Do not add automatic vLLM launch, health checks, or restart logic in the first implementation.
+- MST finder records and reports externally supplied or discovered server metadata, but it does not perform server configuration search. Do not add automatic vLLM launch, health checks, restart logic, or metadata-only `config-sweep` logic.
 - Default tests must not require a live server, GPU, Hugging Face download, or network access.
 - Do not rely on config-level `tokenizer: whitespace` for production context validation. Real workload validation must use the serving/model-compatible tokenizer, ideally through vLLM-compatible tokenizer utilities when available.
 
@@ -27,8 +27,7 @@ Implement milestones:
 2. validate workload/model context compatibility before real dataset trials;
 3. analyze one trial for stability and bottleneck class;
 4. hybrid search for max sustainable rate;
-5. optional metadata-only config sweep over max_num_seqs and max_num_batched_tokens;
-6. Markdown/JSON report and plots.
+5. Markdown/JSON report and plots, including optional comparison of externally produced result directories.
 
 Use robust windowed drift criteria:
 - arrival vs completion rate;

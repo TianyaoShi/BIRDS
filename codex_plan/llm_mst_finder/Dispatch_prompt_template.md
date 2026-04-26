@@ -51,5 +51,9 @@ Agent 5 scope: stability classification only after trial validity is established
 ```
 
 ```text
-Agent 10 scope: offline tests, CLI import checks, fail-fast assertions, and synthetic-only use of toy tokenizers such as whitespace.
+Agent 9 scope: reporting.py/plotting.py, final Markdown/JSON reports, plots from saved artifacts, and optional comparison of externally produced result directories. Do not implement config-sweep, server lifecycle control, or GPU orchestration.
 ```
+
+Retired scopes:
+- Agent 8 is retired; metadata-only config-sweep is out of scope.
+- Agent 10 is retired; each implementation agent owns slice tests and the lead owns integrated validation.

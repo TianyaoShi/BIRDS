@@ -1,7 +1,7 @@
-# Implement plotting and reporting
+# Implement Reporting And Result Comparison
 ## Goal
 
-Generate useful artifacts.
+Generate useful artifacts from saved MST finder outputs. Reports consume existing trial/search/analysis artifacts; they do not rerun trials, mutate search results, launch servers, or perform server configuration search.
 
 ## Files
 
@@ -33,11 +33,12 @@ request rate vs output tok/s
 request rate vs queue drift
 ```
 
-For config sweep:
+For externally orchestrated result comparison:
 ```
-max sustainable req/s by config
-max output tok/s by config
-bottleneck class by config
+max sustainable req/s by result directory
+max output tok/s by result directory
+bottleneck class by result directory
+server metadata comparison table
 ```
 ## Report sections
 
@@ -52,7 +53,7 @@ final_report.md should include:
 7. Max no-drift request rate
 8. Max SLO-satisfying request rate
 9. Bottleneck diagnosis
-10. Recommended next config sweep
+10. Recommended next orchestration action
 11. Limitations
 
 ## Local consistency constraints
@@ -61,4 +62,6 @@ final_report.md should include:
 + Missing plots should fail report generation unless plots are explicitly disabled.
 + Markdown and JSON reports must agree on headline rates, bottleneck class, confidence, and trial statuses.
 + Reports must include `context_policy`, tokenizer source, max model length, and skipped/truncated sample counts. If a trial was `invalid_workload`, make that prominent and do not present its rate as an overload boundary.
++ Result comparison is metadata validation and presentation only. Do not add `config-sweep`, server restart, health-check, or GPU orchestration logic.
++ Multiple result directories are comparable only when workload identity, context policy, SLOs, duration, search settings, model id, and declared server metadata are present. If comparability cannot be proven, fail report generation or mark the comparison as invalid explicitly; do not rank incomparable runs.
 + Follow `Rules.md` for `/local/scratch/a/shi676/.venv`, `PYTHONPATH`, and fail-fast behavior.
