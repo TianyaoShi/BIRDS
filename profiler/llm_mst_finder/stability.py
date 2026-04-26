@@ -471,6 +471,9 @@ def _present_values(windows: Sequence[WindowSummary], field_name: str) -> list[f
 
 def _missing_optional_server_fields(windows: Sequence[WindowSummary]) -> list[str]:
     missing: list[str] = []
+    has_kv_pressure_fields = bool(_present_values(windows, "kv_cache_usage_max")) and bool(
+        _present_values(windows, "preemptions_delta")
+    )
     for field_name in (
         "num_running_mean",
         "num_waiting_mean",
@@ -479,6 +482,8 @@ def _missing_optional_server_fields(windows: Sequence[WindowSummary]) -> list[st
         "kv_cache_usage_max",
         "preemptions_delta",
     ):
+        if field_name == "num_swapped_mean" and has_kv_pressure_fields:
+            continue
         if all(getattr(window, field_name) is None for window in windows):
             missing.append(field_name)
     return missing

@@ -10,6 +10,8 @@ from typing import Callable, Iterable, Sequence
 from .records import RequestRecord, ServerMetricSample, WindowSummary
 
 _PREEMPTION_COUNTER_NAMES = (
+    "vllm:num_preemptions",
+    "vllm_num_preemptions",
     "vllm:num_preemptions_total",
     "vllm_num_preemptions_total",
     "vllm:request_preemptions_total",

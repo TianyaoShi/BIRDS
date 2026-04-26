@@ -275,6 +275,7 @@ def _kv_cache_candidate(
     config: BottleneckConfig,
 ) -> _Candidate:
     evidence: list[str] = []
+    score = 0
     kv_max = _max_present(windows, "kv_cache_usage_max")
     swapped_max = _max_present(windows, "num_swapped_mean")
     preemptions_total = _sum_present(windows, "preemptions_delta")
@@ -283,15 +284,22 @@ def _kv_cache_candidate(
     tpot_trend = _trend_optional(windows, "tpot_p90_ms")
 
     if kv_max is not None and kv_max >= config.kv_cache_saturation_fraction:
+        score += 2
         evidence.append(
-            "KV cache usage reached saturation range: "
+            "vLLM kv_cache_usage_perc reached saturation range: "
             f"kv_cache_usage_max={kv_max:.3f} >= {config.kv_cache_saturation_fraction:.3f}"
         )
     if swapped_max is not None and swapped_max > 0.0:
-        evidence.append(f"server reported swapped requests: num_swapped_mean max={swapped_max:.3f}")
+        score += 1
+        evidence.append(
+            "legacy swapped-request metric added KV pressure evidence: "
+            f"num_swapped_mean max={swapped_max:.3f}"
+        )
     if preemptions_total is not None and preemptions_total > 0.0:
-        evidence.append(f"preemptions increased after warmup: total={preemptions_total:.3f}")
+        score += 2
+        evidence.append(f"vLLM num_preemptions increased after warmup: total={preemptions_total:.3f}")
     if e2e_trend is not None and _is_positive_drift(e2e_trend, config):
+        score += 1
         evidence.append(
             "E2E p99 drifted upward while KV pressure signals were present: "
             f"relative increase={e2e_trend.relative_increase:.3f}"
@@ -302,8 +310,9 @@ def _kv_cache_candidate(
         and _is_positive_drift(ttft_trend, config)
         and _is_positive_drift(tpot_trend, config)
     ):
+        score += 1
         evidence.append("both TTFT p90 and TPOT p90 drifted upward")
-    return _Candidate("kv_cache", len(evidence), evidence)
+    return _Candidate("kv_cache", score, evidence)
 
 
 def _scheduler_candidate(
@@ -555,15 +564,17 @@ def _missing_evidence(
     for field_name in field_names:
         if not _present_values(windows, field_name):
             missing.append(f"{field_name} missing; confidence lowered")
-    if bottleneck_class in {None, "scheduler_cap", "decode_bandwidth", "mixed"} and (
+    if bottleneck_class in {None, "scheduler_cap", "mixed"} and (
         metadata.max_num_seqs is None
     ):
-        missing.append("max_num_seqs metadata was not supplied; scheduler-cap evidence limited")
+        missing.append(
+            "max_num_seqs metadata was not supplied; scheduler-cap diagnosis requires explicit serving metadata"
+        )
     if bottleneck_class in {None, "prefill_compute_or_token_budget", "mixed"} and (
         metadata.max_num_batched_tokens is None
     ):
         missing.append(
-            "max_num_batched_tokens metadata was not supplied; token-budget evidence limited"
+            "max_num_batched_tokens metadata was not supplied; token-budget diagnosis requires explicit serving metadata"
         )
     return missing
 
@@ -592,7 +603,6 @@ def _missing_fields_for_class(bottleneck_class: BottleneckClass | None) -> tuple
     if bottleneck_class == "kv_cache":
         return (
             "kv_cache_usage_max",
-            "num_swapped_mean",
             "preemptions_delta",
             "e2e_p99_ms",
         )

@@ -199,6 +199,16 @@ def test_missing_server_metrics_lowers_confidence_but_does_not_block_classificat
     assert any("server-side evidence missing" in reason for reason in result.reasons)
 
 
+def test_missing_legacy_num_swapped_does_not_lower_confidence_when_kv_and_preemptions_present() -> None:
+    windows = [_window(idx, num_swapped_mean=None) for idx in range(6)]
+
+    result = classify_stability(windows)
+
+    assert result.status == "stable"
+    assert result.confidence == "high"
+    assert not any("num_swapped_mean" in reason for reason in result.reasons)
+
+
 def test_missing_latency_metrics_without_other_signal_is_uncertain() -> None:
     windows = [
         _window(

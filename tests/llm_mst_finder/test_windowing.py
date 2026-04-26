@@ -315,3 +315,61 @@ def test_fixed_window_aggregator_rejects_counter_regression() -> None:
                 _metric_sample(ts=0.9, prompt_tokens_total=9.0),
             ],
         )
+
+
+def test_fixed_window_aggregator_accepts_current_vllm_num_preemptions_name() -> None:
+    aggregator = FixedWindowAggregator(window_s=1.0)
+
+    windows = aggregator.summarize(
+        trial_id="trial-window",
+        request_records=[
+            _request_record(
+                request_id="req-0",
+                actual_send_ts=0.0,
+                first_token_ts=0.1,
+                end_ts=1.2,
+                actual_output_len=2,
+                ttft_s=0.1,
+                e2e_s=1.2,
+                tpot_s=1.1,
+                itl_s=[1.1],
+                output_token_timestamps=[0.1, 1.2],
+            )
+        ],
+        server_metrics=[
+            ServerMetricSample(
+                ts=0.05,
+                raw={
+                    "vllm:num_preemptions": [
+                        {"labels": {}, "value": 0.0, "timestamp_ms": None}
+                    ]
+                },
+                num_running=1.0,
+                num_waiting=0.0,
+                num_swapped=None,
+                kv_cache_usage=0.99,
+                prompt_tokens_total=None,
+                generation_tokens_total=None,
+                request_success_total=None,
+                request_abort_total=None,
+            ),
+            ServerMetricSample(
+                ts=1.05,
+                raw={
+                    "vllm:num_preemptions": [
+                        {"labels": {}, "value": 3.0, "timestamp_ms": None}
+                    ]
+                },
+                num_running=1.0,
+                num_waiting=0.0,
+                num_swapped=None,
+                kv_cache_usage=0.99,
+                prompt_tokens_total=None,
+                generation_tokens_total=None,
+                request_success_total=None,
+                request_abort_total=None,
+            ),
+        ],
+    )
+
+    assert windows[1].preemptions_delta == pytest.approx(3.0)

@@ -111,15 +111,16 @@ def test_does_not_infer_scheduler_cap_without_max_num_seqs_metadata() -> None:
     result = classify_bottleneck(windows)
 
     assert result.bottleneck_class == "unknown"
-    assert any("max_num_seqs metadata was not supplied" in item for item in result.evidence)
+    assert any("scheduler-cap diagnosis requires explicit serving metadata" in item for item in result.evidence)
 
 
-def test_classifies_kv_cache_pressure() -> None:
+def test_classifies_kv_cache_high_confidence_without_num_swapped_metric() -> None:
     windows = [
         _window(
             idx,
             kv_cache_usage_mean=0.95,
             kv_cache_usage_max=0.99,
+            num_swapped_mean=None,
             preemptions_delta=1.0 if idx == 4 else 0.0,
         )
         for idx in range(6)
@@ -128,8 +129,29 @@ def test_classifies_kv_cache_pressure() -> None:
     result = classify_bottleneck(windows)
 
     assert result.bottleneck_class == "kv_cache"
-    assert any("KV cache usage reached saturation" in item for item in result.evidence)
-    assert any("preemptions increased" in item for item in result.evidence)
+    assert result.confidence == "high"
+    assert any("kv_cache_usage_perc reached saturation" in item for item in result.evidence)
+    assert any("num_preemptions increased" in item for item in result.evidence)
+    assert not any("num_swapped_mean missing" in item for item in result.evidence)
+
+
+def test_num_swapped_is_additional_kv_cache_evidence_when_present() -> None:
+    windows = [
+        _window(
+            idx,
+            kv_cache_usage_mean=0.95,
+            kv_cache_usage_max=0.99,
+            num_swapped_mean=1.0 if idx == 4 else 0.0,
+            preemptions_delta=1.0 if idx == 4 else 0.0,
+        )
+        for idx in range(6)
+    ]
+
+    result = classify_bottleneck(windows)
+
+    assert result.bottleneck_class == "kv_cache"
+    assert result.confidence == "high"
+    assert any("legacy swapped-request metric added KV pressure evidence" in item for item in result.evidence)
 
 
 def test_slo_violation_precedes_server_bottleneck_inference() -> None:
