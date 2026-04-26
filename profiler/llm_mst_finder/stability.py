@@ -123,6 +123,8 @@ def classify_stability(
     reasons: list[str] = []
     confidence_penalties = 0
     unstable_reasons: list[str] = []
+    latency_drift_reasons: list[str] = []
+    has_server_pressure = False
 
     if completion_arrival_ratio < 1.0 - stability_config.completion_arrival_tolerance:
         unstable_reasons.append(
@@ -130,6 +132,7 @@ def classify_stability(
             f"completion/arrival={completion_arrival_ratio:.3f} "
             f"< {1.0 - stability_config.completion_arrival_tolerance:.3f}"
         )
+        has_server_pressure = True
 
     if aggregate_error_rate > stability_config.max_error_rate:
         unstable_reasons.append(
@@ -146,25 +149,10 @@ def classify_stability(
             f"Theil-Sen slope={outstanding_trend.slope:.3f}/s "
             f"> {stability_config.max_positive_backlog_slope:.3f}/s"
         )
+        has_server_pressure = True
     elif _has_repeated_increase([float(window.outstanding_end) for window in eval_windows]):
         unstable_reasons.append("outstanding requests grew across consecutive windows")
-
-    for field_name, display_name in (
-        ("ttft_p90_ms", "TTFT p90"),
-        ("ttft_p99_ms", "TTFT p99"),
-        ("tpot_p90_ms", "TPOT p90"),
-        ("tpot_p99_ms", "TPOT p99"),
-    ):
-        trend = _trend_for_optional(eval_windows, field_name)
-        if trend is None:
-            continue
-        key_metrics[f"{field_name}_slope_per_s"] = trend.slope
-        key_metrics[f"{field_name}_relative_increase"] = trend.relative_increase
-        if _is_positive_latency_drift(trend, stability_config):
-            unstable_reasons.append(
-                f"{display_name} drifted upward: relative increase="
-                f"{trend.relative_increase:.3f}"
-            )
+        has_server_pressure = True
 
     num_waiting_trend = _trend_for_optional(eval_windows, "num_waiting_mean")
     if num_waiting_trend is not None:
@@ -178,6 +166,7 @@ def classify_stability(
                 "server waiting requests drifted upward: "
                 f"Theil-Sen slope={num_waiting_trend.slope:.3f}/s"
             )
+            has_server_pressure = True
 
     swapped_values = _present_values(eval_windows, "num_swapped_mean")
     if swapped_values:
@@ -186,6 +175,7 @@ def classify_stability(
             unstable_reasons.append(
                 f"server reported swapped requests: max num_swapped_mean={max(swapped_values):.3f}"
             )
+            has_server_pressure = True
 
     kv_values = _present_values(eval_windows, "kv_cache_usage_max")
     if kv_values:
@@ -198,6 +188,7 @@ def classify_stability(
                     "KV cache usage approached saturation while rising: "
                     f"max={max(kv_values):.3f}"
                 )
+                has_server_pressure = True
 
     preemption_values = _present_values(eval_windows, "preemptions_delta")
     if preemption_values:
@@ -205,6 +196,34 @@ def classify_stability(
         key_metrics["preemptions_total"] = total_preemptions
         if total_preemptions > 0.0:
             unstable_reasons.append(f"preemptions observed after warmup: total={total_preemptions:.3f}")
+            has_server_pressure = True
+
+    for field_name, display_name in (
+        ("ttft_p90_ms", "TTFT p90"),
+        ("ttft_p99_ms", "TTFT p99"),
+        ("tpot_p90_ms", "TPOT p90"),
+        ("tpot_p99_ms", "TPOT p99"),
+    ):
+        trend = _trend_for_optional(eval_windows, field_name)
+        if trend is None:
+            continue
+        key_metrics[f"{field_name}_slope_per_s"] = trend.slope
+        key_metrics[f"{field_name}_relative_increase"] = trend.relative_increase
+        if _is_positive_latency_drift(trend, stability_config):
+            latency_drift_reasons.append(
+                f"{display_name} drifted upward: relative increase="
+                f"{trend.relative_increase:.3f}"
+            )
+
+    if latency_drift_reasons:
+        if has_server_pressure:
+            unstable_reasons.extend(latency_drift_reasons)
+        else:
+            confidence_penalties += 1
+            reasons.append(
+                "latency percentile drift was observed without server/backlog pressure; "
+                "not treated as overload evidence"
+            )
 
     missing_server_fields = _missing_optional_server_fields(eval_windows)
     if missing_server_fields:

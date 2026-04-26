@@ -95,7 +95,7 @@ def test_classifies_ttft_drift_as_unstable() -> None:
     windows = _stable_windows()
     ttft_values = [100.0, 100.0, 100.0, 125.0, 160.0, 230.0]
     windows = [
-        _window(idx, ttft_p90_ms=ttft, ttft_p99_ms=ttft + 20.0)
+        _window(idx, ttft_p90_ms=ttft, ttft_p99_ms=ttft + 20.0, num_waiting_mean=float(idx))
         for idx, ttft in enumerate(ttft_values)
     ]
 
@@ -109,7 +109,7 @@ def test_classifies_ttft_drift_as_unstable() -> None:
 def test_classifies_tpot_drift_as_unstable() -> None:
     tpot_values = [20.0, 20.0, 20.0, 24.0, 30.0, 44.0]
     windows = [
-        _window(idx, tpot_p90_ms=tpot, tpot_p99_ms=tpot + 5.0)
+        _window(idx, tpot_p90_ms=tpot, tpot_p99_ms=tpot + 5.0, num_waiting_mean=float(idx))
         for idx, tpot in enumerate(tpot_values)
     ]
 
@@ -117,6 +117,20 @@ def test_classifies_tpot_drift_as_unstable() -> None:
 
     assert result.status == "unstable"
     assert any("TPOT p90 drifted upward" in reason for reason in result.reasons)
+
+
+def test_latency_drift_without_server_pressure_is_stable_with_lower_confidence() -> None:
+    ttft_values = [100.0, 100.0, 100.0, 125.0, 160.0, 230.0]
+    windows = [
+        _window(idx, ttft_p90_ms=ttft, ttft_p99_ms=ttft + 20.0)
+        for idx, ttft in enumerate(ttft_values)
+    ]
+
+    result = classify_stability(windows)
+
+    assert result.status == "stable"
+    assert result.confidence == "medium"
+    assert any("without server/backlog pressure" in reason for reason in result.reasons)
 
 
 def test_classifies_completion_lag_and_backlog_as_unstable() -> None:
