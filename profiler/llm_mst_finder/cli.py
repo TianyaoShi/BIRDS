@@ -10,6 +10,7 @@ from typing import Sequence
 from .analysis import analyze_trial_dir, write_analysis_artifact
 from .loadgen import cycling_request_source
 from .metrics_polling import PrometheusMetricsPoller
+from .reporting import generate_report
 from .records import TrialConfig
 from .request_client import RequestClient
 from .search import SearchConfig, SearchController
@@ -118,6 +119,12 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--metrics-interval-s", type=float, default=1.0)
     search.add_argument("--window-s", type=float, default=10.0)
     search.set_defaults(handler=_search_command)
+
+    report = subparsers.add_parser("report")
+    report.add_argument("--result-dir", type=Path, required=True)
+    report.add_argument("--compare-result-dir", action="append", default=[])
+    report.add_argument("--disable-plots", action="store_true")
+    report.set_defaults(handler=_report_command)
     return parser
 
 
@@ -281,6 +288,16 @@ async def _search_command(args: argparse.Namespace) -> int:
         if metrics_poller is not None:
             await metrics_poller.close()
     print(json.dumps(result.to_dict(), sort_keys=True))
+    return 0
+
+
+async def _report_command(args: argparse.Namespace) -> int:
+    result = generate_report(
+        args.result_dir,
+        compare_result_dirs=args.compare_result_dir,
+        plots_enabled=not args.disable_plots,
+    )
+    print(json.dumps(result, sort_keys=True))
     return 0
 
 

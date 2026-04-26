@@ -205,3 +205,25 @@ def test_cli_analyze_writes_analysis_artifact(
     captured = json.loads(capsys.readouterr().out.strip())
     assert captured["trial_id"] == "cli-analyze-trial"
     assert captured["trial_validity"] == "valid"
+
+
+def test_cli_report_writes_final_artifacts(tmp_path: Path, capsys) -> None:
+    from tests.llm_mst_finder.test_reporting import _write_result_dir
+
+    result_dir = tmp_path / "report-run"
+    _write_result_dir(result_dir)
+
+    exit_code = main(
+        [
+            "report",
+            "--result-dir",
+            str(result_dir),
+            "--disable-plots",
+        ]
+    )
+
+    assert exit_code == 0
+    assert (result_dir / "final_report.json").is_file()
+    assert (result_dir / "final_report.md").is_file()
+    captured = json.loads(capsys.readouterr().out.strip())
+    assert captured["comparison_included"] is False

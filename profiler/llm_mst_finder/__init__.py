@@ -21,6 +21,8 @@ from .records import (
     TrialSummary,
     WindowSummary,
 )
+from .plotting import plot_result_comparison, plot_search_results, plot_trial_windows
+from .reporting import generate_report
 from .request_client import RequestClient
 from .search import (
     ClosedLoopScoutResult,
@@ -72,11 +74,15 @@ __all__ = [
     "TrialSummary",
     "WindowSummary",
     "cycling_request_source",
+    "generate_report",
     "generate_sample_requests",
     "load_workload_config",
     "load_workload_samples",
     "load_workload_samples_for_sampling_only",
     "prepare_workload_for_trial",
+    "plot_result_comparison",
+    "plot_search_results",
+    "plot_trial_windows",
     "parse_context_policy",
     "parse_prometheus_text",
     "parse_server_metrics_sample",
