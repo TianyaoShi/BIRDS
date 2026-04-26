@@ -139,6 +139,7 @@ class SearchResult:
     max_slo_satisfying_request_rate: float | None
     rate_precision: float
     confirmation_trial_id: str | None
+    termination_reason: str
     closed_loop: ClosedLoopScoutResult | None
     bottleneck_class: str
     confidence: Confidence
@@ -213,7 +214,23 @@ class SearchController:
             return result
 
         bounds = await self._find_open_loop_bracket(config, closed_loop_result)
+        if self._is_scheduler_config_limited(bounds):
+            result = self._build_scheduler_config_limited_result(
+                config=config,
+                bounds=bounds,
+                closed_loop_result=closed_loop_result,
+            )
+            self._finish_trace(result)
+            return result
         bounds = await self._binary_search(config, bounds)
+        if self._is_scheduler_config_limited(bounds):
+            result = self._build_scheduler_config_limited_result(
+                config=config,
+                bounds=bounds,
+                closed_loop_result=closed_loop_result,
+            )
+            self._finish_trace(result)
+            return result
         result = await self._confirm_result(config, bounds, closed_loop_result)
         self._finish_trace(result)
         return result
@@ -352,6 +369,8 @@ class SearchController:
                 raise SearchConvergenceError("binary search requires both low and high bounds")
             rate = (bounds.low_rate + bounds.high_rate) / 2.0
             await self._test_open_loop_rate(config, bounds, rate, purpose="open_loop_binary")
+            if self._is_scheduler_config_limited(bounds):
+                return bounds
         raise SearchConvergenceError(
             f"binary search did not reach rate_precision={config.rate_precision:.6g} "
             f"within {config.max_binary_steps} steps"
@@ -437,9 +456,43 @@ class SearchController:
             max_slo_satisfying_request_rate=bounds.low_rate,
             rate_precision=config.rate_precision,
             confirmation_trial_id=confirmation_trial_id,
+            termination_reason="confirmed_stable",
             closed_loop=closed_loop_result,
             bottleneck_class=bottleneck_class,
             confidence=confidence,
+            reasons=reasons,
+        )
+
+    def _build_scheduler_config_limited_result(
+        self,
+        *,
+        config: SearchConfig,
+        bounds: _SearchBounds,
+        closed_loop_result: ClosedLoopScoutResult | None,
+    ) -> SearchResult:
+        if bounds.low_rate is None or bounds.high_rate is None:
+            raise SearchConvergenceError("scheduler-config-limited result requires closed search bounds")
+        high_bottleneck = self._trace_bottleneck(bounds.high_trial_id)
+        if high_bottleneck is None:
+            raise SearchConvergenceError("scheduler-config-limited result requires high-bound bottleneck evidence")
+        reasons = [
+            "search stopped early because the high-bound trial identified a high-confidence "
+            "scheduler configuration bottleneck; external orchestration should adjust the vLLM "
+            "serving configuration before refining the rate bound"
+        ]
+        reasons.extend(f"high-bound evidence: {item}" for item in high_bottleneck["evidence"])
+
+        return SearchResult(
+            search_id=config.search_id,
+            search_mode=config.search_mode,
+            max_no_drift_request_rate=bounds.low_rate,
+            max_slo_satisfying_request_rate=bounds.low_rate,
+            rate_precision=config.rate_precision,
+            confirmation_trial_id=None,
+            termination_reason="scheduler_config_limited",
+            closed_loop=closed_loop_result,
+            bottleneck_class=str(high_bottleneck["bottleneck_class"]),
+            confidence=_as_confidence(high_bottleneck["confidence"]),
             reasons=reasons,
         )
 
@@ -457,6 +510,7 @@ class SearchController:
             max_slo_satisfying_request_rate=None,
             rate_precision=config.rate_precision,
             confirmation_trial_id=None,
+            termination_reason="closed_loop_only",
             closed_loop=closed_loop_result,
             bottleneck_class="unknown",
             confidence="medium" if closed_loop_result.peak_request_throughput is not None else "low",
@@ -626,6 +680,17 @@ class SearchController:
                 raise RuntimeError("search trace bottleneck evidence was corrupted")
             return bottleneck
         return None
+
+    def _is_scheduler_config_limited(self, bounds: _SearchBounds) -> bool:
+        if bounds.low_rate is None or bounds.high_rate is None:
+            return False
+        high_bottleneck = self._trace_bottleneck(bounds.high_trial_id)
+        if high_bottleneck is None:
+            return False
+        return (
+            high_bottleneck.get("bottleneck_class") == "scheduler_cap"
+            and high_bottleneck.get("confidence") == "high"
+        )
 
     def _stable_open_loop_point_below(self, rate: float) -> _StableOpenLoopPoint | None:
         best: _StableOpenLoopPoint | None = None

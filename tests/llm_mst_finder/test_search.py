@@ -82,6 +82,8 @@ def _analysis(
     *,
     validity: str = "valid",
     status: str = "stable",
+    bottleneck_class: str = "unknown",
+    bottleneck_confidence: str = "medium",
 ) -> TrialAnalysisResult:
     if validity != "valid":
         return TrialAnalysisResult(
@@ -102,8 +104,8 @@ def _analysis(
             key_metrics={},
         ),
         bottleneck=BottleneckResult(
-            bottleneck_class="unknown",
-            confidence="medium",
+            bottleneck_class=bottleneck_class,
+            confidence=bottleneck_confidence,
             evidence=["fixture bottleneck evidence"],
         ),
     )
@@ -220,5 +222,55 @@ def test_invalid_workload_trial_fails_without_updating_high_bound(tmp_path: Path
         assert trace["bounds"]["low_rate"] == 1.0
         assert trace["bounds"]["high_rate"] is None
         assert trace["result"] is None
+
+    asyncio.run(run())
+
+
+def test_open_loop_search_stops_early_on_high_confidence_scheduler_cap(tmp_path: Path) -> None:
+    class SchedulerCapAtHighRunner(FakeRunner):
+        async def run_trial(self, config: TrialConfig, *, request_source, output_dir: str | Path):
+            result = await super().run_trial(config, request_source=request_source, output_dir=output_dir)
+            if config.mode == "open-loop" and config.request_rate is not None and config.request_rate > self.sustainable_rate:
+                self.analyses[config.trial_id] = _analysis(
+                    config.trial_id,
+                    status="slo_violation",
+                    bottleneck_class="scheduler_cap",
+                    bottleneck_confidence="high",
+                )
+            return result
+
+    async def run() -> None:
+        runner = SchedulerCapAtHighRunner(sustainable_rate=1.0)
+        controller = SearchController(
+            runner,
+            request_source=_source(),
+            output_dir=tmp_path / "search-scheduler-cap",
+            analyze_trial=lambda trial_dir: runner.analyses[Path(trial_dir).name],
+            write_analysis=lambda trial_dir, result: Path(trial_dir) / "analysis.json",
+        )
+        result = await controller.search(
+            SearchConfig(
+                search_id="fixture-scheduler-cap",
+                search_mode="open-loop",
+                model="fake-model",
+                trial_duration_s=1.0,
+                rate_precision=0.01,
+                initial_request_rate=1.0,
+            )
+        )
+
+        assert result.max_no_drift_request_rate == 1.0
+        assert result.bottleneck_class == "scheduler_cap"
+        assert result.confidence == "high"
+        assert result.confirmation_trial_id is None
+        assert result.termination_reason == "scheduler_config_limited"
+        open_loop_calls = [call for call in runner.calls if call.mode == "open-loop"]
+        assert [call.request_rate for call in open_loop_calls] == [1.0, 2.0]
+        trace = json.loads(
+            (tmp_path / "search-scheduler-cap" / "search_trace.json").read_text(encoding="utf-8")
+        )
+        assert trace["result"]["termination_reason"] == "scheduler_config_limited"
+        assert trace["bounds"]["low_rate"] == 1.0
+        assert trace["bounds"]["high_rate"] == 2.0
 
     asyncio.run(run())

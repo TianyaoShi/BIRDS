@@ -64,9 +64,7 @@ def _load_result_bundle(result_dir: Path) -> dict[str, object]:
         trial_dir_value = event.get("trial_dir")
         if not isinstance(trial_dir_value, str):
             raise ValueError(f"search_trace.json.events[{event_idx}].trial_dir must be a string")
-        trial_dir = Path(trial_dir_value)
-        if not trial_dir.is_absolute():
-            trial_dir = result_dir / trial_dir
+        trial_dir = _resolve_trace_trial_dir(result_dir, trial_dir_value)
         summary_payload = _load_json_mapping(trial_dir / "summary.json")
         summary = _load_trial_summary_from_mapping(
             _require_mapping(summary_payload.get("summary"), "summary.json.summary")
@@ -101,6 +99,15 @@ def _load_result_bundle(result_dir: Path) -> dict[str, object]:
         "trials": trials,
         "server_config": server_config,
     }
+
+
+def _resolve_trace_trial_dir(result_dir: Path, trial_dir_value: str) -> Path:
+    trial_dir = Path(trial_dir_value)
+    if trial_dir.is_absolute():
+        return trial_dir
+    if trial_dir.is_dir():
+        return trial_dir
+    return result_dir / trial_dir
 
 
 def _build_report_payload(

@@ -147,6 +147,47 @@ def test_classifies_completion_lag_and_backlog_as_unstable() -> None:
     assert any("outstanding" in reason for reason in result.reasons)
 
 
+def test_drain_windows_do_not_rescue_active_backlog_growth() -> None:
+    windows = [_window(0), _window(1)]
+    windows.extend(
+        [
+            _window(2, outstanding_end=10),
+            _window(3, outstanding_end=20),
+            _window(4, outstanding_end=30),
+            _window(5, outstanding_end=40),
+            _window(6, arrivals=0, completions=20, outstanding_end=0),
+            _window(7, arrivals=0, completions=20, outstanding_end=0),
+        ]
+    )
+
+    result = classify_stability(windows)
+
+    assert result.status == "unstable"
+    assert result.key_metrics["active_eval_windows"] == 4
+    assert result.key_metrics["drain_eval_windows"] == 2
+    assert result.key_metrics["outstanding_end_slope_per_s"] > 0.0
+    assert any("outstanding requests drifted upward" in reason for reason in result.reasons)
+
+
+def test_drain_windows_do_not_count_toward_minimum_active_evidence() -> None:
+    windows = [_window(0), _window(1)]
+    windows.extend(
+        [
+            _window(2),
+            _window(3),
+            _window(4),
+            _window(5, arrivals=0, completions=10),
+            _window(6, arrivals=0, completions=10),
+        ]
+    )
+
+    result = classify_stability(windows)
+
+    assert result.status == "uncertain"
+    assert result.key_metrics["active_eval_windows"] == 3
+    assert any("insufficient post-warmup active-arrival windows" in reason for reason in result.reasons)
+
+
 def test_classifies_preemptions_as_unstable() -> None:
     windows = _stable_windows()
     windows[4] = _window(4, preemptions_delta=1.0)

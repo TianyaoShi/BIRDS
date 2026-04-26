@@ -83,7 +83,10 @@ def classify_stability(
         )
 
     eval_windows = validated[stability_config.warmup_windows :]
+    active_eval_windows = [window for window in eval_windows if window.arrivals > 0]
     key_metrics["eval_windows"] = float(len(eval_windows))
+    key_metrics["active_eval_windows"] = float(len(active_eval_windows))
+    key_metrics["drain_eval_windows"] = float(len(eval_windows) - len(active_eval_windows))
     if len(eval_windows) < stability_config.min_eval_windows:
         return StabilityResult(
             status="uncertain",
@@ -94,10 +97,20 @@ def classify_stability(
             ],
             key_metrics=key_metrics,
         )
+    if len(active_eval_windows) < stability_config.min_eval_windows:
+        return StabilityResult(
+            status="uncertain",
+            confidence="low",
+            reasons=[
+                "insufficient post-warmup active-arrival windows: "
+                f"{len(active_eval_windows)} < {stability_config.min_eval_windows}"
+            ],
+            key_metrics=key_metrics,
+        )
 
-    total_arrivals = sum(window.arrivals for window in eval_windows)
-    total_completions = sum(window.completions for window in eval_windows)
-    total_failures = sum(window.failures for window in eval_windows)
+    total_arrivals = sum(window.arrivals for window in active_eval_windows)
+    total_completions = sum(window.completions for window in active_eval_windows)
+    total_failures = sum(window.failures for window in active_eval_windows)
     terminal_events = total_completions + total_failures
 
     if total_arrivals <= 0:
@@ -140,7 +153,7 @@ def classify_stability(
             f"{stability_config.max_error_rate:.3f}"
         )
 
-    outstanding_trend = _trend_for_required(eval_windows, "outstanding_end")
+    outstanding_trend = _trend_for_required(active_eval_windows, "outstanding_end")
     key_metrics["outstanding_end_slope_per_s"] = outstanding_trend.slope
     key_metrics["outstanding_end_delta"] = outstanding_trend.delta
     if outstanding_trend.slope > stability_config.max_positive_backlog_slope:
@@ -150,15 +163,15 @@ def classify_stability(
             f"> {stability_config.max_positive_backlog_slope:.3f}/s"
         )
         has_server_pressure = True
-    elif _has_repeated_increase([float(window.outstanding_end) for window in eval_windows]):
+    elif _has_repeated_increase([float(window.outstanding_end) for window in active_eval_windows]):
         unstable_reasons.append("outstanding requests grew across consecutive windows")
         has_server_pressure = True
 
-    num_waiting_trend = _trend_for_optional(eval_windows, "num_waiting_mean")
+    num_waiting_trend = _trend_for_optional(active_eval_windows, "num_waiting_mean")
     if num_waiting_trend is not None:
         key_metrics["num_waiting_mean_slope_per_s"] = num_waiting_trend.slope
         key_metrics["num_waiting_mean_delta"] = num_waiting_trend.delta
-        waiting_values = _present_values(eval_windows, "num_waiting_mean")
+        waiting_values = _present_values(active_eval_windows, "num_waiting_mean")
         if num_waiting_trend.slope > stability_config.max_positive_backlog_slope or (
             _has_repeated_increase(waiting_values) and waiting_values[-1] > 0.0
         ):
@@ -168,7 +181,7 @@ def classify_stability(
             )
             has_server_pressure = True
 
-    swapped_values = _present_values(eval_windows, "num_swapped_mean")
+    swapped_values = _present_values(active_eval_windows, "num_swapped_mean")
     if swapped_values:
         key_metrics["num_swapped_mean_max"] = max(swapped_values)
         if max(swapped_values) > 0.0:
@@ -177,10 +190,10 @@ def classify_stability(
             )
             has_server_pressure = True
 
-    kv_values = _present_values(eval_windows, "kv_cache_usage_max")
+    kv_values = _present_values(active_eval_windows, "kv_cache_usage_max")
     if kv_values:
         key_metrics["kv_cache_usage_max"] = max(kv_values)
-        kv_trend = _trend_for_optional(eval_windows, "kv_cache_usage_max")
+        kv_trend = _trend_for_optional(active_eval_windows, "kv_cache_usage_max")
         if kv_trend is not None:
             key_metrics["kv_cache_usage_max_slope_per_s"] = kv_trend.slope
             if max(kv_values) >= 0.98 and kv_trend.slope > 0.0:
@@ -190,7 +203,7 @@ def classify_stability(
                 )
                 has_server_pressure = True
 
-    preemption_values = _present_values(eval_windows, "preemptions_delta")
+    preemption_values = _present_values(active_eval_windows, "preemptions_delta")
     if preemption_values:
         total_preemptions = sum(preemption_values)
         key_metrics["preemptions_total"] = total_preemptions
@@ -204,7 +217,7 @@ def classify_stability(
         ("tpot_p90_ms", "TPOT p90"),
         ("tpot_p99_ms", "TPOT p99"),
     ):
-        trend = _trend_for_optional(eval_windows, field_name)
+        trend = _trend_for_optional(active_eval_windows, field_name)
         if trend is None:
             continue
         key_metrics[f"{field_name}_slope_per_s"] = trend.slope
@@ -225,7 +238,7 @@ def classify_stability(
                 "not treated as overload evidence"
             )
 
-    missing_server_fields = _missing_optional_server_fields(eval_windows)
+    missing_server_fields = _missing_optional_server_fields(active_eval_windows)
     if missing_server_fields:
         confidence_penalties += 1
         reasons.append(
@@ -234,7 +247,7 @@ def classify_stability(
             + "; confidence lowered"
         )
 
-    missing_latency_evidence = _missing_latency_evidence(eval_windows)
+    missing_latency_evidence = _missing_latency_evidence(active_eval_windows)
     if missing_latency_evidence:
         confidence_penalties += 1
         reasons.append(
@@ -252,7 +265,7 @@ def classify_stability(
             key_metrics=key_metrics,
         )
 
-    slo_reasons = _slo_reasons(eval_windows, stability_config, key_metrics)
+    slo_reasons = _slo_reasons(active_eval_windows, stability_config, key_metrics)
     if slo_reasons:
         reasons.extend(slo_reasons)
         return StabilityResult(
@@ -271,7 +284,7 @@ def classify_stability(
         )
 
     reasons.append(
-        "post-warmup completion rate, backlog, latency drift, error rate, and SLO checks passed"
+        "post-warmup active-window completion rate, backlog, latency drift, error rate, and SLO checks passed"
     )
     return StabilityResult(
         status="stable",
