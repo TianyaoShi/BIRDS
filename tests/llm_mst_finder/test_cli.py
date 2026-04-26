@@ -4,6 +4,8 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
+
 from llm_mst_finder.cli import main
 from llm_mst_finder.records import RequestRecord, SampleRequest
 
@@ -157,6 +159,148 @@ def test_cli_run_trial_records_context_policy_metadata(
     request_records = (output_dir / "request_records.jsonl").read_text(encoding="utf-8").strip().splitlines()
     assert request_records
     assert all(json.loads(line)["prompt_len"] == 3 for line in request_records)
+
+
+def test_cli_run_trial_records_server_metadata(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr("llm_mst_finder.cli.RequestClient", StubRequestClient)
+    workload_path = FIXTURES_ROOT / "workloads" / "synthetic_fixed_512_128.yaml"
+    output_dir = tmp_path / "cli-server-metadata-trial"
+
+    exit_code = main(
+        [
+            "run-trial",
+            "--trial-id",
+            "cli-server-metadata-trial",
+            "--mode",
+            "closed-loop",
+            "--concurrency",
+            "1",
+            "--duration-s",
+            "0.01",
+            "--model",
+            "fake-model",
+            "--workload",
+            str(workload_path),
+            "--output-dir",
+            str(output_dir),
+            "--max-num-seqs",
+            "64",
+            "--max-num-batched-tokens",
+            "4096",
+        ]
+    )
+
+    assert exit_code == 0
+    summary_payload = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
+    metadata = summary_payload["config"]["metadata"]
+    assert "workload" in metadata
+    assert metadata["server_metadata"]["max_num_seqs"] == 64.0
+    assert metadata["server_metadata"]["max_num_batched_tokens"] == 4096.0
+    assert summary_payload["summary"]["metadata"]["server_metadata"] == metadata["server_metadata"]
+
+
+def test_cli_search_records_server_metadata_file(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    class StubSearchResult:
+        def __init__(self, search_id: str) -> None:
+            self.search_id = search_id
+
+        def to_dict(self) -> dict[str, object]:
+            return {"search_id": self.search_id, "max_no_drift_request_rate": 1.0}
+
+    class StubSearchController:
+        instances: list["StubSearchController"] = []
+
+        def __init__(self, *args, **kwargs) -> None:
+            del args, kwargs
+            self.config = None
+            StubSearchController.instances.append(self)
+
+        async def search(self, config):
+            self.config = config
+            return StubSearchResult(config.search_id)
+
+    monkeypatch.setattr("llm_mst_finder.cli.RequestClient", StubRequestClient)
+    monkeypatch.setattr("llm_mst_finder.cli.SearchController", StubSearchController)
+    workload_path = FIXTURES_ROOT / "workloads" / "synthetic_fixed_512_128.yaml"
+    metadata_path = tmp_path / "server_metadata.json"
+    metadata_path.write_text(
+        json.dumps({"server_config": {"max_num_seqs": 128}, "engine": "vllm"}),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "search",
+            "--search-id",
+            "cli-search-metadata",
+            "--search-mode",
+            "open-loop",
+            "--output-dir",
+            str(tmp_path / "search"),
+            "--model",
+            "fake-model",
+            "--workload",
+            str(workload_path),
+            "--server-metadata-file",
+            str(metadata_path),
+            "--max-num-batched-tokens",
+            "8192",
+        ]
+    )
+
+    assert exit_code == 0
+    captured = json.loads(capsys.readouterr().out.strip())
+    assert captured["search_id"] == "cli-search-metadata"
+    config = StubSearchController.instances[-1].config
+    metadata = config.metadata
+    assert "workload" in metadata
+    server_metadata = metadata["server_metadata"]
+    assert server_metadata["engine"] == "vllm"
+    assert server_metadata["server_config"]["max_num_seqs"] == 128
+    assert server_metadata["max_num_seqs"] == 128.0
+    assert server_metadata["max_num_batched_tokens"] == 8192.0
+
+
+def test_cli_rejects_conflicting_server_metadata(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr("llm_mst_finder.cli.RequestClient", StubRequestClient)
+    workload_path = FIXTURES_ROOT / "workloads" / "synthetic_fixed_512_128.yaml"
+    metadata_path = tmp_path / "server_metadata.json"
+    metadata_path.write_text(json.dumps({"max_num_seqs": 64}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="conflicting supplied server metadata values"):
+        main(
+            [
+                "run-trial",
+                "--trial-id",
+                "cli-conflict-trial",
+                "--mode",
+                "closed-loop",
+                "--concurrency",
+                "1",
+                "--duration-s",
+                "0.01",
+                "--model",
+                "fake-model",
+                "--workload",
+                str(workload_path),
+                "--output-dir",
+                str(tmp_path / "conflict"),
+                "--server-metadata-file",
+                str(metadata_path),
+                "--max-num-seqs",
+                "32",
+            ]
+        )
 
 
 def test_cli_analyze_writes_analysis_artifact(

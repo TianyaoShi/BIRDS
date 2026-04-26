@@ -5,7 +5,8 @@ import asyncio
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
+from math import isfinite
+from typing import Any, Mapping, Sequence
 
 from .analysis import analyze_trial_dir, write_analysis_artifact
 from .loadgen import cycling_request_source
@@ -76,6 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_trial.add_argument("--metrics-url", default=None)
     run_trial.add_argument("--metrics-interval-s", type=float, default=1.0)
     run_trial.add_argument("--window-s", type=float, default=10.0)
+    _add_server_metadata_args(run_trial)
     run_trial.set_defaults(handler=_run_trial_command)
 
     analyze = subparsers.add_parser("analyze")
@@ -118,6 +120,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--metrics-url", "--server-metrics-url", dest="metrics_url", default=None)
     search.add_argument("--metrics-interval-s", type=float, default=1.0)
     search.add_argument("--window-s", type=float, default=10.0)
+    _add_server_metadata_args(search)
     search.set_defaults(handler=_search_command)
 
     report = subparsers.add_parser("report")
@@ -163,6 +166,7 @@ async def _run_trial_command(args: argparse.Namespace) -> int:
         metrics_poller=metrics_poller,
         window_aggregator=FixedWindowAggregator(window_s=args.window_s),
     )
+    metadata = _merge_cli_metadata(prepared_workload.metadata, _parse_server_metadata_args(args))
     config = TrialConfig(
         trial_id=args.trial_id,
         mode=args.mode,
@@ -182,7 +186,7 @@ async def _run_trial_command(args: argparse.Namespace) -> int:
         metrics_url=args.metrics_url,
         metrics_interval_s=args.metrics_interval_s,
         window_s=args.window_s,
-        metadata=prepared_workload.metadata,
+        metadata=metadata,
     )
     output_dir = args.output_dir if args.output_dir is not None else Path("results") / args.trial_id
 
@@ -244,6 +248,7 @@ async def _search_command(args: argparse.Namespace) -> int:
         metrics_poller=metrics_poller,
         window_aggregator=FixedWindowAggregator(window_s=args.window_s),
     )
+    metadata = _merge_cli_metadata(prepared_workload.metadata, _parse_server_metadata_args(args))
     config = SearchConfig(
         search_id=args.search_id,
         search_mode=args.search_mode,
@@ -274,7 +279,7 @@ async def _search_command(args: argparse.Namespace) -> int:
         metrics_url=args.metrics_url,
         metrics_interval_s=args.metrics_interval_s,
         window_s=args.window_s,
-        metadata=prepared_workload.metadata,
+        metadata=metadata,
     )
     controller = SearchController(
         runner,
@@ -315,6 +320,27 @@ def _default_workload_path() -> Path:
     return Path(__file__).resolve().parent / "workloads" / "synthetic_fixed_512_128.yaml"
 
 
+def _add_server_metadata_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--server-metadata-file",
+        type=Path,
+        default=None,
+        help="JSON object containing explicit serving metadata for analysis/reporting",
+    )
+    parser.add_argument(
+        "--max-num-seqs",
+        type=_positive_server_metadata_arg,
+        default=None,
+        help="explicit vLLM max_num_seqs value for this serving configuration",
+    )
+    parser.add_argument(
+        "--max-num-batched-tokens",
+        type=_positive_server_metadata_arg,
+        default=None,
+        help="explicit vLLM max_num_batched_tokens value for this serving configuration",
+    )
+
+
 def _parse_extra_headers(raw_headers: Sequence[str]) -> dict[str, str]:
     headers: dict[str, str] = {}
     for raw_header in raw_headers:
@@ -334,6 +360,130 @@ def _parse_json_mapping(raw_json: str | None, *, field_name: str) -> dict[str, o
     if not isinstance(payload, dict):
         raise ValueError(f"{field_name} must decode to a JSON object")
     return payload
+
+
+def _positive_server_metadata_arg(raw_value: str) -> float:
+    try:
+        value = float(raw_value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive finite number") from exc
+    if not isfinite(value) or value <= 0.0:
+        raise argparse.ArgumentTypeError("must be a positive finite number")
+    return value
+
+
+def _parse_server_metadata_args(args: argparse.Namespace) -> dict[str, object] | None:
+    metadata: dict[str, object] = {}
+    if args.server_metadata_file is not None:
+        payload = _load_json_mapping(args.server_metadata_file, field_name="--server-metadata-file")
+        metadata.update(payload)
+        for key, value in _known_server_metadata_values(payload).items():
+            _merge_server_metadata_value(metadata, key, value)
+    if args.max_num_seqs is not None:
+        _merge_server_metadata_value(metadata, "max_num_seqs", args.max_num_seqs)
+    if args.max_num_batched_tokens is not None:
+        _merge_server_metadata_value(metadata, "max_num_batched_tokens", args.max_num_batched_tokens)
+    return metadata or None
+
+
+def _load_json_mapping(path: Path, *, field_name: str) -> dict[str, object]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"{field_name} does not exist: {path}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{field_name} must decode to a JSON object")
+    return payload
+
+
+def _known_server_metadata_values(payload: Mapping[str, object]) -> dict[str, float]:
+    values: dict[str, float] = {}
+    for key in ("max_num_seqs", "max_num_batched_tokens"):
+        found_values: list[float] = []
+        for mapping in _server_metadata_candidate_mappings(payload):
+            if key not in mapping:
+                continue
+            found_values.append(_require_positive_metadata_number(mapping[key], key))
+        if not found_values:
+            continue
+        first = found_values[0]
+        if any(value != first for value in found_values[1:]):
+            raise ValueError(f"conflicting supplied server metadata values for {key!r}: {found_values!r}")
+        values[key] = first
+    return values
+
+
+def _server_metadata_candidate_mappings(payload: Mapping[str, object]) -> list[Mapping[str, object]]:
+    mappings: list[Mapping[str, object]] = [payload]
+    for key in ("server_metadata", "server_config", "vllm_config"):
+        nested = payload.get(key)
+        if nested is None:
+            continue
+        if not isinstance(nested, Mapping):
+            raise ValueError(f"--server-metadata-file field {key!r} must be a JSON object")
+        mappings.append(nested)
+    return mappings
+
+
+def _require_positive_metadata_number(value: object, key: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"server metadata {key!r} must be a positive finite number")
+    numeric = float(value)
+    if not isfinite(numeric) or numeric <= 0.0:
+        raise ValueError(f"server metadata {key!r} must be a positive finite number")
+    return numeric
+
+
+def _merge_server_metadata_value(metadata: dict[str, object], key: str, value: float) -> None:
+    existing = metadata.get(key)
+    if existing is not None:
+        existing_value = _require_positive_metadata_number(existing, key)
+        if existing_value != value:
+            raise ValueError(
+                f"conflicting supplied server metadata values for {key!r}: "
+                f"{existing_value!r} != {value!r}"
+            )
+    metadata[key] = value
+
+
+def _merge_cli_metadata(
+    workload_metadata: Mapping[str, Any],
+    server_metadata: Mapping[str, object] | None,
+) -> dict[str, Any]:
+    metadata = dict(workload_metadata)
+    if server_metadata is None:
+        return metadata
+    existing = metadata.get("server_metadata")
+    if existing is None:
+        metadata["server_metadata"] = dict(server_metadata)
+        return metadata
+    if not isinstance(existing, Mapping):
+        raise ValueError("workload metadata field 'server_metadata' must be a mapping when provided")
+    metadata["server_metadata"] = _merge_metadata_mappings(existing, server_metadata, path="server_metadata")
+    return metadata
+
+
+def _merge_metadata_mappings(
+    left: Mapping[str, object],
+    right: Mapping[str, object],
+    *,
+    path: str,
+) -> dict[str, object]:
+    merged = dict(left)
+    for key, right_value in right.items():
+        current_path = f"{path}.{key}"
+        if key not in merged:
+            merged[key] = right_value
+            continue
+        left_value = merged[key]
+        if isinstance(left_value, Mapping) and isinstance(right_value, Mapping):
+            merged[key] = _merge_metadata_mappings(left_value, right_value, path=current_path)
+            continue
+        if left_value != right_value:
+            raise ValueError(
+                f"conflicting supplied metadata for {current_path}: {left_value!r} != {right_value!r}"
+            )
+    return merged
 
 
 if __name__ == "__main__":  # pragma: no cover
