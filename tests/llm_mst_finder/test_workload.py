@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -49,9 +50,19 @@ def test_jsonl_from_dataset_uses_dataset_lengths() -> None:
 def test_sharegpt_from_dataset_uses_assistant_output_length() -> None:
     workload_path = FIXTURES_ROOT / "workloads" / "sharegpt_from_dataset.yaml"
     samples = load_workload_samples_for_sampling_only(workload_path)
+    dataset = json.loads(
+        (FIXTURES_ROOT / "data" / "ShareGPT_V3_unfiltered_cleaned_split_no_imsorry.json").read_text(
+            encoding="utf-8"
+        )
+    )
 
     assert len(samples) == 4
-    assert all(sample.expected_output_len in {2, 5} for sample in samples)
+    for sample in samples:
+        row = dataset[sample.metadata["source_index"]]
+        assistant_turn = next(
+            turn for turn in row["conversations"] if turn.get("from", "").lower() == "gpt"
+        )
+        assert sample.expected_output_len == len(assistant_turn["value"].split())
     assert all(sample.metadata["dataset_type"] == "sharegpt" for sample in samples)
 
 

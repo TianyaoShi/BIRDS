@@ -8,6 +8,9 @@ from llm_mst_finder.cli import main
 from llm_mst_finder.records import RequestRecord, SampleRequest
 
 
+FIXTURES_ROOT = Path(__file__).parent / "fixtures"
+
+
 class StubRequestClient:
     def __init__(self, **kwargs) -> None:
         del kwargs
@@ -58,7 +61,7 @@ def test_cli_run_trial_closed_loop_writes_artifacts(
     capsys,
 ) -> None:
     monkeypatch.setattr("llm_mst_finder.cli.RequestClient", StubRequestClient)
-    workload_path = Path("profiler/llm_mst_finder/workloads/synthetic_fixed_512_128.yaml")
+    workload_path = FIXTURES_ROOT / "workloads" / "synthetic_fixed_512_128.yaml"
     output_dir = tmp_path / "cli-trial"
 
     exit_code = main(
@@ -162,7 +165,7 @@ def test_cli_analyze_writes_analysis_artifact(
     capsys,
 ) -> None:
     monkeypatch.setattr("llm_mst_finder.cli.RequestClient", StubRequestClient)
-    workload_path = Path("profiler/llm_mst_finder/workloads/synthetic_fixed_512_128.yaml")
+    workload_path = FIXTURES_ROOT / "workloads" / "synthetic_fixed_512_128.yaml"
     output_dir = tmp_path / "cli-analyze-trial"
 
     run_exit_code = main(
