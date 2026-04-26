@@ -108,15 +108,17 @@ def _build_report_payload(
     *,
     comparison_payload: dict[str, object] | None,
 ) -> dict[str, object]:
+    trace_payload = _require_mapping(bundle["trace_payload"], "bundle.trace_payload")
     trace_config = _require_mapping(bundle["trace_config"], "bundle.trace_config")
     search_result = _require_mapping(bundle["search_result"], "bundle.search_result")
     trials = _require_trial_list(bundle["trials"])
     workload = _extract_workload_payload(trials, trace_config)
-    server_config = _require_mapping(bundle["server_config"], "bundle.server_config")
+    server_config = _build_server_metadata_payload(_require_mapping(bundle["server_config"], "bundle.server_config"))
     best_trial = _select_headline_trial(trials, search_result)
     bottleneck_payload = _build_bottleneck_payload(best_trial, search_result)
-    search_trace_summary = _build_search_trace_summary(trace_config, trials)
+    search_trace_summary = _build_search_trace_summary(trace_payload, trace_config, trials)
     stability_boundary = _build_open_loop_boundary(trials)
+    decision_context = _build_search_decision_context(trace_payload, trials)
     limitations = _build_limitations(trials, server_config)
     recommended_action = _recommended_next_action(
         workload=workload,
@@ -131,6 +133,7 @@ def _build_report_payload(
         "search_trace": search_trace_summary,
         "closed_loop": search_result.get("closed_loop"),
         "open_loop_stability_boundary": stability_boundary,
+        "decision_context": decision_context,
         "search_result": {
             "search_id": trace_config.get("search_id"),
             "search_mode": trace_config.get("search_mode"),
@@ -347,9 +350,11 @@ def _render_markdown(payload: Mapping[str, object]) -> str:
     workload = _require_mapping(payload["workload"], "payload.workload")
     context_policy = _require_mapping(workload.get("context_policy"), "payload.workload.context_policy")
     search_trace = _require_mapping(payload["search_trace"], "payload.search_trace")
+    decision_context = _require_mapping(payload["decision_context"], "payload.decision_context")
     search_result = _require_mapping(payload["search_result"], "payload.search_result")
     bottleneck = _require_mapping(payload["bottleneck"], "payload.bottleneck")
     server_config = _require_mapping(payload["server_config"], "payload.server_config")
+    stability_policy = _require_mapping(payload["stability_policy"], "payload.stability_policy")
     lines = [
         "# LLM MST Finder Report",
         "",
@@ -366,6 +371,10 @@ def _render_markdown(payload: Mapping[str, object]) -> str:
         f"- truncated_samples: {context_policy.get('truncated_samples')}",
         "",
         "## 3. Server configuration",
+        f"- model: {server_config.get('model')}",
+        f"- max_num_seqs: {server_config.get('max_num_seqs')}",
+        f"- max_num_batched_tokens: {server_config.get('max_num_batched_tokens')}",
+        f"- scheduler_metadata_note: {server_config.get('scheduler_metadata_note')}",
         f"```json\n{json.dumps(server_config, indent=2, sort_keys=True)}\n```",
         "",
         "## 4. Search trace",
@@ -373,6 +382,11 @@ def _render_markdown(payload: Mapping[str, object]) -> str:
         f"- total_trials: {search_trace.get('total_trials')}",
         f"- open_loop_trials: {search_trace.get('open_loop_trials')}",
         f"- closed_loop_trials: {search_trace.get('closed_loop_trials')}",
+        f"- rate_precision: {search_trace.get('rate_precision')}",
+        f"- final_low_rate: {search_trace.get('final_low_rate')}",
+        f"- final_high_rate: {search_trace.get('final_high_rate')}",
+        f"- final_relative_width: {search_trace.get('final_relative_width')}",
+        f"- convergence_assessment: {search_trace.get('convergence_assessment')}",
         "",
         "## 5. Closed-loop scouting result",
         f"```json\n{json.dumps(payload.get('closed_loop'), indent=2, sort_keys=True)}\n```",
@@ -380,21 +394,32 @@ def _render_markdown(payload: Mapping[str, object]) -> str:
         "## 6. Open-loop stability boundary",
         f"```json\n{json.dumps(payload.get('open_loop_stability_boundary'), indent=2, sort_keys=True)}\n```",
         "",
-        "## 7. Max no-drift request rate",
+        "## 7. Stability SLOs and decision basis",
+        f"- ttft_slo_ms: {stability_policy.get('ttft_slo_ms')}",
+        f"- tpot_slo_ms: {stability_policy.get('tpot_slo_ms')}",
+        f"- e2e_slo_ms: {stability_policy.get('e2e_slo_ms')}",
+        f"- decision_subject: {decision_context.get('subject')}",
+        f"- decision_trial_id: {decision_context.get('trial_id')}",
+        f"- decision_trial_rate: {decision_context.get('request_rate')}",
+        f"- decision_stability_status: {decision_context.get('stability_status')}",
+        f"- decision_reasoning: {decision_context.get('decision_reasoning')}",
+        f"- decision_reason_summary: {decision_context.get('reason_summary')}",
+        "",
+        "## 8. Max no-drift request rate",
         f"- {search_result.get('max_no_drift_request_rate')}",
         "",
-        "## 8. Max SLO-satisfying request rate",
+        "## 9. Max SLO-satisfying request rate",
         f"- {search_result.get('max_slo_satisfying_request_rate')}",
         "",
-        "## 9. Bottleneck diagnosis",
+        "## 10. Bottleneck diagnosis",
         f"- class: {bottleneck.get('class')}",
         f"- confidence: {bottleneck.get('confidence')}",
         f"- evidence: {json.dumps(bottleneck.get('evidence'), sort_keys=True)}",
         "",
-        "## 10. Recommended next orchestration action",
+        "## 11. Recommended next orchestration action",
         f"- {payload.get('recommended_next_action')}",
         "",
-        "## 11. Limitations",
+        "## 12. Limitations",
     ]
     for item in payload.get("limitations", []):
         lines.append(f"- {item}")
@@ -445,11 +470,17 @@ def _build_bottleneck_payload(
 
 
 def _build_search_trace_summary(
+    trace_payload: Mapping[str, object],
     trace_config: Mapping[str, object],
     trials: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
     open_loop_trials = [trial for trial in trials if trial["summary"].mode == "open-loop"]
     closed_loop_trials = [trial for trial in trials if trial["summary"].mode == "closed-loop"]
+    bounds_payload = _require_mapping(trace_payload.get("bounds", {}), "search_trace.json.bounds")
+    low_rate = _optional_numeric(bounds_payload.get("low_rate"), "search_trace.json.bounds.low_rate")
+    high_rate = _optional_numeric(bounds_payload.get("high_rate"), "search_trace.json.bounds.high_rate")
+    relative_width = _relative_width(low_rate=low_rate, high_rate=high_rate)
+    precision = _optional_numeric(trace_config.get("rate_precision"), "search_trace.json.config.rate_precision")
     return {
         "total_trials": len(trials),
         "open_loop_trials": len(open_loop_trials),
@@ -457,8 +488,19 @@ def _build_search_trace_summary(
         "search_mode": trace_config.get("search_mode"),
         "trial_duration_s": trace_config.get("trial_duration_s"),
         "final_confirmation_duration_s": trace_config.get("final_confirmation_duration_s"),
-        "rate_precision": trace_config.get("rate_precision"),
+        "rate_precision": precision,
         "model": trace_config.get("model"),
+        "final_low_rate": low_rate,
+        "final_low_trial_id": bounds_payload.get("low_trial_id"),
+        "final_high_rate": high_rate,
+        "final_high_trial_id": bounds_payload.get("high_trial_id"),
+        "final_relative_width": relative_width,
+        "convergence_assessment": _convergence_assessment(
+            low_rate=low_rate,
+            high_rate=high_rate,
+            relative_width=relative_width,
+            rate_precision=precision,
+        ),
     }
 
 
@@ -502,6 +544,11 @@ def _build_limitations(trials: Sequence[Mapping[str, object]], server_config: Ma
     limitations: list[str] = []
     if not server_config:
         limitations.append("declared server metadata was not recorded in the result artifacts")
+    if server_config.get("max_num_seqs") is None or server_config.get("max_num_batched_tokens") is None:
+        limitations.append(
+            "max_num_seqs and max_num_batched_tokens are explicit vLLM scheduler config values; "
+            "they are not reliably inferred from runtime metrics when missing from saved metadata"
+        )
     if any(trial["analysis"].trial_validity != "valid" for trial in trials):
         limitations.append("some trials were excluded from overload interpretation due to invalidity")
     limitations.append("stability thresholds were inferred from the saved default StabilityConfig")
@@ -635,6 +682,22 @@ def _load_server_config(summary_payload: Mapping[str, Any], trial_dir: Path) -> 
     return config
 
 
+def _build_server_metadata_payload(server_config: Mapping[str, object]) -> dict[str, object]:
+    payload = dict(server_config)
+    payload["max_num_seqs"] = server_config.get("max_num_seqs")
+    payload["max_num_batched_tokens"] = server_config.get("max_num_batched_tokens")
+    if payload["max_num_seqs"] is None or payload["max_num_batched_tokens"] is None:
+        payload["scheduler_metadata_note"] = (
+            "max_num_seqs and max_num_batched_tokens were not both recorded. "
+            "These are explicit vLLM scheduler configuration values and are not reliably inferred from runtime metrics."
+        )
+    else:
+        payload["scheduler_metadata_note"] = (
+            "max_num_seqs and max_num_batched_tokens were recorded directly from saved server metadata."
+        )
+    return payload
+
+
 def _merge_server_config(left: Mapping[str, object], right: Mapping[str, object]) -> dict[str, object]:
     merged = dict(left)
     for key, right_value in right.items():
@@ -714,6 +777,152 @@ def _comparison_max_output_tok_s(
     return max(values)
 
 
+def _build_search_decision_context(
+    trace_payload: Mapping[str, object],
+    trials: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    bounds_payload = _require_mapping(trace_payload.get("bounds", {}), "search_trace.json.bounds")
+    result_payload = _require_mapping(trace_payload.get("result"), "search_trace.json.result")
+    confirmation_trial_id = result_payload.get("confirmation_trial_id")
+    decision_trial = None
+    subject = "high_bound"
+    if isinstance(confirmation_trial_id, str):
+        confirmation_trial = _trial_by_id(trials, confirmation_trial_id)
+        if confirmation_trial is not None and _trial_is_failed_decision(confirmation_trial):
+            decision_trial = confirmation_trial
+            subject = "failed_confirmation"
+    if decision_trial is None:
+        high_trial_id = bounds_payload.get("high_trial_id")
+        if isinstance(high_trial_id, str):
+            decision_trial = _trial_by_id(trials, high_trial_id)
+            subject = "high_bound"
+    if decision_trial is None:
+        raise ValueError("report generation requires a high-bound or failed confirmation trial to explain")
+    analysis = decision_trial["analysis"]
+    status = None if analysis.stability is None else analysis.stability.status
+    return {
+        "subject": subject,
+        "trial_id": decision_trial["summary"].trial_id,
+        "request_rate": decision_trial["summary"].requested_request_rate,
+        "stability_status": status,
+        "decision_reasoning": _decision_reasoning_label(analysis),
+        "reason_summary": _decision_reason_summary(analysis),
+        "reasons": [] if analysis.stability is None else list(analysis.stability.reasons),
+    }
+
+
+def _trial_by_id(
+    trials: Sequence[Mapping[str, object]],
+    trial_id: str,
+) -> Mapping[str, object] | None:
+    for trial in trials:
+        if trial["summary"].trial_id == trial_id:
+            return trial
+    return None
+
+
+def _trial_is_failed_decision(trial: Mapping[str, object]) -> bool:
+    analysis = trial["analysis"]
+    if analysis.trial_validity != "valid" or analysis.stability is None:
+        return True
+    return analysis.stability.status in {"unstable", "slo_violation", "aborted_safety", "uncertain"}
+
+
+def _decision_reasoning_label(analysis: TrialAnalysisResult) -> str:
+    if analysis.trial_validity != "valid":
+        return f"trial_validity={analysis.trial_validity}"
+    if analysis.stability is None:
+        return "missing_stability_result"
+    if analysis.stability.status == "slo_violation":
+        return "failed_due_to_slo_violation"
+    if analysis.stability.status == "unstable":
+        return _unstable_reasoning_label(analysis.stability.reasons)
+    if analysis.stability.status == "aborted_safety":
+        return "failed_due_to_safety_abort"
+    if analysis.stability.status == "uncertain":
+        return "failed_due_to_uncertain_stability"
+    if analysis.stability.status == "stable":
+        return "stable"
+    raise ValueError(f"unsupported stability status {analysis.stability.status!r}")
+
+
+def _decision_reason_summary(analysis: TrialAnalysisResult) -> str:
+    if analysis.trial_validity != "valid":
+        return "; ".join(analysis.validity_reasons)
+    if analysis.stability is None:
+        raise ValueError("valid decision trial requires stability details")
+    if analysis.stability.status == "slo_violation":
+        return "The analyzer marked this trial as an SLO violation."
+    if analysis.stability.status == "unstable":
+        return _unstable_reason_summary(analysis.stability.reasons)
+    if analysis.stability.status == "aborted_safety":
+        return "The analyzer marked this trial as aborted by the client safety cap."
+    if analysis.stability.status == "uncertain":
+        return "The analyzer could not make a confident stability decision for this trial."
+    if analysis.stability.status == "stable":
+        return "The analyzer marked this trial as stable."
+    raise ValueError(f"unsupported stability status {analysis.stability.status!r}")
+
+
+def _relative_width(*, low_rate: float | None, high_rate: float | None) -> float | None:
+    if low_rate is None or high_rate is None:
+        return None
+    if low_rate <= 0.0:
+        raise ValueError("final low bound must be positive when computing relative width")
+    return (high_rate - low_rate) / low_rate
+
+
+def _convergence_assessment(
+    *,
+    low_rate: float | None,
+    high_rate: float | None,
+    relative_width: float | None,
+    rate_precision: float | None,
+) -> str:
+    if low_rate is None or high_rate is None or relative_width is None or rate_precision is None:
+        return "final search bracket was not recorded"
+    if relative_width >= rate_precision / 2.0:
+        return (
+            "precision-limited: final bracket remained loose relative to the configured rate_precision "
+            f"({relative_width:.3f} width for target {rate_precision:.3f})"
+        )
+    return (
+        "tightly converged: final bracket was materially narrower than the configured rate_precision "
+        f"({relative_width:.3f} width for target {rate_precision:.3f})"
+    )
+
+
+def _unstable_reasoning_label(reasons: Sequence[str]) -> str:
+    has_kv_pressure = any("kv cache usage approached saturation" in reason.lower() for reason in reasons)
+    has_preemptions = any("preemptions observed after warmup" in reason.lower() for reason in reasons)
+    has_latency_drift = any("drifted upward" in reason.lower() for reason in reasons)
+    if has_kv_pressure and has_preemptions and has_latency_drift:
+        return "failed_due_to_kv_pressure_preemptions_and_latency_drift"
+    if has_kv_pressure and has_preemptions:
+        return "failed_due_to_kv_pressure_and_preemptions"
+    if has_kv_pressure:
+        return "failed_due_to_kv_pressure"
+    if has_preemptions:
+        return "failed_due_to_preemptions"
+    if has_latency_drift:
+        return "failed_due_to_latency_drift"
+    return "failed_due_to_non_slo_instability_evidence"
+
+
+def _unstable_reason_summary(reasons: Sequence[str]) -> str:
+    primary_reasons = [
+        reason
+        for reason in reasons
+        if "confidence lowered" not in reason.lower()
+    ]
+    if not primary_reasons:
+        primary_reasons = list(reasons)
+    if not primary_reasons:
+        return "The analyzer marked this trial as unstable."
+    evidence_text = "; ".join(primary_reasons[:3])
+    return f"The analyzer marked this trial as unstable based on: {evidence_text}."
+
+
 def _queue_drift(trial: Mapping[str, object]) -> float | None:
     stability = trial["analysis"].stability
     if stability is not None and "outstanding_end_slope_per_s" in stability.key_metrics:
@@ -767,6 +976,12 @@ def _require_numeric(value: Any, label: str) -> float:
     if not isinstance(value, (int, float)):
         raise ValueError(f"{label} must be numeric")
     return float(value)
+
+
+def _optional_numeric(value: Any, label: str) -> float | None:
+    if value is None:
+        return None
+    return _require_numeric(value, label)
 
 
 def _require_trial_list(value: object) -> list[dict[str, object]]:

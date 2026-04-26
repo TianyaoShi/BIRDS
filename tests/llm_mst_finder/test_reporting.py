@@ -119,6 +119,13 @@ def _window(trial_id: str, idx: int, *, arrival_rate: float, completion_rate: fl
 
 
 def _analysis(trial_id: str, *, status: str, bottleneck_class: str = "scheduler_cap") -> TrialAnalysisResult:
+    reason_map = {
+        "stable": ["fixture stable"],
+        "unstable": ["outstanding requests drifted upward", "TPOT p90 drifted upward"],
+        "slo_violation": ["TTFT p90 exceeded configured SLO"],
+        "uncertain": ["fixture uncertain"],
+        "aborted_safety": ["fixture aborted_safety"],
+    }
     return TrialAnalysisResult(
         trial_id=trial_id,
         trial_validity="valid",
@@ -126,7 +133,7 @@ def _analysis(trial_id: str, *, status: str, bottleneck_class: str = "scheduler_
         stability=StabilityResult(
             status=status,
             confidence="high",
-            reasons=[f"fixture {status}"],
+            reasons=reason_map[status],
             key_metrics={"outstanding_end_slope_per_s": 0.1},
         ),
         bottleneck=BottleneckResult(
@@ -146,6 +153,7 @@ def _write_trial(
     request_rate: float | None,
     concurrency: int | None,
     analysis: TrialAnalysisResult,
+    include_scheduler_metadata: bool = True,
 ) -> dict[str, object]:
     trial_dir = result_dir / "trials" / trial_id
     trial_dir.mkdir(parents=True)
@@ -187,11 +195,17 @@ def _write_trial(
                         "truncated_source_indexes": [],
                     },
                 },
-                "server_config": {
-                    "max_num_seqs": 32,
-                    "max_num_batched_tokens": 4096,
-                    "chunked_prefill": True,
-                },
+                "server_config": (
+                    {
+                        "max_num_seqs": 32,
+                        "max_num_batched_tokens": 4096,
+                        "chunked_prefill": True,
+                    }
+                    if include_scheduler_metadata
+                    else {
+                        "chunked_prefill": True,
+                    }
+                ),
             },
         },
         "summary": summary.to_dict(),
@@ -208,6 +222,18 @@ def _write_trial(
         writer.writeheader()
         for window in windows:
             writer.writerow(window.to_dict())
+    summary_trace = {
+        "status": summary.status,
+        "requested_request_rate": request_rate,
+        "requested_concurrency": concurrency,
+        "actual_send_rate": summary.actual_send_rate,
+        "successful_completion_rate": summary.successful_completion_rate,
+        "error_rate": summary.error_rate,
+        "generation_token_throughput": summary.benchmark_metrics.generation_token_throughput,
+        "total_token_throughput": summary.benchmark_metrics.total_token_throughput,
+        "max_observed_outstanding": summary.max_observed_outstanding,
+        "abort_reason": summary.abort_reason,
+    }
     return {
         "purpose": purpose,
         "trial_id": trial_id,
@@ -215,23 +241,21 @@ def _write_trial(
         "mode": mode,
         "request_rate": request_rate,
         "concurrency": concurrency,
-        "summary": {
-            "status": summary.status,
-            "requested_request_rate": request_rate,
-            "requested_concurrency": concurrency,
-            "actual_send_rate": summary.actual_send_rate,
-            "successful_completion_rate": summary.successful_completion_rate,
-            "error_rate": summary.error_rate,
-            "generation_token_throughput": summary.benchmark_metrics.generation_token_throughput,
-            "total_token_throughput": summary.benchmark_metrics.total_token_throughput,
-            "max_observed_outstanding": summary.max_observed_outstanding,
-            "abort_reason": summary.abort_reason,
-        },
+        "summary": summary_trace,
         "analysis": analysis.to_dict(),
     }
 
 
-def _write_result_dir(result_dir: Path) -> None:
+def _write_result_dir(
+    result_dir: Path,
+    *,
+    rate_precision: float = 0.05,
+    low_rate: float = 8.0,
+    high_rate: float = 12.0,
+    confirmation_trial_id: str = "trial_001_openloop_r8_0",
+    unstable_status: str = "unstable",
+    include_scheduler_metadata: bool = True,
+) -> None:
     trials_dir = result_dir / "trials"
     trials_dir.mkdir(parents=True)
     closed_loop_event = _write_trial(
@@ -242,6 +266,7 @@ def _write_result_dir(result_dir: Path) -> None:
         request_rate=None,
         concurrency=4,
         analysis=_analysis("trial_000_closedloop_N4", status="stable"),
+        include_scheduler_metadata=include_scheduler_metadata,
     )
     stable_event = _write_trial(
         result_dir,
@@ -251,6 +276,7 @@ def _write_result_dir(result_dir: Path) -> None:
         request_rate=8.0,
         concurrency=None,
         analysis=_analysis("trial_001_openloop_r8_0", status="stable"),
+        include_scheduler_metadata=include_scheduler_metadata,
     )
     unstable_event = _write_trial(
         result_dir,
@@ -259,7 +285,8 @@ def _write_result_dir(result_dir: Path) -> None:
         mode="open-loop",
         request_rate=12.0,
         concurrency=None,
-        analysis=_analysis("trial_002_openloop_r12_0", status="unstable"),
+        analysis=_analysis("trial_002_openloop_r12_0", status=unstable_status),
+        include_scheduler_metadata=include_scheduler_metadata,
     )
     trace_payload = {
         "config": {
@@ -270,13 +297,13 @@ def _write_result_dir(result_dir: Path) -> None:
             "model": "fake-model",
             "trial_duration_s": 6.0,
             "final_confirmation_duration_s": 6.0,
-            "rate_precision": 0.05,
+            "rate_precision": rate_precision,
         },
         "events": [closed_loop_event, stable_event, unstable_event],
         "bounds": {
-            "low_rate": 8.0,
+            "low_rate": low_rate,
             "low_trial_id": "trial_001_openloop_r8_0",
-            "high_rate": 12.0,
+            "high_rate": high_rate,
             "high_trial_id": "trial_002_openloop_r12_0",
         },
         "closed_loop": {
@@ -290,8 +317,8 @@ def _write_result_dir(result_dir: Path) -> None:
             "search_mode": "hybrid",
             "max_no_drift_request_rate": 8.0,
             "max_slo_satisfying_request_rate": 8.0,
-            "rate_precision": 0.05,
-            "confirmation_trial_id": "trial_001_openloop_r8_0",
+            "rate_precision": rate_precision,
+            "confirmation_trial_id": confirmation_trial_id,
             "closed_loop": {
                 "peak_request_throughput": 8.0,
                 "peak_output_token_throughput": 800.0,
@@ -318,6 +345,9 @@ def test_generate_report_writes_reports_and_plots(tmp_path: Path) -> None:
     assert payload["search_result"]["max_no_drift_request_rate"] == 8.0
     assert payload["bottleneck"]["class"] == "scheduler_cap"
     assert payload["trials"][0]["trial_id"] == "trial_000_closedloop_N4"
+    assert payload["search_trace"]["rate_precision"] == 0.05
+    assert payload["decision_context"]["decision_reasoning"] == "failed_due_to_latency_drift"
+    assert payload["server_config"]["max_num_seqs"] == 32
     assert (result_dir / "plots" / "search_rate_vs_classification.png").is_file()
     assert (result_dir / "trials" / "trial_001_openloop_r8_0" / "plots" / "ttft_percentiles.png").is_file()
 
@@ -347,3 +377,71 @@ def test_generate_report_compares_matching_reports(tmp_path: Path) -> None:
     assert payload["comparison"]["comparable"] is True
     assert len(payload["comparison"]["results"]) == 2
     assert (result_dir / "plots" / "comparison_max_sustainable_rate.png").is_file()
+
+
+def test_generate_report_marks_loose_precision_bracket(tmp_path: Path) -> None:
+    result_dir = tmp_path / "run_loose_bracket"
+    _write_result_dir(
+        result_dir,
+        rate_precision=0.2,
+        low_rate=3.125,
+        high_rate=3.75,
+    )
+
+    generate_report(result_dir, plots_enabled=False)
+
+    payload = json.loads((result_dir / "final_report.json").read_text(encoding="utf-8"))
+    assert payload["search_trace"]["final_low_rate"] == 3.125
+    assert payload["search_trace"]["final_high_rate"] == 3.75
+    assert payload["search_trace"]["final_relative_width"] == pytest.approx(0.2)
+    assert payload["search_trace"]["convergence_assessment"].startswith("precision-limited")
+    markdown = (result_dir / "final_report.md").read_text(encoding="utf-8")
+    assert "- rate_precision: 0.2" in markdown
+    assert "- final_low_rate: 3.125" in markdown
+    assert "- final_high_rate: 3.75" in markdown
+    assert "- final_relative_width: 0.2" in markdown
+    assert "- convergence_assessment: precision-limited" in markdown
+
+
+def test_generate_report_shows_slo_defaults_and_non_slo_instability(tmp_path: Path) -> None:
+    result_dir = tmp_path / "run_non_slo_instability"
+    _write_result_dir(
+        result_dir,
+        unstable_status="unstable",
+    )
+
+    generate_report(result_dir, plots_enabled=False)
+
+    payload = json.loads((result_dir / "final_report.json").read_text(encoding="utf-8"))
+    assert payload["stability_policy"]["ttft_slo_ms"] == 2000.0
+    assert payload["stability_policy"]["tpot_slo_ms"] == 80.0
+    assert payload["stability_policy"]["e2e_slo_ms"] is None
+    assert payload["decision_context"]["subject"] == "high_bound"
+    assert payload["decision_context"]["stability_status"] == "unstable"
+    assert payload["decision_context"]["decision_reasoning"] == "failed_due_to_latency_drift"
+    assert "TPOT p90 drifted upward" in payload["decision_context"]["reason_summary"]
+    markdown = (result_dir / "final_report.md").read_text(encoding="utf-8")
+    assert "- ttft_slo_ms: 2000.0" in markdown
+    assert "- tpot_slo_ms: 80.0" in markdown
+    assert "- e2e_slo_ms: None" in markdown
+    assert "- decision_reasoning: failed_due_to_latency_drift" in markdown
+
+
+def test_generate_report_explains_scheduler_metadata_missing(tmp_path: Path) -> None:
+    result_dir = tmp_path / "run_missing_metadata"
+    _write_result_dir(
+        result_dir,
+        include_scheduler_metadata=False,
+    )
+
+    generate_report(result_dir, plots_enabled=False)
+
+    payload = json.loads((result_dir / "final_report.json").read_text(encoding="utf-8"))
+    assert payload["server_config"]["max_num_seqs"] is None
+    assert payload["server_config"]["max_num_batched_tokens"] is None
+    assert "not reliably inferred from runtime metrics" in payload["server_config"]["scheduler_metadata_note"]
+    assert any("max_num_seqs and max_num_batched_tokens are explicit vLLM scheduler config values" in item for item in payload["limitations"])
+    markdown = (result_dir / "final_report.md").read_text(encoding="utf-8")
+    assert "- max_num_seqs: None" in markdown
+    assert "- max_num_batched_tokens: None" in markdown
+    assert "not reliably inferred from runtime metrics" in markdown
