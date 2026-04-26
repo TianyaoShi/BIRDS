@@ -253,3 +253,46 @@ def test_prepare_workload_for_trial_allows_explicit_unsafe_override_and_records_
     prepared = prepare_workload_for_trial(workload_path, model_name="fake-model")
     context_policy_metadata = prepared.metadata["workload"]["context_policy"]
     assert context_policy_metadata["unsafe_allow_workload_tokenizer_for_real_datasets"] is True
+
+
+def test_jsonl_manifest_cache_is_reused_when_present(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    dataset_path = tmp_path / "requests.jsonl"
+    dataset_path.write_text(
+        (FIXTURES_ROOT / "data" / "requests.jsonl").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    workload_path = tmp_path / "jsonl_cached.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: jsonl-cached",
+                "dataset:",
+                "  type: jsonl",
+                f"  path: {dataset_path}",
+                "tokenizer: whitespace",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 3",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    first = load_workload_samples_for_sampling_only(workload_path)
+    assert len(first) == 3
+
+    def fail_if_source_is_used(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("expected workload sampling to use the manifest cache")
+
+    monkeypatch.setattr("llm_mst_finder.workload._load_jsonl_entries_from_source", fail_if_source_is_used)
+
+    second = load_workload_samples_for_sampling_only(workload_path)
+    assert [sample.to_dict() for sample in second] == [sample.to_dict() for sample in first]

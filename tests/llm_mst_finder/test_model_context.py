@@ -37,6 +37,16 @@ class WordTokenizer:
         return " ".join(self._id_to_token[token_id] for token_id in token_ids)
 
 
+class CountingTokenizer(WordTokenizer):
+    def __init__(self) -> None:
+        super().__init__()
+        self.encode_calls = 0
+
+    def encode(self, text: str) -> list[int]:
+        self.encode_calls += 1
+        return super().encode(text)
+
+
 def _sample(
     prompt: str,
     *,
@@ -183,3 +193,26 @@ def test_resolve_model_tokenizer_vllm_forces_offline_env(monkeypatch) -> None:
     assert observed["TRANSFORMERS_OFFLINE"] == "1"
     assert os.environ.get("HF_HUB_OFFLINE") is None
     assert os.environ.get("TRANSFORMERS_OFFLINE") is None
+
+
+def test_context_validation_reuses_cached_prompt_length_when_tokenizer_key_matches() -> None:
+    tokenizer = CountingTokenizer()
+    samples = [
+        SampleRequest(
+            prompt="a b c",
+            prompt_len=3,
+            expected_output_len=2,
+            metadata={"source_index": 0, "prompt_tokenizer_key": "tokenizer:test"},
+        )
+    ]
+    policy = ContextPolicy(max_model_len=8, tokenizer_source="workload_tokenizer", over_limit="fail")
+
+    result = validate_samples_against_context_window(
+        samples,
+        tokenizer=tokenizer,
+        policy=policy,
+        tokenizer_key="tokenizer:test",
+    )
+
+    assert result.samples == samples
+    assert tokenizer.encode_calls == 0

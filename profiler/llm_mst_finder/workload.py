@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 from dataclasses import dataclass, field
@@ -242,6 +243,7 @@ class PreparedWorkload:
 class DatasetEntry:
     prompt: str
     source_index: int
+    prompt_len: int | None = None
     expected_output_len: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -376,7 +378,145 @@ def load_workload_config(path: str | Path) -> WorkloadConfig:
     return config
 
 
-def _load_jsonl_entries(path: Path) -> list[DatasetEntry]:
+def _normalized_tokenizer_spec(tokenizer_spec: str | None) -> str:
+    return "whitespace" if tokenizer_spec is None else tokenizer_spec
+
+
+def _tokenizer_cache_key(
+    tokenizer_spec: str | None,
+    *,
+    tokenizer: PromptTokenizer | None = None,
+) -> str:
+    if tokenizer_spec is not None:
+        return f"tokenizer:{_normalized_tokenizer_spec(tokenizer_spec)}"
+    if tokenizer is None:
+        return "tokenizer:whitespace"
+    return f"tokenizer:{tokenizer.__class__.__module__}.{tokenizer.__class__.__qualname__}"
+
+
+def _context_tokenizer_cache_key(
+    config: WorkloadConfig,
+    *,
+    model_name: str,
+    workload_tokenizer_key: str,
+) -> str:
+    assert config.context_policy is not None
+    policy = config.context_policy
+    if policy.tokenizer_source == "workload_tokenizer":
+        return workload_tokenizer_key
+    if policy.tokenizer_source == "explicit":
+        assert policy.tokenizer is not None
+        return _tokenizer_cache_key(policy.tokenizer)
+    if policy.tokenizer_source == "vllm_model_config":
+        return _tokenizer_cache_key(policy.tokenizer or model_name)
+    raise ValueError(f"unsupported context_policy.tokenizer_source {policy.tokenizer_source!r}")
+
+
+def _manifest_cache_root() -> Path:
+    return Path(__file__).resolve().parents[2] / ".cache" / "llm_mst_finder" / "workload_manifests"
+
+
+def _manifest_cache_path(
+    config: WorkloadConfig,
+    *,
+    tokenizer_key: str,
+) -> Path:
+    key_payload = {
+        "cache_version": 1,
+        "dataset_path": config.dataset.path,
+        "dataset_type": config.dataset.type,
+        "output_len_mode": config.sampling.output_len.mode,
+        "prompt_len_mode": config.sampling.prompt_len.mode,
+        "tokenizer_key": tokenizer_key,
+    }
+    digest = hashlib.sha256(
+        json.dumps(key_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()[:20]
+    filename = f"{config.dataset.type}_{digest}.json"
+    return _manifest_cache_root() / filename
+
+
+def _dataset_entry_to_payload(entry: DatasetEntry) -> dict[str, Any]:
+    return {
+        "expected_output_len": entry.expected_output_len,
+        "metadata": entry.metadata,
+        "prompt": entry.prompt,
+        "prompt_len": entry.prompt_len,
+        "source_index": entry.source_index,
+    }
+
+
+def _dataset_entry_from_payload(payload: Any, *, row_index: int) -> DatasetEntry:
+    row = _expect_mapping(payload, f"manifest.entries[{row_index}]")
+    _check_allowed_keys(
+        row,
+        f"manifest.entries[{row_index}]",
+        {"expected_output_len", "metadata", "prompt", "prompt_len", "source_index"},
+    )
+    prompt_len = row.get("prompt_len")
+    if prompt_len is not None:
+        prompt_len = _expect_int(prompt_len, f"manifest.entries[{row_index}].prompt_len", positive=True)
+    expected_output_len = row.get("expected_output_len")
+    if expected_output_len is not None:
+        expected_output_len = _expect_int(
+            expected_output_len,
+            f"manifest.entries[{row_index}].expected_output_len",
+            positive=True,
+        )
+    metadata = row.get("metadata", {})
+    if not isinstance(metadata, dict):
+        raise ValueError(f"manifest.entries[{row_index}].metadata must be a mapping")
+    return DatasetEntry(
+        prompt=_expect_string(row.get("prompt"), f"manifest.entries[{row_index}].prompt"),
+        source_index=_expect_int(row.get("source_index"), f"manifest.entries[{row_index}].source_index"),
+        prompt_len=prompt_len,
+        expected_output_len=expected_output_len,
+        metadata=metadata,
+    )
+
+
+def _load_entries_from_manifest(path: Path) -> list[DatasetEntry]:
+    with path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    manifest = _expect_mapping(payload, "manifest")
+    entries_payload = manifest.get("entries")
+    if not isinstance(entries_payload, list) or not entries_payload:
+        raise ValueError(f"manifest.entries must be a non-empty list: {path}")
+    return [
+        _dataset_entry_from_payload(item, row_index=index)
+        for index, item in enumerate(entries_payload)
+    ]
+
+
+def _write_entries_to_manifest(
+    path: Path,
+    *,
+    config: WorkloadConfig,
+    tokenizer_key: str,
+    entries: list[DatasetEntry],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    payload = {
+        "cache_version": 1,
+        "dataset_path": config.dataset.path,
+        "dataset_type": config.dataset.type,
+        "output_len_mode": config.sampling.output_len.mode,
+        "prompt_len_mode": config.sampling.prompt_len.mode,
+        "tokenizer_key": tokenizer_key,
+        "entries": [_dataset_entry_to_payload(entry) for entry in entries],
+    }
+    with tmp_path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, sort_keys=True)
+    tmp_path.replace(path)
+
+
+def _load_jsonl_entries_from_source(
+    path: Path,
+    *,
+    tokenizer: PromptTokenizer | None = None,
+    include_prompt_len: bool,
+) -> list[DatasetEntry]:
     if not path.exists():
         raise FileNotFoundError(f"jsonl dataset not found: {path}")
     entries: list[DatasetEntry] = []
@@ -399,10 +539,16 @@ def _load_jsonl_entries(path: Path) -> list[DatasetEntry]:
             metadata = row.get("metadata", {})
             if not isinstance(metadata, dict):
                 raise ValueError(f"jsonl row {index}.metadata must be a mapping")
+            prompt_len = None
+            if include_prompt_len:
+                if tokenizer is None:
+                    raise ValueError("tokenizer is required when include_prompt_len=True")
+                prompt_len = len(tokenizer.encode(prompt))
             entries.append(
                 DatasetEntry(
                     prompt=prompt,
                     source_index=index,
+                    prompt_len=prompt_len,
                     expected_output_len=expected_output_len,
                     metadata=metadata,
                 )
@@ -426,7 +572,13 @@ def _find_sharegpt_text(
     return None
 
 
-def _load_sharegpt_entries(path: Path, tokenizer: PromptTokenizer) -> list[DatasetEntry]:
+def _load_sharegpt_entries_from_source(
+    path: Path,
+    tokenizer: PromptTokenizer,
+    *,
+    include_prompt_len: bool,
+    include_output_len: bool,
+) -> list[DatasetEntry]:
     if not path.exists():
         raise FileNotFoundError(f"sharegpt dataset not found: {path}")
     with path.open("r", encoding="utf-8") as handle:
@@ -453,11 +605,13 @@ def _load_sharegpt_entries(path: Path, tokenizer: PromptTokenizer) -> list[Datas
         if assistant is None:
             skipped_missing_assistant += 1
             continue
-        expected_output_len = len(tokenizer.encode(assistant)) if assistant is not None else None
+        prompt_len = len(tokenizer.encode(prompt)) if include_prompt_len else None
+        expected_output_len = len(tokenizer.encode(assistant)) if include_output_len else None
         entries.append(
             DatasetEntry(
                 prompt=prompt,
                 source_index=index,
+                prompt_len=prompt_len,
                 expected_output_len=expected_output_len,
                 metadata={"row_id": row_payload.get("id")},
             )
@@ -489,6 +643,8 @@ def _render_prompt(base_text: str, target_len: int, sample_index: int) -> str:
 def _sample_dataset_entries(
     config: WorkloadConfig,
     tokenizer: PromptTokenizer,
+    *,
+    tokenizer_key: str,
 ) -> list[DatasetEntry]:
     dataset = config.dataset
     if dataset.type == "synthetic-fixed":
@@ -501,10 +657,29 @@ def _sample_dataset_entries(
         ]
     if dataset.type == "jsonl":
         assert dataset.path is not None
-        return _load_jsonl_entries(Path(dataset.path))
+        manifest_path = _manifest_cache_path(config, tokenizer_key=tokenizer_key)
+        if manifest_path.exists():
+            return _load_entries_from_manifest(manifest_path)
+        entries = _load_jsonl_entries_from_source(
+            Path(dataset.path),
+            tokenizer=tokenizer,
+            include_prompt_len=config.sampling.prompt_len.mode == "from_dataset",
+        )
+        _write_entries_to_manifest(manifest_path, config=config, tokenizer_key=tokenizer_key, entries=entries)
+        return entries
     if dataset.type == "sharegpt":
         assert dataset.path is not None
-        return _load_sharegpt_entries(Path(dataset.path), tokenizer)
+        manifest_path = _manifest_cache_path(config, tokenizer_key=tokenizer_key)
+        if manifest_path.exists():
+            return _load_entries_from_manifest(manifest_path)
+        entries = _load_sharegpt_entries_from_source(
+            Path(dataset.path),
+            tokenizer,
+            include_prompt_len=config.sampling.prompt_len.mode == "from_dataset",
+            include_output_len=config.sampling.output_len.mode == "from_dataset",
+        )
+        _write_entries_to_manifest(manifest_path, config=config, tokenizer_key=tokenizer_key, entries=entries)
+        return entries
     raise RuntimeError(f"unsupported dataset type {dataset.type!r}")
 
 
@@ -524,7 +699,12 @@ def generate_sample_requests(
     tokenizer: PromptTokenizer | None = None,
 ) -> list[SampleRequest]:
     resolved_tokenizer = tokenizer if tokenizer is not None else resolve_tokenizer(config.tokenizer)
-    dataset_entries = _sample_dataset_entries(config, resolved_tokenizer)
+    workload_tokenizer_key = _tokenizer_cache_key(config.tokenizer, tokenizer=resolved_tokenizer)
+    dataset_entries = _sample_dataset_entries(
+        config,
+        resolved_tokenizer,
+        tokenizer_key=workload_tokenizer_key,
+    )
     rng = random.Random(config.sampling.seed)
     samples: list[SampleRequest] = []
 
@@ -542,7 +722,14 @@ def generate_sample_requests(
                 sample_index=request_index,
             )
 
-        prompt_len = len(resolved_tokenizer.encode(prompt))
+        if config.sampling.prompt_len.mode == "from_dataset":
+            if entry.prompt_len is None:
+                raise ValueError(
+                    "sampling.prompt_len.mode=from_dataset requires dataset entries with prompt_len"
+                )
+            prompt_len = entry.prompt_len
+        else:
+            prompt_len = len(resolved_tokenizer.encode(prompt))
         expected_output_len = _resolve_output_len(config.sampling.output_len, entry, rng)
         samples.append(
             SampleRequest(
@@ -558,6 +745,7 @@ def generate_sample_requests(
                     "seed": config.sampling.seed,
                     "sampling_prompt_len_mode": config.sampling.prompt_len.mode,
                     "sampling_output_len_mode": config.sampling.output_len.mode,
+                    "prompt_tokenizer_key": workload_tokenizer_key,
                     **entry.metadata,
                 },
             )
@@ -630,6 +818,7 @@ def prepare_workload_for_trial(
 ) -> PreparedWorkload:
     config = load_workload_config(path)
     workload_tokenizer = resolve_tokenizer(config.tokenizer)
+    workload_tokenizer_key = _tokenizer_cache_key(config.tokenizer, tokenizer=workload_tokenizer)
     samples = generate_sample_requests(config, tokenizer=workload_tokenizer)
     requires_context_validation = config.dataset.type in {"jsonl", "sharegpt"}
 
@@ -665,10 +854,16 @@ def prepare_workload_for_trial(
         workload_tokenizer=workload_tokenizer,
         model_name=model_name,
     )
+    model_tokenizer_key = _context_tokenizer_cache_key(
+        config,
+        model_name=model_name,
+        workload_tokenizer_key=workload_tokenizer_key,
+    )
     validation_result = validate_samples_against_context_window(
         samples,
         tokenizer=model_tokenizer,
         policy=config.context_policy,
+        tokenizer_key=model_tokenizer_key,
     )
     if not validation_result.samples:
         raise ValueError(

@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.pyo
+.cache/
 
 # Virtual environments
 .venv/
@@ -38,3 +39,6 @@ profiler/deprecated/run_offline_benchmark.py
 
 # LLM MST finder local workload fixtures (generated test configs/datasets)
 tests/llm_mst_finder/fixtures/
+
+# Results from local runs of LLM MST finder tests
+results/

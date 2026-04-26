@@ -189,6 +189,7 @@ def validate_samples_against_context_window(
     *,
     tokenizer: ModelTokenizer,
     policy: ContextPolicy,
+    tokenizer_key: str | None = None,
 ) -> ContextValidationResult:
     kept: list[SampleRequest] = []
     skipped_source_indexes: list[int] = []
@@ -197,8 +198,18 @@ def validate_samples_against_context_window(
     truncated_samples = 0
 
     for sample_index, sample in enumerate(samples):
-        prompt_token_ids = tokenizer.encode(sample.prompt)
-        prompt_token_count = len(prompt_token_ids)
+        prompt_token_ids: list[int] | None = None
+        cached_prompt_tokenizer_key = sample.metadata.get("prompt_tokenizer_key")
+        if cached_prompt_tokenizer_key is not None and not isinstance(cached_prompt_tokenizer_key, str):
+            raise TypeError(
+                "sample.metadata['prompt_tokenizer_key'] must be a string when present, "
+                f"got {type(cached_prompt_tokenizer_key).__name__}"
+            )
+        if tokenizer_key is not None and cached_prompt_tokenizer_key == tokenizer_key:
+            prompt_token_count = sample.prompt_len
+        else:
+            prompt_token_ids = tokenizer.encode(sample.prompt)
+            prompt_token_count = len(prompt_token_ids)
         allowed_prompt_tokens = policy.max_model_len - sample.expected_output_len
         source_index = sample.metadata.get("source_index", sample_index)
         if not isinstance(source_index, int):
@@ -239,6 +250,8 @@ def validate_samples_against_context_window(
                 "tokenizer must implement decode(token_ids) when over_limit=truncate_prompt"
             )
         decoding_tokenizer = tokenizer  # typing helper
+        if prompt_token_ids is None:
+            prompt_token_ids = tokenizer.encode(sample.prompt)
         truncated_token_ids = _truncate_prompt_tokens(
             prompt_token_ids,
             keep_tokens=allowed_prompt_tokens,
