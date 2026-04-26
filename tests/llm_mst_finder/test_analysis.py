@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 
 from llm_mst_finder.analysis import analyze_trial_dir, write_analysis_artifact
-from llm_mst_finder.records import BenchmarkMetrics, RequestRecord, TrialAnalysisResult, TrialSummary, WindowSummary
+from llm_mst_finder.records import (
+    BenchmarkMetrics,
+    RequestRecord,
+    ServerMetricSample,
+    TrialAnalysisResult,
+    TrialSummary,
+    WindowSummary,
+)
 
 
 def _benchmark_metrics() -> BenchmarkMetrics:
@@ -138,6 +145,31 @@ def _request_record(
     )
 
 
+def _request_record_at(request_id: str, *, ts: float) -> RequestRecord:
+    actual_send_ts = ts + 0.01
+    first_token_ts = actual_send_ts + 0.01
+    end_ts = actual_send_ts + 0.02
+    return RequestRecord(
+        request_id=request_id,
+        trial_id="trial-analysis",
+        scheduled_send_ts=ts,
+        actual_send_ts=actual_send_ts,
+        first_token_ts=first_token_ts,
+        end_ts=end_ts,
+        success=True,
+        error=None,
+        prompt_len=100,
+        expected_output_len=30,
+        actual_output_len=2,
+        ttft_s=first_token_ts - actual_send_ts,
+        e2e_s=end_ts - actual_send_ts,
+        tpot_s=end_ts - first_token_ts,
+        itl_s=[end_ts - first_token_ts],
+        output_token_timestamps=[first_token_ts, end_ts],
+        metadata={},
+    )
+
+
 def _write_trial_dir(
     trial_dir: Path,
     *,
@@ -185,6 +217,44 @@ def _write_trial_dir(
         )
 
 
+def _write_server_metrics(trial_dir: Path, samples: list[ServerMetricSample]) -> None:
+    with (trial_dir / "server_metrics.jsonl").open("w", encoding="utf-8") as handle:
+        for sample in samples:
+            handle.write(json.dumps(sample.to_dict(), sort_keys=True) + "\n")
+
+
+def _server_metric_sample(idx: int, *, poll_error: str | None = None) -> ServerMetricSample:
+    if poll_error is not None:
+        return ServerMetricSample(
+            ts=float(idx),
+            raw={"poll_error": poll_error},
+            num_running=None,
+            num_waiting=None,
+            num_swapped=None,
+            kv_cache_usage=None,
+            prompt_tokens_total=None,
+            generation_tokens_total=None,
+            request_success_total=None,
+            request_abort_total=None,
+        )
+    return ServerMetricSample(
+        ts=float(idx) + 0.05,
+        raw={
+            "vllm:num_preemptions_total": [
+                {"labels": {}, "value": 0.0, "timestamp_ms": None},
+            ],
+        },
+        num_running=1.0,
+        num_waiting=0.0,
+        num_swapped=0.0,
+        kv_cache_usage=0.55,
+        prompt_tokens_total=float(idx * 100),
+        generation_tokens_total=float(idx * 30),
+        request_success_total=float(idx),
+        request_abort_total=0.0,
+    )
+
+
 def test_analyze_trial_dir_classifies_valid_trial(tmp_path: Path) -> None:
     trial_dir = tmp_path / "trial-valid"
     _write_trial_dir(trial_dir, server_metadata={"server_config": {"max_num_seqs": 8}})
@@ -200,6 +270,48 @@ def test_analyze_trial_dir_classifies_valid_trial(tmp_path: Path) -> None:
     written = json.loads(output_path.read_text(encoding="utf-8"))
     assert written["trial_validity"] == "valid"
     assert written["stability"]["status"] == "stable"
+
+
+def test_analyze_trial_dir_rebuilds_windows_from_server_metrics(tmp_path: Path) -> None:
+    trial_dir = tmp_path / "trial-server-metrics"
+    request_records = [
+        _request_record_at(f"request-{idx}", ts=float(idx) + 0.10) for idx in range(6)
+    ]
+    _write_trial_dir(trial_dir, request_records=request_records)
+    payload = json.loads((trial_dir / "summary.json").read_text(encoding="utf-8"))
+    payload["config"]["metrics_url"] = "http://127.0.0.1:8000/metrics"
+    payload["config"]["window_s"] = 1.0
+    (trial_dir / "summary.json").write_text(json.dumps(payload), encoding="utf-8")
+    _write_server_metrics(trial_dir, [_server_metric_sample(idx) for idx in range(6)])
+
+    result = analyze_trial_dir(trial_dir)
+
+    assert result.trial_validity == "valid"
+    assert result.stability is not None
+    assert result.stability.status == "stable"
+    assert result.stability.key_metrics["kv_cache_usage_max"] == pytest.approx(0.55)
+    assert not any(
+        "server-side evidence missing" in reason for reason in result.stability.reasons
+    )
+
+
+def test_analyze_trial_dir_marks_poll_error_metrics_invalid(tmp_path: Path) -> None:
+    trial_dir = tmp_path / "trial-poll-error"
+    _write_trial_dir(trial_dir)
+    payload = json.loads((trial_dir / "summary.json").read_text(encoding="utf-8"))
+    payload["config"]["metrics_url"] = "http://127.0.0.1:8000/metrics"
+    (trial_dir / "summary.json").write_text(json.dumps(payload), encoding="utf-8")
+    _write_server_metrics(
+        trial_dir,
+        [_server_metric_sample(idx, poll_error="ClientConnectorError: blocked") for idx in range(6)],
+    )
+
+    result = analyze_trial_dir(trial_dir)
+
+    assert result.trial_validity == "metrics_invalid"
+    assert result.stability is None
+    assert result.bottleneck is None
+    assert any("Prometheus poll failures" in reason for reason in result.validity_reasons)
 
 
 def test_analyze_trial_dir_marks_invalid_workload_from_saved_request_failures(tmp_path: Path) -> None:

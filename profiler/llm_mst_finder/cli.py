@@ -215,7 +215,6 @@ async def _search_command(args: argparse.Namespace) -> int:
         args.workload,
         model_name=args.model,
     )
-    request_source = cycling_request_source(prepared_workload.samples)
     request_client = RequestClient(
         base_url=args.base_url,
         endpoint=args.endpoint,
@@ -272,7 +271,7 @@ async def _search_command(args: argparse.Namespace) -> int:
     )
     controller = SearchController(
         runner,
-        request_source=request_source,
+        request_source_factory=lambda: cycling_request_source(prepared_workload.samples),
         output_dir=args.output_dir,
     )
     try:

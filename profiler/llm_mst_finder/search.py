@@ -166,18 +166,33 @@ class _SearchBounds:
         return (self.high_rate - self.low_rate) / self.low_rate <= precision
 
 
+@dataclass(frozen=True, slots=True)
+class _StableOpenLoopPoint:
+    rate: float
+    trial_id: str
+
+
 class SearchController:
     def __init__(
         self,
         runner: TrialRunnerProtocol | TrialRunner,
         *,
-        request_source: RequestSource,
+        request_source: RequestSource | None = None,
+        request_source_factory: Callable[[], RequestSource] | None = None,
         output_dir: str | Path,
         analyze_trial: Callable[[str | Path], TrialAnalysisResult] = analyze_trial_dir,
         write_analysis: Callable[[str | Path, TrialAnalysisResult], Path] = write_analysis_artifact,
     ) -> None:
+        if request_source is None and request_source_factory is None:
+            raise ValueError("request_source or request_source_factory is required")
+        if request_source is not None and request_source_factory is not None:
+            raise ValueError("request_source and request_source_factory are mutually exclusive")
         self._runner = runner
-        self._request_source = request_source
+        if request_source_factory is not None:
+            self._request_source_factory = request_source_factory
+        else:
+            assert request_source is not None
+            self._request_source_factory = lambda: request_source
         self._output_dir = Path(output_dir)
         self._trials_dir = self._output_dir / "trials"
         self._trace_path = self._output_dir / "search_trace.json"
@@ -245,8 +260,7 @@ class SearchController:
                 peak_output_token_throughput = output_tok_s
                 plateau_concurrency = concurrency
 
-            decision = self._analysis_decision(analysis)
-            if decision is False:
+            if self._should_stop_closed_loop(analysis):
                 stop_reason = self._closed_loop_stop_reason(analysis)
                 break
             if previous_throughput is not None and previous_throughput > 0.0:
@@ -349,36 +363,67 @@ class SearchController:
         bounds: _SearchBounds,
         closed_loop_result: ClosedLoopScoutResult | None,
     ) -> SearchResult:
-        if bounds.low_rate is None:
-            raise SearchConvergenceError("cannot confirm a search without a stable low bound")
-        event = await self._run_and_analyze_trial(
-            config,
-            mode="open-loop",
-            concurrency=None,
-            request_rate=bounds.low_rate,
-            duration_s=config.confirmation_duration_s,
-            purpose="open_loop_confirmation",
-        )
-        analysis = event["analysis_result"]
-        self._reject_invalid_trial(analysis, event["trial_id"])
-        decision = self._analysis_decision(analysis)
-        if decision is not True:
-            status = None if analysis.stability is None else analysis.stability.status
-            raise SearchConvergenceError(
-                "final confirmation trial did not prove the selected rate sustainable: "
-                f"trial_id={event['trial_id']}, status={status!r}"
+        for _ in range(config.max_binary_steps):
+            if bounds.low_rate is None:
+                raise SearchConvergenceError("cannot confirm a search without a stable low bound")
+            event = await self._run_and_analyze_trial(
+                config,
+                mode="open-loop",
+                concurrency=None,
+                request_rate=bounds.low_rate,
+                duration_s=config.confirmation_duration_s,
+                purpose="open_loop_confirmation",
             )
+            analysis = event["analysis_result"]
+            self._reject_invalid_trial(analysis, event["trial_id"])
+            decision = self._analysis_decision(analysis)
+            if decision is True:
+                return self._build_search_result(
+                    config=config,
+                    bounds=bounds,
+                    closed_loop_result=closed_loop_result,
+                    confirmation_trial_id=str(event["trial_id"]),
+                    confirmation_analysis=analysis,
+                )
+            failed_rate = bounds.low_rate
+            previous_stable = self._stable_open_loop_point_below(failed_rate)
+            if previous_stable is None:
+                status = None if analysis.stability is None else analysis.stability.status
+                raise SearchConvergenceError(
+                    "final confirmation trial did not prove the selected rate sustainable "
+                    "and no lower stable open-loop trial is available: "
+                    f"trial_id={event['trial_id']}, rate={failed_rate:.6g}, status={status!r}"
+                )
+            bounds.high_rate = failed_rate
+            bounds.high_trial_id = str(event["trial_id"])
+            bounds.low_rate = previous_stable.rate
+            bounds.low_trial_id = previous_stable.trial_id
+            self._record_bounds(bounds)
+            bounds = await self._binary_search(config, bounds)
+        raise SearchConvergenceError(
+            "confirmation did not converge within max_binary_steps="
+            f"{config.max_binary_steps}"
+        )
 
+    def _build_search_result(
+        self,
+        *,
+        config: SearchConfig,
+        bounds: _SearchBounds,
+        closed_loop_result: ClosedLoopScoutResult | None,
+        confirmation_trial_id: str,
+        confirmation_analysis: TrialAnalysisResult,
+    ) -> SearchResult:
         bottleneck_class = "unknown"
         confidence: Confidence = "low"
         reasons: list[str] = []
-        if analysis.stability is not None:
-            confidence = analysis.stability.confidence
-            reasons.extend(analysis.stability.reasons)
-        if analysis.bottleneck is not None:
-            bottleneck_class = analysis.bottleneck.bottleneck_class
-            confidence = _min_confidence(confidence, analysis.bottleneck.confidence)
-            reasons.extend(analysis.bottleneck.evidence)
+        if confirmation_analysis.stability is not None:
+            confidence = confirmation_analysis.stability.confidence
+            reasons.extend(confirmation_analysis.stability.reasons)
+        if confirmation_analysis.bottleneck is not None:
+            bottleneck_class = confirmation_analysis.bottleneck.bottleneck_class
+            confidence = _min_confidence(confidence, confirmation_analysis.bottleneck.confidence)
+            reasons.extend(confirmation_analysis.bottleneck.evidence)
         high_bottleneck = self._trace_bottleneck(bounds.high_trial_id)
         if high_bottleneck is not None:
             bottleneck_class = str(high_bottleneck["bottleneck_class"])
@@ -391,7 +436,7 @@ class SearchController:
             max_no_drift_request_rate=bounds.low_rate,
             max_slo_satisfying_request_rate=bounds.low_rate,
             rate_precision=config.rate_precision,
-            confirmation_trial_id=str(event["trial_id"]),
+            confirmation_trial_id=confirmation_trial_id,
             closed_loop=closed_loop_result,
             bottleneck_class=bottleneck_class,
             confidence=confidence,
@@ -505,7 +550,7 @@ class SearchController:
         )
         run_result = await self._runner.run_trial(
             trial_config,
-            request_source=self._request_source,
+            request_source=self._request_source_factory(),
             output_dir=trial_dir,
         )
         analysis = self._analyze_trial(trial_dir)
@@ -582,6 +627,27 @@ class SearchController:
             return bottleneck
         return None
 
+    def _stable_open_loop_point_below(self, rate: float) -> _StableOpenLoopPoint | None:
+        best: _StableOpenLoopPoint | None = None
+        for event in self._trace_events():
+            if event.get("mode") != "open-loop":
+                continue
+            request_rate = event.get("request_rate")
+            trial_id = event.get("trial_id")
+            if not isinstance(request_rate, (int, float)) or not isinstance(trial_id, str):
+                raise RuntimeError("search trace open-loop event was corrupted")
+            if request_rate >= rate:
+                continue
+            analysis = event.get("analysis")
+            if not isinstance(analysis, dict):
+                raise RuntimeError("search trace analysis entry was corrupted")
+            stability = analysis.get("stability")
+            if not isinstance(stability, dict) or stability.get("status") != "stable":
+                continue
+            if best is None or request_rate > best.rate:
+                best = _StableOpenLoopPoint(rate=float(request_rate), trial_id=trial_id)
+        return best
+
     def _write_trace(self) -> None:
         self._trace_path.write_text(
             json.dumps(self._trace, indent=2, sort_keys=True) + "\n",
@@ -629,6 +695,16 @@ class SearchController:
         if analysis.bottleneck is not None and analysis.bottleneck.bottleneck_class == "kv_cache":
             return "KV/preemption wall detected during closed-loop scouting"
         return f"closed-loop scouting stopped on stability status {analysis.stability.status!r}"
+
+    @staticmethod
+    def _should_stop_closed_loop(analysis: TrialAnalysisResult) -> bool:
+        if analysis.stability is None:
+            raise ValueError("closed-loop search trial requires a stability result")
+        if analysis.stability.status in {"slo_violation", "aborted_safety"}:
+            return True
+        if analysis.bottleneck is not None and analysis.bottleneck.bottleneck_class == "kv_cache":
+            return True
+        return False
 
     @staticmethod
     def _check_max_rate(config: SearchConfig, rate: float) -> None:

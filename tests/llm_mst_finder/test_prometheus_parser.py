@@ -4,6 +4,8 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
+
 from llm_mst_finder.metrics_polling import (
     PrometheusMetricsPoller,
     parse_prometheus_text,
@@ -49,7 +51,7 @@ def test_parse_prometheus_text_rejects_invalid_metric_lines() -> None:
         raise AssertionError("expected ValueError for malformed Prometheus text")
 
 
-def test_prometheus_metrics_poller_writes_samples_and_records_http_failures(
+def test_prometheus_metrics_poller_writes_samples(
     tmp_path: Path,
 ) -> None:
     async def run() -> None:
@@ -71,7 +73,6 @@ def test_prometheus_metrics_poller_writes_samples_and_records_http_failures(
         class FakeSession:
             def __init__(self) -> None:
                 self._responses = [
-                    FakeResponse(status=500, text="server exploded", reason="Internal Server Error"),
                     FakeResponse(
                         status=200,
                         text=(
@@ -119,9 +120,7 @@ def test_prometheus_metrics_poller_writes_samples_and_records_http_failures(
         finally:
             await stop_task
 
-        assert len(samples) >= 2
-        assert samples[0].raw["poll_error"].startswith("HTTP 500")
-        assert samples[0].num_running is None
+        assert len(samples) >= 1
         assert samples[-1].num_running == 2.0
         assert samples[-1].num_waiting == 1.0
         assert samples[-1].kv_cache_usage == 0.5
@@ -130,7 +129,44 @@ def test_prometheus_metrics_poller_writes_samples_and_records_http_failures(
         lines = output_path.read_text(encoding="utf-8").strip().splitlines()
         assert len(lines) == len(samples)
         decoded = [json.loads(line) for line in lines]
-        assert decoded[0]["raw"]["poll_error"].startswith("HTTP 500")
         assert decoded[-1]["num_running"] == 2.0
+
+    asyncio.run(run())
+
+
+def test_prometheus_metrics_poller_raises_http_failures(tmp_path: Path) -> None:
+    async def run() -> None:
+        class FakeResponse:
+            status = 500
+            reason = "Internal Server Error"
+
+            async def text(self) -> str:
+                return "server exploded"
+
+            async def __aenter__(self) -> FakeResponse:
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb) -> None:
+                return None
+
+        class FakeSession:
+            def get(self, _: str) -> FakeResponse:
+                return FakeResponse()
+
+        output_path = tmp_path / "server_metrics.jsonl"
+        stop_event = asyncio.Event()
+        poller = PrometheusMetricsPoller(
+            metrics_url="http://127.0.0.1:8000/metrics",
+            interval_s=0.01,
+            session=FakeSession(),
+        )
+
+        with pytest.raises(RuntimeError, match="Prometheus metrics poll failed: HTTP 500"):
+            await poller.run(
+                output_path=output_path,
+                stop_event=stop_event,
+                trial_id="trial-prometheus",
+            )
+        assert not output_path.exists()
 
     asyncio.run(run())

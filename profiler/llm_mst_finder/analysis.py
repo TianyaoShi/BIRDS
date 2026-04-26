@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from .bottleneck import classify_bottleneck
-from .records import RequestRecord, TrialAnalysisResult, TrialSummary
+from .records import RequestRecord, ServerMetricSample, TrialAnalysisResult, TrialSummary
 from .stability import classify_stability, load_window_summaries_csv
+from .windowing import FixedWindowAggregator
 
 _OPEN_LOOP_SEND_RATE_TOLERANCE = 0.05
 _SCHEDULING_DELAY_WARNING_S = 0.25
@@ -21,8 +22,8 @@ def analyze_trial_dir(trial_dir: str | Path) -> TrialAnalysisResult:
     summary_payload = _load_json_file(directory / "summary.json")
     config_payload = _require_mapping(summary_payload.get("config"), "summary.json.config")
     summary = _load_trial_summary(summary_payload)
-    windows = load_window_summaries_csv(directory / "windows.csv")
     request_records = _load_request_records(directory / "request_records.jsonl")
+    windows = load_window_summaries_csv(directory / "windows.csv")
     _validate_trial_id_consistency(summary, windows, request_records)
     server_metadata = _load_server_metadata(directory, config_payload, summary_payload)
 
@@ -43,6 +44,16 @@ def analyze_trial_dir(trial_dir: str | Path) -> TrialAnalysisResult:
             validity_reasons=_client_limited_reasons(summary),
             stability=None,
             bottleneck=None,
+        )
+
+    server_metrics_result = _load_server_metrics(directory, summary_payload)
+    if isinstance(server_metrics_result, TrialAnalysisResult):
+        return server_metrics_result
+    if server_metrics_result:
+        windows = FixedWindowAggregator(window_s=_analysis_window_s(config_payload)).summarize(
+            trial_id=summary.trial_id,
+            request_records=request_records,
+            server_metrics=server_metrics_result,
         )
 
     stability = classify_stability(windows, aborted_safety=summary.status == "aborted_safety")
@@ -101,6 +112,82 @@ def _load_request_records(path: Path) -> list[RequestRecord]:
     return records
 
 
+def _load_server_metrics(
+    trial_dir: Path,
+    summary_payload: Mapping[str, Any],
+) -> list[ServerMetricSample] | TrialAnalysisResult | None:
+    summary = _load_trial_summary(summary_payload)
+    config_payload = _require_mapping(summary_payload.get("config"), "summary.json.config")
+    metrics_url = config_payload.get("metrics_url")
+    path = trial_dir / "server_metrics.jsonl"
+    if not path.exists():
+        if metrics_url is not None:
+            return TrialAnalysisResult(
+                trial_id=summary.trial_id,
+                trial_validity="metrics_invalid",
+                validity_reasons=[
+                    f"metrics_url was configured but server_metrics.jsonl is missing: {path}",
+                    "server-side evidence is required for confident search decisions",
+                ],
+                stability=None,
+                bottleneck=None,
+            )
+        return None
+
+    samples: list[ServerMetricSample] = []
+    poll_errors: list[str] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_idx, raw_line in enumerate(handle, start=1):
+            line = raw_line.strip()
+            if not line:
+                raise ValueError(f"{path}:{line_idx}: server metric line must not be blank")
+            payload = json.loads(line)
+            if not isinstance(payload, dict):
+                raise ValueError(f"{path}:{line_idx}: server metric must decode to an object")
+            raw = payload.get("raw")
+            if isinstance(raw, Mapping) and raw.get("poll_error") is not None:
+                poll_errors.append(str(raw["poll_error"]))
+                continue
+            samples.append(ServerMetricSample(**payload))
+
+    if poll_errors:
+        return TrialAnalysisResult(
+            trial_id=summary.trial_id,
+            trial_validity="metrics_invalid",
+            validity_reasons=[
+                "saved server metrics contain Prometheus poll failures: "
+                f"{len(poll_errors)} sample(s), first={poll_errors[0]!r}",
+                "server-side evidence is unavailable; search bounds must not be updated",
+            ],
+            stability=None,
+            bottleneck=None,
+        )
+    if not samples:
+        return TrialAnalysisResult(
+            trial_id=summary.trial_id,
+            trial_validity="metrics_invalid",
+            validity_reasons=[
+                f"server metrics artifact is empty: {path}",
+                "server-side evidence is required for confident search decisions",
+            ],
+            stability=None,
+            bottleneck=None,
+        )
+    if summary.metrics_sample_count != len(samples):
+        return TrialAnalysisResult(
+            trial_id=summary.trial_id,
+            trial_validity="metrics_invalid",
+            validity_reasons=[
+                "summary metrics_sample_count does not match server_metrics.jsonl: "
+                f"{summary.metrics_sample_count} != {len(samples)}",
+                "server-side evidence is inconsistent; search bounds must not be updated",
+            ],
+            stability=None,
+            bottleneck=None,
+        )
+    return samples
+
+
 def _validate_trial_id_consistency(
     summary: TrialSummary,
     windows: Sequence[Any],
@@ -118,6 +205,13 @@ def _validate_trial_id_consistency(
                 "trial_id mismatch between summary.json and request_records.jsonl: "
                 f"{summary.trial_id!r} != {record.trial_id!r}"
             )
+
+
+def _analysis_window_s(config_payload: Mapping[str, Any]) -> float:
+    raw_window_s = config_payload.get("window_s", 10.0)
+    if not isinstance(raw_window_s, (int, float)):
+        raise ValueError("summary.json.config.window_s must be numeric when provided")
+    return float(raw_window_s)
 
 
 def _load_server_metadata(
