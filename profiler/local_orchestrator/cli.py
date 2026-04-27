@@ -143,6 +143,7 @@ def _build_scheduler(*, state_store: RunStateStore, manifest) -> OrchestratorSch
         lifecycle=lifecycle,
         adapter=adapter,
         state_store=state_store,
+        lifecycle_factory=VLLMLifecycleManager,
     )
 
 

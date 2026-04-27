@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Protocol
+from dataclasses import dataclass
+from queue import Empty, Queue
+from threading import Lock, Thread
+from typing import Any, Callable, Protocol
 
 from .models import ActiveServer, ExpandedExperimentJob, GPULease, PortReservation, RunConfig
 from .state_store import RunStateStore
@@ -55,6 +58,15 @@ class PortAllocatorProtocol(Protocol):
         ...
 
 
+@dataclass(slots=True)
+class _WorkerSlot:
+    slot_index: int
+    lease: GPULease
+    ports: PortReservation
+    lifecycle: LifecycleProtocol
+    active_reuse_key: str | None = None
+
+
 class OrchestratorScheduler:
     def __init__(
         self,
@@ -65,6 +77,7 @@ class OrchestratorScheduler:
         lifecycle: LifecycleProtocol,
         adapter: AdapterProtocol,
         state_store: RunStateStore,
+        lifecycle_factory: Callable[[], LifecycleProtocol] | None = None,
     ) -> None:
         self._run_config = run_config
         self._gpu_manager = gpu_manager
@@ -72,6 +85,8 @@ class OrchestratorScheduler:
         self._lifecycle = lifecycle
         self._adapter = adapter
         self._state_store = state_store
+        self._lifecycle_factory = lifecycle_factory
+        self._state_lock = Lock()
 
         self._active_lease: GPULease | None = None
         self._active_ports: PortReservation | None = None
@@ -85,28 +100,129 @@ class OrchestratorScheduler:
         resume: bool,
     ) -> dict[str, Any]:
         if resume:
-            self._state_store.reconcile_jobs(state)
+            self._with_state_lock(lambda: self._state_store.reconcile_jobs(state))
+
+        pending_jobs = self._collect_pending_jobs(jobs=jobs, state=state)
 
         try:
+            if self._should_run_parallel(pending_jobs):
+                self._run_parallel_jobs(jobs=pending_jobs, state=state)
+            else:
+                for job in pending_jobs:
+                    self._run_single_job(job=job, state=state)
+            with self._state_lock:
+                state["status"] = "completed"
+                self._state_store.save(state)
+                return self._state_store.write_summary_files(state)
+        finally:
+            self._release_active_server(reason="scheduler_shutdown")
+            self._lifecycle.shutdown()
+
+    def _collect_pending_jobs(
+        self,
+        *,
+        jobs: list[ExpandedExperimentJob],
+        state: dict[str, Any],
+    ) -> list[ExpandedExperimentJob]:
+        pending_jobs: list[ExpandedExperimentJob] = []
+        with self._state_lock:
             for job in jobs:
                 job_state = self._state_store.find_job(state, job.experiment_id)
                 if job_state.get("status") in {"succeeded", "skipped"}:
                     continue
-                self._run_single_job(job=job, state=state)
-            state["status"] = "completed"
-            self._state_store.save(state)
-            return self._state_store.write_summary_files(state)
-        finally:
-            self._release_active_server(reason="scheduler_shutdown")
-            self._lifecycle.shutdown()
+                pending_jobs.append(job)
+        return pending_jobs
+
+    def _should_run_parallel(self, pending_jobs: list[ExpandedExperimentJob]) -> bool:
+        return (
+            self._lifecycle_factory is not None
+            and self._run_config.max_active_gpus > 1
+            and len(pending_jobs) > 1
+        )
+
+    def _run_parallel_jobs(self, *, jobs: list[ExpandedExperimentJob], state: dict[str, Any]) -> None:
+        slot_count = min(self._run_config.max_active_gpus, len(jobs))
+        slots = self._build_worker_slots(slot_count)
+
+        work_queue: Queue[ExpandedExperimentJob] = Queue()
+        for job in jobs:
+            work_queue.put(job)
+
+        worker_failures: list[Exception] = []
+        worker_failures_lock = Lock()
+
+        def _worker(slot: _WorkerSlot) -> None:
+            while True:
+                try:
+                    job = work_queue.get_nowait()
+                except Empty:
+                    return
+                try:
+                    self._run_single_job_on_slot(job=job, state=state, slot=slot)
+                except Exception as exc:  # pragma: no cover - defensive safety
+                    with worker_failures_lock:
+                        worker_failures.append(exc)
+                finally:
+                    work_queue.task_done()
+
+        threads = [
+            Thread(
+                target=_worker,
+                args=(slot,),
+                name=f"orchestrator-worker-{slot.slot_index}",
+                daemon=True,
+            )
+            for slot in slots
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        for slot in slots:
+            self._release_slot(slot, reason="parallel_slot_shutdown")
+
+        if worker_failures:
+            first_failure = worker_failures[0]
+            raise RuntimeError(f"parallel scheduler worker failed: {first_failure}") from first_failure
+
+    def _build_worker_slots(self, slot_count: int) -> list[_WorkerSlot]:
+        if self._lifecycle_factory is None:
+            raise RuntimeError("parallel execution requires lifecycle_factory")
+
+        slots: list[_WorkerSlot] = []
+        for index in range(slot_count):
+            lease: GPULease | None = None
+            ports: PortReservation | None = None
+            try:
+                lease = self._gpu_manager.acquire()
+                ports = self._port_allocator.reserve()
+                lifecycle = self._lifecycle if index == 0 else self._lifecycle_factory()
+                slots.append(
+                    _WorkerSlot(
+                        slot_index=index,
+                        lease=lease,
+                        ports=ports,
+                        lifecycle=lifecycle,
+                    )
+                )
+            except Exception:
+                if ports is not None:
+                    self._port_allocator.release(ports)
+                if lease is not None:
+                    self._gpu_manager.release(lease)
+                for slot in slots:
+                    self._release_slot(slot, reason="slot_initialization_failed")
+                raise
+        return slots
 
     def _run_single_job(self, *, job: ExpandedExperimentJob, state: dict[str, Any]) -> None:
         last_error: str | None = None
 
         for search_attempt in range(1, self._run_config.retry.search_attempts + 1):
-            self._state_store.increment_attempt(state, job.experiment_id, kind="search")
-            self._state_store.set_job_status(state, experiment_id=job.experiment_id, status="running")
-            self._state_store.append_event(
+            self._increment_attempt(state, experiment_id=job.experiment_id, kind="search")
+            self._set_job_status(state, experiment_id=job.experiment_id, status="running")
+            self._append_event(
                 state,
                 event_type="search_attempt",
                 experiment_id=job.experiment_id,
@@ -120,7 +236,7 @@ class OrchestratorScheduler:
                 )
             except Exception as exc:
                 last_error = f"startup failed before search attempt {search_attempt}: {exc}"
-                self._state_store.append_event(
+                self._append_event(
                     state,
                     event_type="startup_failed",
                     experiment_id=job.experiment_id,
@@ -135,8 +251,8 @@ class OrchestratorScheduler:
                 logs_dir=self._state_store.logs_dir,
             )
             if result.success:
-                self._state_store.mark_job_succeeded(state, experiment_id=job.experiment_id, result=result)
-                self._state_store.append_event(
+                self._mark_job_succeeded(state, experiment_id=job.experiment_id, result=result)
+                self._append_event(
                     state,
                     event_type="job_succeeded",
                     experiment_id=job.experiment_id,
@@ -145,7 +261,7 @@ class OrchestratorScheduler:
                 return
 
             last_error = result.error or f"search command failed with exit code {result.return_code}"
-            self._state_store.append_event(
+            self._append_event(
                 state,
                 event_type="search_failed",
                 experiment_id=job.experiment_id,
@@ -157,16 +273,101 @@ class OrchestratorScheduler:
             )
             self._release_active_server(reason="search_retry_restart")
 
-        self._state_store.mark_job_failed(
+        self._mark_job_failed(
             state,
             experiment_id=job.experiment_id,
             error=last_error or "search failed after retries",
         )
-        self._state_store.append_event(
+        self._append_event(
             state,
             event_type="job_failed",
             experiment_id=job.experiment_id,
             payload={"error": last_error or "search failed after retries"},
+        )
+
+    def _run_single_job_on_slot(
+        self,
+        *,
+        job: ExpandedExperimentJob,
+        state: dict[str, Any],
+        slot: _WorkerSlot,
+    ) -> None:
+        last_error: str | None = None
+
+        for search_attempt in range(1, self._run_config.retry.search_attempts + 1):
+            self._increment_attempt(state, experiment_id=job.experiment_id, kind="search")
+            self._set_job_status(state, experiment_id=job.experiment_id, status="running")
+            self._append_event(
+                state,
+                event_type="search_attempt",
+                experiment_id=job.experiment_id,
+                payload={"attempt": search_attempt, "slot_index": slot.slot_index},
+            )
+
+            try:
+                server = self._ensure_server_with_startup_retries_on_slot(
+                    job=job,
+                    state=state,
+                    slot=slot,
+                )
+            except Exception as exc:
+                last_error = f"startup failed before search attempt {search_attempt}: {exc}"
+                self._append_event(
+                    state,
+                    event_type="startup_failed",
+                    experiment_id=job.experiment_id,
+                    payload={
+                        "attempt": search_attempt,
+                        "slot_index": slot.slot_index,
+                        "error": str(exc),
+                    },
+                )
+                self._release_slot_server(slot, reason="startup_failed")
+                continue
+
+            result = self._adapter.invoke(
+                job=job,
+                server=server,
+                logs_dir=self._state_store.logs_dir,
+            )
+            if result.success:
+                self._mark_job_succeeded(state, experiment_id=job.experiment_id, result=result)
+                self._append_event(
+                    state,
+                    event_type="job_succeeded",
+                    experiment_id=job.experiment_id,
+                    payload={
+                        "attempt": search_attempt,
+                        "slot_index": slot.slot_index,
+                        "result_dir": str(job.result_dir),
+                    },
+                )
+                return
+
+            last_error = result.error or f"search command failed with exit code {result.return_code}"
+            self._append_event(
+                state,
+                event_type="search_failed",
+                experiment_id=job.experiment_id,
+                payload={
+                    "attempt": search_attempt,
+                    "slot_index": slot.slot_index,
+                    "return_code": result.return_code,
+                    "error": last_error,
+                },
+            )
+            self._release_slot_server(slot, reason="search_retry_restart")
+
+        self._mark_job_failed(
+            state,
+            experiment_id=job.experiment_id,
+            error=last_error or "search failed after retries",
+        )
+        self._append_event(
+            state,
+            event_type="job_failed",
+            experiment_id=job.experiment_id,
+            payload={"error": last_error or "search failed after retries", "slot_index": slot.slot_index},
         )
 
     def _ensure_server_with_startup_retries(
@@ -177,8 +378,8 @@ class OrchestratorScheduler:
     ) -> ActiveServer:
         last_exception: Exception | None = None
         for startup_attempt in range(1, self._run_config.retry.startup_attempts + 1):
-            self._state_store.increment_attempt(state, job.experiment_id, kind="startup")
-            self._state_store.append_event(
+            self._increment_attempt(state, experiment_id=job.experiment_id, kind="startup")
+            self._append_event(
                 state,
                 event_type="startup_attempt",
                 experiment_id=job.experiment_id,
@@ -191,13 +392,53 @@ class OrchestratorScheduler:
                 )
             except Exception as exc:
                 last_exception = exc
-                self._state_store.append_event(
+                self._append_event(
                     state,
                     event_type="startup_attempt_failed",
                     experiment_id=job.experiment_id,
                     payload={"attempt": startup_attempt, "error": str(exc)},
                 )
                 self._release_active_server(reason="startup_attempt_failed")
+
+        if last_exception is None:
+            raise RuntimeError("startup retries exhausted")
+        raise RuntimeError(str(last_exception))
+
+    def _ensure_server_with_startup_retries_on_slot(
+        self,
+        *,
+        job: ExpandedExperimentJob,
+        state: dict[str, Any],
+        slot: _WorkerSlot,
+    ) -> ActiveServer:
+        last_exception: Exception | None = None
+        for startup_attempt in range(1, self._run_config.retry.startup_attempts + 1):
+            self._increment_attempt(state, experiment_id=job.experiment_id, kind="startup")
+            self._append_event(
+                state,
+                event_type="startup_attempt",
+                experiment_id=job.experiment_id,
+                payload={"attempt": startup_attempt, "slot_index": slot.slot_index},
+            )
+            try:
+                return self._ensure_server_on_slot(
+                    job=job,
+                    slot=slot,
+                    force_restart=startup_attempt > 1,
+                )
+            except Exception as exc:
+                last_exception = exc
+                self._append_event(
+                    state,
+                    event_type="startup_attempt_failed",
+                    experiment_id=job.experiment_id,
+                    payload={
+                        "attempt": startup_attempt,
+                        "slot_index": slot.slot_index,
+                        "error": str(exc),
+                    },
+                )
+                self._release_slot_server(slot, reason="startup_attempt_failed")
 
         if last_exception is None:
             raise RuntimeError("startup retries exhausted")
@@ -244,6 +485,43 @@ class OrchestratorScheduler:
         self._active_reuse_key = job.server_signature_key
         return server
 
+    def _ensure_server_on_slot(
+        self,
+        *,
+        job: ExpandedExperimentJob,
+        slot: _WorkerSlot,
+        force_restart: bool,
+    ) -> ActiveServer:
+        if force_restart:
+            self._release_slot_server(slot, reason="force_restart")
+
+        active_server = slot.lifecycle.active_server
+        if active_server is not None and slot.active_reuse_key == job.server_signature_key:
+            if slot.lifecycle.is_ready(active_server):
+                return active_server
+            self._release_slot_server(slot, reason="active_server_unhealthy")
+
+        if slot.active_reuse_key is not None and slot.active_reuse_key != job.server_signature_key:
+            self._release_slot_server(slot, reason="signature_mismatch")
+
+        runtime_signature = runtime_server_signature(
+            server_signature_key=job.server_signature_key,
+            gpu_id=slot.lease.gpu_id,
+            base_port=slot.ports.base_port,
+            metrics_port=slot.ports.metrics_port,
+        )
+
+        server = slot.lifecycle.ensure_server(
+            job=job,
+            gpu_id=slot.lease.gpu_id,
+            ports=slot.ports,
+            runtime_signature=runtime_signature,
+            logs_dir=self._state_store.logs_dir,
+            force_restart=False,
+        )
+        slot.active_reuse_key = job.server_signature_key
+        return server
+
     def _release_active_server(self, *, reason: str) -> None:
         self._lifecycle.stop_active_server(reason=reason)
         if self._active_lease is not None:
@@ -253,3 +531,70 @@ class OrchestratorScheduler:
             self._port_allocator.release(self._active_ports)
             self._active_ports = None
         self._active_reuse_key = None
+
+    def _release_slot_server(self, slot: _WorkerSlot, *, reason: str) -> None:
+        slot.lifecycle.stop_active_server(reason=reason)
+        slot.active_reuse_key = None
+
+    def _release_slot(self, slot: _WorkerSlot, *, reason: str) -> None:
+        self._release_slot_server(slot, reason=reason)
+        self._port_allocator.release(slot.ports)
+        self._gpu_manager.release(slot.lease)
+        if slot.lifecycle is not self._lifecycle:
+            slot.lifecycle.shutdown()
+
+    def _with_state_lock(self, callback: Callable[[], Any]) -> Any:
+        with self._state_lock:
+            return callback()
+
+    def _increment_attempt(self, state: dict[str, Any], *, experiment_id: str, kind: str) -> None:
+        with self._state_lock:
+            self._state_store.increment_attempt(state, experiment_id, kind=kind)
+
+    def _set_job_status(self, state: dict[str, Any], *, experiment_id: str, status: str) -> None:
+        with self._state_lock:
+            self._state_store.set_job_status(state, experiment_id=experiment_id, status=status)
+
+    def _append_event(
+        self,
+        state: dict[str, Any],
+        *,
+        event_type: str,
+        experiment_id: str | None,
+        payload: dict[str, Any],
+    ) -> None:
+        with self._state_lock:
+            self._state_store.append_event(
+                state,
+                event_type=event_type,
+                experiment_id=experiment_id,
+                payload=payload,
+            )
+
+    def _mark_job_succeeded(
+        self,
+        state: dict[str, Any],
+        *,
+        experiment_id: str,
+        result,
+    ) -> None:
+        with self._state_lock:
+            self._state_store.mark_job_succeeded(
+                state,
+                experiment_id=experiment_id,
+                result=result,
+            )
+
+    def _mark_job_failed(
+        self,
+        state: dict[str, Any],
+        *,
+        experiment_id: str,
+        error: str,
+    ) -> None:
+        with self._state_lock:
+            self._state_store.mark_job_failed(
+                state,
+                experiment_id=experiment_id,
+                error=error,
+            )

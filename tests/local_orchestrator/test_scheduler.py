@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import StringIO
 from pathlib import Path
+import time
 
 from local_orchestrator.models import (
     ActiveServer,
@@ -255,3 +256,83 @@ def test_scheduler_resume_reconciles_existing_artifacts(tmp_path: Path) -> None:
 
     assert summary["counts"]["succeeded"] == 1
     assert adapter.calls == []
+
+
+def test_scheduler_parallel_uses_multiple_slots_and_gpu_ids(tmp_path: Path) -> None:
+    class RecordingLifecycle(StubLifecycle):
+        def __init__(self) -> None:
+            super().__init__(startup_failures=0)
+            self.ensure_calls: list[tuple[str, int]] = []
+
+        def ensure_server(
+            self,
+            *,
+            job: ExpandedExperimentJob,
+            gpu_id: int,
+            ports,
+            runtime_signature: str,
+            logs_dir,
+            force_restart: bool = False,
+        ) -> ActiveServer:
+            self.ensure_calls.append((job.experiment_id, gpu_id))
+            return super().ensure_server(
+                job=job,
+                gpu_id=gpu_id,
+                ports=ports,
+                runtime_signature=runtime_signature,
+                logs_dir=logs_dir,
+                force_restart=force_restart,
+            )
+
+    class DelayedSuccessAdapter(StubAdapter):
+        def invoke(self, *, job: ExpandedExperimentJob, server: ActiveServer, logs_dir: Path) -> SearchExecutionResult:
+            time.sleep(0.05)
+            return super().invoke(job=job, server=server, logs_dir=logs_dir)
+
+    jobs = [
+        _make_job(tmp_path, experiment_id="job-a", signature="sig-a"),
+        _make_job(tmp_path, experiment_id="job-b", signature="sig-b"),
+    ]
+    run_config = RunConfig(
+        output_root=tmp_path / "orchestrator-runs",
+        allowed_gpu_ids=(0, 1, 2, 3),
+        max_active_gpus=2,
+        retry=RetryPolicy(startup_attempts=1, search_attempts=1),
+    )
+
+    base_lifecycle = RecordingLifecycle()
+    lifecycles: list[RecordingLifecycle] = [base_lifecycle]
+
+    def lifecycle_factory() -> RecordingLifecycle:
+        lifecycle = RecordingLifecycle()
+        lifecycles.append(lifecycle)
+        return lifecycle
+
+    adapter = DelayedSuccessAdapter({"job-a": [True], "job-b": [True]})
+    state_store = RunStateStore(tmp_path / "parallel-run")
+    state = state_store.initialize_new(
+        run_id="run-parallel",
+        manifest_path=tmp_path / "manifest.yaml",
+        jobs=jobs,
+    )
+
+    scheduler = OrchestratorScheduler(
+        run_config=run_config,
+        gpu_manager=GPULeaseManager(allowed_gpu_ids=run_config.allowed_gpu_ids, max_active_gpus=2),
+        port_allocator=PortAllocator(base_port_start=8000, base_port_end=8010, metrics_port_offset=1000),
+        lifecycle=base_lifecycle,
+        adapter=adapter,
+        state_store=state_store,
+        lifecycle_factory=lifecycle_factory,
+    )
+    summary = scheduler.run(jobs=jobs, state=state, resume=False)
+
+    assert summary["counts"]["succeeded"] == 2
+    used_gpu_ids = sorted(
+        {
+            gpu_id
+            for lifecycle in lifecycles
+            for _, gpu_id in lifecycle.ensure_calls
+        }
+    )
+    assert used_gpu_ids == [0, 1]
