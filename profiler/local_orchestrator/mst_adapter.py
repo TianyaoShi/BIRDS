@@ -172,8 +172,12 @@ class MSTSearchAdapter:
             command.extend(["--max-request-rate", f"{job.search.max_request_rate}"])
         if job.launch.max_num_seqs is not None:
             command.extend(["--max-num-seqs", f"{job.launch.max_num_seqs}"])
+        elif job.search.max_num_seqs is not None:
+            command.extend(["--max-num-seqs", f"{job.search.max_num_seqs}"])
         if job.launch.max_num_batched_tokens is not None:
             command.extend(["--max-num-batched-tokens", f"{job.launch.max_num_batched_tokens}"])
+        elif job.search.max_num_batched_tokens is not None:
+            command.extend(["--max-num-batched-tokens", f"{job.search.max_num_batched_tokens}"])
         if job.server_metadata_file is not None:
             command.extend(["--server-metadata-file", str(job.server_metadata_file)])
         return tuple(command)
