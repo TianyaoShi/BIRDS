@@ -183,6 +183,9 @@ def test_fixed_window_aggregator_summarizes_requests_and_metrics() -> None:
     assert first.prompt_tok_s == pytest.approx(8.0)
     assert first.generation_tok_s == pytest.approx(4.0)
     assert first.total_tok_s == pytest.approx(12.0)
+    assert first.prompt_len_mean == pytest.approx(8.0)
+    assert first.expected_output_len_mean == pytest.approx(4.0)
+    assert first.actual_output_len_mean == pytest.approx(2.5)
     assert first.num_running_mean == pytest.approx(1.25)
     assert first.num_waiting_mean == pytest.approx(0.25)
     assert first.kv_cache_usage_mean == pytest.approx(0.5)
@@ -202,6 +205,9 @@ def test_fixed_window_aggregator_summarizes_requests_and_metrics() -> None:
     assert second.prompt_tok_s == pytest.approx(16.0)
     assert second.generation_tok_s == pytest.approx(15.0)
     assert second.total_tok_s == pytest.approx(31.0)
+    assert second.prompt_len_mean == pytest.approx(8.0)
+    assert second.expected_output_len_mean == pytest.approx(4.0)
+    assert second.actual_output_len_mean is None
     assert second.num_running_mean == pytest.approx(1.0)
     assert second.num_waiting_mean == pytest.approx(0.5)
     assert second.kv_cache_usage_mean == pytest.approx(0.55)
@@ -255,6 +261,9 @@ def test_fixed_window_aggregator_preserves_empty_windows() -> None:
     assert windows[1].outstanding_slope == pytest.approx(0.0)
     assert windows[1].ttft_p50_ms is None
     assert windows[1].prompt_tok_s is None
+    assert windows[1].prompt_len_mean is None
+    assert windows[1].expected_output_len_mean is None
+    assert windows[1].actual_output_len_mean is None
 
 
 def test_fixed_window_aggregator_writes_csv(tmp_path: Path) -> None:

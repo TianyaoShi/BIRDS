@@ -25,6 +25,11 @@ def _window(
     tpot_p90_ms: float | None = 20.0,
     tpot_p99_ms: float | None = 25.0,
     e2e_p90_ms: float | None = 600.0,
+    prompt_tok_s: float | None = 1000.0,
+    generation_tok_s: float | None = 300.0,
+    prompt_len_mean: float | None = 100.0,
+    expected_output_len_mean: float | None = 100.0,
+    actual_output_len_mean: float | None = 100.0,
     num_running_mean: float | None = 8.0,
     num_waiting_mean: float | None = 0.0,
     num_swapped_mean: float | None = 0.0,
@@ -57,15 +62,22 @@ def _window(
         itl_p90_ms=18.0 if tpot_p90_ms is not None else None,
         e2e_p90_ms=e2e_p90_ms,
         e2e_p99_ms=e2e_p90_ms + 100.0 if e2e_p90_ms is not None else None,
-        prompt_tok_s=1000.0,
-        generation_tok_s=300.0,
-        total_tok_s=1300.0,
+        prompt_tok_s=prompt_tok_s,
+        generation_tok_s=generation_tok_s,
+        total_tok_s=(
+            None
+            if prompt_tok_s is None or generation_tok_s is None
+            else prompt_tok_s + generation_tok_s
+        ),
         num_running_mean=num_running_mean,
         num_waiting_mean=num_waiting_mean,
         num_swapped_mean=num_swapped_mean,
         kv_cache_usage_mean=kv_cache_usage_mean,
         kv_cache_usage_max=kv_cache_usage_max,
         preemptions_delta=preemptions_delta,
+        prompt_len_mean=prompt_len_mean,
+        expected_output_len_mean=expected_output_len_mean,
+        actual_output_len_mean=actual_output_len_mean,
     )
 
 
@@ -186,6 +198,51 @@ def test_drain_windows_do_not_count_toward_minimum_active_evidence() -> None:
     assert result.status == "uncertain"
     assert result.key_metrics["active_eval_windows"] == 3
     assert any("insufficient post-warmup active-arrival windows" in reason for reason in result.reasons)
+
+
+def test_workload_phase_backlog_pressure_is_uncertain_without_capacity_confirmation() -> None:
+    windows = [_window(0), _window(1)]
+    output_lengths = [100.0, 130.0, 170.0, 230.0]
+    generation_tok_s = [300.0, 330.0, 375.0, 430.0]
+    windows.extend(
+        _window(
+            idx,
+            completions=9,
+            outstanding_end=(idx - 1) * 5,
+            generation_tok_s=generation_tok_s[idx - 2],
+            expected_output_len_mean=output_lengths[idx - 2],
+            actual_output_len_mean=output_lengths[idx - 2],
+        )
+        for idx in range(2, 6)
+    )
+
+    result = classify_stability(windows)
+
+    assert result.status == "uncertain"
+    assert result.confidence == "medium"
+    assert result.key_metrics["generation_tok_s_relative_increase"] > 0.05
+    assert any("workload-phase evidence" in reason for reason in result.reasons)
+    assert any("no waiting queue" in reason for reason in result.reasons)
+
+
+def test_backlog_pressure_with_generation_token_plateau_is_unstable() -> None:
+    windows = [_window(0), _window(1)]
+    windows.extend(
+        _window(
+            idx,
+            completions=9,
+            outstanding_end=(idx - 1) * 5,
+            generation_tok_s=300.0,
+            expected_output_len_mean=100.0,
+            actual_output_len_mean=100.0,
+        )
+        for idx in range(2, 6)
+    )
+
+    result = classify_stability(windows)
+
+    assert result.status == "unstable"
+    assert any("generation token throughput plateaued" in reason for reason in result.reasons)
 
 
 def test_classifies_preemptions_as_unstable() -> None:

@@ -142,6 +142,9 @@ class FixedWindowAggregator:
         tpot_by_window: list[list[float]] = [[] for _ in range(window_count)]
         itl_by_window: list[list[float]] = [[] for _ in range(window_count)]
         e2e_by_window: list[list[float]] = [[] for _ in range(window_count)]
+        prompt_len_by_window: list[list[float]] = [[] for _ in range(window_count)]
+        expected_output_len_by_window: list[list[float]] = [[] for _ in range(window_count)]
+        actual_output_len_by_window: list[list[float]] = [[] for _ in range(window_count)]
         outstanding_events: dict[float, int] = defaultdict(int)
 
         for record in validated_records:
@@ -169,6 +172,10 @@ class FixedWindowAggregator:
                 e2e_by_window[arrival_window].append(record.e2e_s * 1000.0)
             if record.itl_s:
                 itl_by_window[arrival_window].extend(_to_ms(record.itl_s))
+            prompt_len_by_window[arrival_window].append(float(record.prompt_len))
+            expected_output_len_by_window[arrival_window].append(float(record.expected_output_len))
+            if record.actual_output_len is not None:
+                actual_output_len_by_window[arrival_window].append(float(record.actual_output_len))
 
         metric_windows: list[list[ServerMetricSample]] = [[] for _ in range(window_count)]
         for sample in validated_metrics:
@@ -274,6 +281,9 @@ class FixedWindowAggregator:
                         default=None,
                     ),
                     preemptions_delta=preemption_delta,
+                    prompt_len_mean=_mean(prompt_len_by_window[window_idx]),
+                    expected_output_len_mean=_mean(expected_output_len_by_window[window_idx]),
+                    actual_output_len_mean=_mean(actual_output_len_by_window[window_idx]),
                 )
             )
         return windows

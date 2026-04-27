@@ -197,6 +197,9 @@ class WindowSummary:
     kv_cache_usage_mean: float | None
     kv_cache_usage_max: float | None
     preemptions_delta: float | None
+    prompt_len_mean: float | None = None
+    expected_output_len_mean: float | None = None
+    actual_output_len_mean: float | None = None
 
     def __post_init__(self) -> None:
         _require_non_negative("window_idx", self.window_idx)

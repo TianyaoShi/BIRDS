@@ -31,6 +31,8 @@ class StabilityConfig:
     min_eval_windows: int = 4
     completion_arrival_tolerance: float = 0.03
     max_positive_backlog_slope: float = 0.05
+    min_backlog_growth_for_hard_pressure: float = 2.0
+    token_throughput_plateau_relative_growth: float = 0.05
     max_error_rate: float = 0.01
     ttft_slo_ms: float | None = 2000.0
     tpot_slo_ms: float | None = 80.0
@@ -49,6 +51,14 @@ class StabilityConfig:
         if self.completion_arrival_tolerance >= 1.0:
             raise ValueError("completion_arrival_tolerance must be less than 1.0")
         _require_non_negative_finite("max_positive_backlog_slope", self.max_positive_backlog_slope)
+        _require_non_negative_finite(
+            "min_backlog_growth_for_hard_pressure",
+            self.min_backlog_growth_for_hard_pressure,
+        )
+        _require_non_negative_finite(
+            "token_throughput_plateau_relative_growth",
+            self.token_throughput_plateau_relative_growth,
+        )
         _require_non_negative_finite("max_error_rate", self.max_error_rate)
         if self.max_error_rate >= 1.0:
             raise ValueError("max_error_rate must be less than 1.0")
@@ -135,20 +145,21 @@ def classify_stability(
 
     reasons: list[str] = []
     confidence_penalties = 0
-    unstable_reasons: list[str] = []
+    direct_unstable_reasons: list[str] = []
+    capacity_pressure_reasons: list[str] = []
     latency_drift_reasons: list[str] = []
-    has_server_pressure = False
+    has_capacity_pressure = False
 
     if completion_arrival_ratio < 1.0 - stability_config.completion_arrival_tolerance:
-        unstable_reasons.append(
+        capacity_pressure_reasons.append(
             "completion rate lagged arrivals: "
             f"completion/arrival={completion_arrival_ratio:.3f} "
             f"< {1.0 - stability_config.completion_arrival_tolerance:.3f}"
         )
-        has_server_pressure = True
+        has_capacity_pressure = True
 
     if aggregate_error_rate > stability_config.max_error_rate:
-        unstable_reasons.append(
+        direct_unstable_reasons.append(
             f"error rate {aggregate_error_rate:.3f} exceeded threshold "
             f"{stability_config.max_error_rate:.3f}"
         )
@@ -156,16 +167,20 @@ def classify_stability(
     outstanding_trend = _trend_for_required(active_eval_windows, "outstanding_end")
     key_metrics["outstanding_end_slope_per_s"] = outstanding_trend.slope
     key_metrics["outstanding_end_delta"] = outstanding_trend.delta
-    if outstanding_trend.slope > stability_config.max_positive_backlog_slope:
-        unstable_reasons.append(
+    if (
+        outstanding_trend.slope > stability_config.max_positive_backlog_slope
+        and outstanding_trend.delta >= stability_config.min_backlog_growth_for_hard_pressure
+    ):
+        capacity_pressure_reasons.append(
             "outstanding requests drifted upward: "
             f"Theil-Sen slope={outstanding_trend.slope:.3f}/s "
-            f"> {stability_config.max_positive_backlog_slope:.3f}/s"
+            f"> {stability_config.max_positive_backlog_slope:.3f}/s, "
+            f"delta={outstanding_trend.delta:.3f}"
         )
-        has_server_pressure = True
+        has_capacity_pressure = True
     elif _has_repeated_increase([float(window.outstanding_end) for window in active_eval_windows]):
-        unstable_reasons.append("outstanding requests grew across consecutive windows")
-        has_server_pressure = True
+        capacity_pressure_reasons.append("outstanding requests grew across consecutive windows")
+        has_capacity_pressure = True
 
     num_waiting_trend = _trend_for_optional(active_eval_windows, "num_waiting_mean")
     if num_waiting_trend is not None:
@@ -175,20 +190,18 @@ def classify_stability(
         if num_waiting_trend.slope > stability_config.max_positive_backlog_slope or (
             _has_repeated_increase(waiting_values) and waiting_values[-1] > 0.0
         ):
-            unstable_reasons.append(
+            direct_unstable_reasons.append(
                 "server waiting requests drifted upward: "
                 f"Theil-Sen slope={num_waiting_trend.slope:.3f}/s"
             )
-            has_server_pressure = True
 
     swapped_values = _present_values(active_eval_windows, "num_swapped_mean")
     if swapped_values:
         key_metrics["num_swapped_mean_max"] = max(swapped_values)
         if max(swapped_values) > 0.0:
-            unstable_reasons.append(
+            direct_unstable_reasons.append(
                 f"server reported swapped requests: max num_swapped_mean={max(swapped_values):.3f}"
             )
-            has_server_pressure = True
 
     kv_values = _present_values(active_eval_windows, "kv_cache_usage_max")
     if kv_values:
@@ -197,19 +210,32 @@ def classify_stability(
         if kv_trend is not None:
             key_metrics["kv_cache_usage_max_slope_per_s"] = kv_trend.slope
             if max(kv_values) >= 0.98 and kv_trend.slope > 0.0:
-                unstable_reasons.append(
+                direct_unstable_reasons.append(
                     "KV cache usage approached saturation while rising: "
                     f"max={max(kv_values):.3f}"
                 )
-                has_server_pressure = True
 
     preemption_values = _present_values(active_eval_windows, "preemptions_delta")
     if preemption_values:
         total_preemptions = sum(preemption_values)
         key_metrics["preemptions_total"] = total_preemptions
         if total_preemptions > 0.0:
-            unstable_reasons.append(f"preemptions observed after warmup: total={total_preemptions:.3f}")
-            has_server_pressure = True
+            direct_unstable_reasons.append(
+                f"preemptions observed after warmup: total={total_preemptions:.3f}"
+            )
+
+    generation_tok_s_trend = _trend_for_optional(active_eval_windows, "generation_tok_s")
+    generation_plateau = False
+    if generation_tok_s_trend is not None:
+        key_metrics["generation_tok_s_slope_per_s"] = generation_tok_s_trend.slope
+        key_metrics["generation_tok_s_relative_increase"] = generation_tok_s_trend.relative_increase
+        generation_plateau = _is_token_throughput_plateau(generation_tok_s_trend, stability_config)
+    if capacity_pressure_reasons and generation_plateau:
+        direct_unstable_reasons.extend(capacity_pressure_reasons)
+        direct_unstable_reasons.append(
+            "generation token throughput plateaued while backlog/completion pressure grew: "
+            f"relative increase={generation_tok_s_trend.relative_increase:.3f}"
+        )
 
     for field_name, display_name in (
         ("ttft_p90_ms", "TTFT p90"),
@@ -229,8 +255,10 @@ def classify_stability(
             )
 
     if latency_drift_reasons:
-        if has_server_pressure:
-            unstable_reasons.extend(latency_drift_reasons)
+        if direct_unstable_reasons:
+            direct_unstable_reasons.extend(latency_drift_reasons)
+        elif has_capacity_pressure:
+            capacity_pressure_reasons.extend(latency_drift_reasons)
         else:
             confidence_penalties += 1
             reasons.append(
@@ -256,8 +284,8 @@ def classify_stability(
             + "; confidence lowered"
         )
 
-    if unstable_reasons:
-        reasons.extend(unstable_reasons)
+    if direct_unstable_reasons:
+        reasons.extend(direct_unstable_reasons)
         return StabilityResult(
             status="unstable",
             confidence=_confidence_after_penalties("high", confidence_penalties),
@@ -271,6 +299,27 @@ def classify_stability(
         return StabilityResult(
             status="slo_violation",
             confidence=_confidence_after_penalties("high", confidence_penalties),
+            reasons=reasons,
+            key_metrics=key_metrics,
+        )
+
+    if capacity_pressure_reasons:
+        phase_reason = _workload_phase_reason(
+            active_eval_windows,
+            generation_tok_s_trend=generation_tok_s_trend,
+            config=stability_config,
+            key_metrics=key_metrics,
+        )
+        if phase_reason is not None:
+            reasons.append(phase_reason)
+        reasons.extend(capacity_pressure_reasons)
+        reasons.append(
+            "capacity pressure was observed, but no waiting queue, saturation signal, SLO violation, "
+            "or generation-token throughput plateau confirmed overload"
+        )
+        return StabilityResult(
+            status="uncertain",
+            confidence=_confidence_after_penalties("medium", confidence_penalties),
             reasons=reasons,
             key_metrics=key_metrics,
         )
@@ -302,7 +351,7 @@ def load_window_summaries_csv(path: str | Path) -> list[WindowSummary]:
 
 
 def _window_from_csv_row(row: dict[str, str], *, row_idx: int) -> WindowSummary:
-    required = {field for field in WindowSummary.__dataclass_fields__}
+    required = {field for field in WindowSummary.__dataclass_fields__} - _BACKCOMPAT_OPTIONAL_WINDOW_FIELDS
     missing = sorted(required - set(row))
     if missing:
         raise ValueError(f"{row_idx}: windows CSV missing columns: {', '.join(missing)}")
@@ -339,6 +388,13 @@ def _window_from_csv_row(row: dict[str, str], *, row_idx: int) -> WindowSummary:
         kv_cache_usage_mean=_csv_optional_float(row, "kv_cache_usage_mean", row_idx),
         kv_cache_usage_max=_csv_optional_float(row, "kv_cache_usage_max", row_idx),
         preemptions_delta=_csv_optional_float(row, "preemptions_delta", row_idx),
+        prompt_len_mean=_csv_optional_float_missing_ok(row, "prompt_len_mean", row_idx),
+        expected_output_len_mean=_csv_optional_float_missing_ok(
+            row, "expected_output_len_mean", row_idx
+        ),
+        actual_output_len_mean=_csv_optional_float_missing_ok(
+            row, "actual_output_len_mean", row_idx
+        ),
     )
 
 
@@ -462,6 +518,44 @@ def _is_positive_latency_drift(trend: _Trend, config: StabilityConfig) -> bool:
         trend.slope > 0.0
         and trend.relative_increase >= config.drift_test.min_relative_increase
     )
+
+
+def _is_token_throughput_plateau(trend: _Trend, config: StabilityConfig) -> bool:
+    return trend.relative_increase <= config.token_throughput_plateau_relative_growth
+
+
+def _workload_phase_reason(
+    windows: Sequence[WindowSummary],
+    *,
+    generation_tok_s_trend: _Trend | None,
+    config: StabilityConfig,
+    key_metrics: dict[str, float],
+) -> str | None:
+    phase_reasons: list[str] = []
+    for field_name, display_name in (
+        ("expected_output_len_mean", "expected output length"),
+        ("actual_output_len_mean", "actual output length"),
+    ):
+        trend = _trend_for_optional(windows, field_name)
+        if trend is None:
+            continue
+        key_metrics[f"{field_name}_slope_per_s"] = trend.slope
+        key_metrics[f"{field_name}_relative_increase"] = trend.relative_increase
+        if trend.slope > 0.0 and trend.relative_increase >= config.drift_test.min_relative_increase:
+            phase_reasons.append(
+                f"{display_name} rose across active windows "
+                f"(relative increase={trend.relative_increase:.3f})"
+            )
+    if generation_tok_s_trend is not None and (
+        generation_tok_s_trend.relative_increase > config.token_throughput_plateau_relative_growth
+    ):
+        phase_reasons.append(
+            "generation token throughput rose rather than plateaued "
+            f"(relative increase={generation_tok_s_trend.relative_increase:.3f})"
+        )
+    if not phase_reasons:
+        return None
+    return "workload-phase evidence weakens backlog extrapolation: " + "; ".join(phase_reasons)
 
 
 def _has_repeated_increase(values: Sequence[float]) -> bool:
@@ -589,6 +683,16 @@ def _csv_optional_float(row: dict[str, str], field_name: str, row_idx: int) -> f
     return _csv_float(row, field_name, row_idx)
 
 
+def _csv_optional_float_missing_ok(
+    row: dict[str, str],
+    field_name: str,
+    row_idx: int,
+) -> float | None:
+    if field_name not in row:
+        return None
+    return _csv_optional_float(row, field_name, row_idx)
+
+
 def _require_optional_positive_finite(name: str, value: float | None) -> None:
     if value is None:
         return
@@ -633,6 +737,9 @@ _OPTIONAL_FLOAT_FIELDS = (
     "prompt_tok_s",
     "generation_tok_s",
     "total_tok_s",
+    "prompt_len_mean",
+    "expected_output_len_mean",
+    "actual_output_len_mean",
     "num_running_mean",
     "num_waiting_mean",
     "num_swapped_mean",
@@ -640,6 +747,12 @@ _OPTIONAL_FLOAT_FIELDS = (
     "kv_cache_usage_max",
     "preemptions_delta",
 )
+
+_BACKCOMPAT_OPTIONAL_WINDOW_FIELDS = {
+    "prompt_len_mean",
+    "expected_output_len_mean",
+    "actual_output_len_mean",
+}
 
 
 __all__ = [
