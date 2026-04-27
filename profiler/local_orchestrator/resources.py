@@ -15,18 +15,25 @@ class GPULeaseManager:
         self._free_gpu_ids = list(self._usable_gpu_ids)
         self._leased_gpu_ids: set[int] = set()
 
-    def acquire(self) -> GPULease:
-        if not self._free_gpu_ids:
-            raise ResourceUnavailableError("no free GPU lease available")
-        gpu_id = self._free_gpu_ids.pop(0)
-        self._leased_gpu_ids.add(gpu_id)
-        return GPULease(gpu_id=gpu_id)
+    def acquire(self, gpu_count: int = 1) -> GPULease:
+        if gpu_count <= 0:
+            raise ValueError("gpu_count must be positive")
+        if len(self._free_gpu_ids) < gpu_count:
+            raise ResourceUnavailableError(
+                f"not enough free GPU leases available: requested={gpu_count}, free={len(self._free_gpu_ids)}"
+            )
+        gpu_ids = tuple(self._free_gpu_ids[:gpu_count])
+        del self._free_gpu_ids[:gpu_count]
+        self._leased_gpu_ids.update(gpu_ids)
+        return GPULease(gpu_ids=gpu_ids)
 
     def release(self, lease: GPULease) -> None:
-        if lease.gpu_id not in self._leased_gpu_ids:
-            raise ValueError(f"GPU id is not currently leased: {lease.gpu_id}")
-        self._leased_gpu_ids.remove(lease.gpu_id)
-        self._free_gpu_ids.append(lease.gpu_id)
+        for gpu_id in lease.gpu_ids:
+            if gpu_id not in self._leased_gpu_ids:
+                raise ValueError(f"GPU id is not currently leased: {gpu_id}")
+        for gpu_id in lease.gpu_ids:
+            self._leased_gpu_ids.remove(gpu_id)
+            self._free_gpu_ids.append(gpu_id)
         self._free_gpu_ids.sort()
 
     def snapshot(self) -> dict[str, object]:

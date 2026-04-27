@@ -70,3 +70,74 @@ def test_expand_manifest_is_deterministic_and_uses_expected_layout(tmp_path: Pat
         assert parts[0] == "results"
         assert parts[1] == "mst"
         assert job.server_config_slug.startswith("server-")
+
+
+def test_expand_manifest_applies_selector_overrides_and_probe_auto_gpu_count(tmp_path: Path) -> None:
+    workload = _write_workload(tmp_path, "synthetic_512_128.yaml")
+    workload.write_text(
+        yaml.safe_dump(
+            {
+                "name": "synthetic_512_128",
+                "dataset": {"type": "synthetic-fixed"},
+                "tokenizer": "whitespace",
+                "sampling": {
+                    "seed": 1,
+                    "num_requests": 100,
+                    "prompt_len": {"mode": "fixed", "value": 512},
+                    "output_len": {"mode": "fixed", "value": 128},
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    manifest_path = _write_manifest(
+        tmp_path,
+        {
+            "run": {
+                "allowed_gpu_ids": [0, 1, 2, 3],
+                "max_active_gpus": 4,
+                "keep_one_gpu_spare": False,
+            },
+            "hardware": {
+                "name": "a100-test",
+                "gpu_memory_gb": 10,
+                "gpu_memory_utilization": 0.9,
+            },
+            "probe": {
+                "auto_gpu_count": True,
+                "activation_memory_gb": 2,
+                "memory_safety_factor": 1.2,
+            },
+            "search": {"search_mode": "open-loop", "max_request_rate": 2},
+            "overrides": [
+                {
+                    "match": {"model": "*8B*"},
+                    "search": {"max_request_rate": 8, "max_binary_steps": 7},
+                },
+                {
+                    "match": {"workload": "*synthetic*"},
+                    "search": {"ttft_slo_ms": 1500, "tpot_slo_ms": 100},
+                },
+            ],
+            "experiments": [
+                {
+                    "id": "matrix",
+                    "model": "meta-llama/Llama-3.1-8B-Instruct",
+                    "workload": str(workload),
+                }
+            ],
+        },
+    )
+
+    job = expand_manifest(load_manifest(manifest_path))[0]
+
+    assert job.search.max_request_rate == 8
+    assert job.search.max_binary_steps == 7
+    assert job.search.ttft_slo_ms == 1500
+    assert job.search.tpot_slo_ms == 100
+    assert job.probe is not None
+    assert job.probe.model_params_b == 8
+    assert job.probe.required_gpu_count is not None
+    assert job.launch.gpu_count == job.probe.required_gpu_count
+    assert job.launch.tensor_parallel_size == job.probe.required_gpu_count

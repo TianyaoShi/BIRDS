@@ -20,7 +20,7 @@ class LifecycleProtocol(Protocol):
         self,
         *,
         job: ExpandedExperimentJob,
-        gpu_id: int,
+        gpu_ids: tuple[int, ...],
         ports: PortReservation,
         runtime_signature: str,
         logs_dir,
@@ -44,7 +44,7 @@ class AdapterProtocol(Protocol):
 
 
 class GPULeaseManagerProtocol(Protocol):
-    def acquire(self) -> GPULease:
+    def acquire(self, gpu_count: int = 1) -> GPULease:
         ...
 
     def release(self, lease: GPULease) -> None:
@@ -170,6 +170,7 @@ class OrchestratorScheduler:
             self._lifecycle_factory is not None
             and self._run_config.max_active_gpus > 1
             and len(pending_jobs) > 1
+            and all(job.launch.gpu_count == 1 for job in pending_jobs)
         )
 
     def _run_parallel_jobs(self, *, jobs: list[ExpandedExperimentJob], state: dict[str, Any]) -> None:
@@ -249,6 +250,17 @@ class OrchestratorScheduler:
         return slots
 
     def _run_single_job(self, *, job: ExpandedExperimentJob, state: dict[str, Any]) -> None:
+        preflight_error = self._preflight_error(job)
+        if preflight_error is not None:
+            self._mark_job_failed(state, experiment_id=job.experiment_id, error=preflight_error)
+            self._append_event(
+                state,
+                event_type="job_failed_preflight",
+                experiment_id=job.experiment_id,
+                payload={"error": preflight_error},
+            )
+            return
+
         last_error: str | None = None
 
         for search_attempt in range(1, self._run_config.retry.search_attempts + 1):
@@ -324,6 +336,17 @@ class OrchestratorScheduler:
         state: dict[str, Any],
         slot: _WorkerSlot,
     ) -> None:
+        preflight_error = self._preflight_error(job)
+        if preflight_error is not None:
+            self._mark_job_failed(state, experiment_id=job.experiment_id, error=preflight_error)
+            self._append_event(
+                state,
+                event_type="job_failed_preflight",
+                experiment_id=job.experiment_id,
+                payload={"error": preflight_error, "slot_index": slot.slot_index},
+            )
+            return
+
         last_error: str | None = None
 
         for search_attempt in range(1, self._run_config.retry.search_attempts + 1):
@@ -495,20 +518,20 @@ class OrchestratorScheduler:
             self._release_active_server(reason="signature_mismatch")
 
         if self._active_lease is None:
-            self._active_lease = self._gpu_manager.acquire()
+            self._active_lease = self._gpu_manager.acquire(job.launch.gpu_count)
         if self._active_ports is None:
             self._active_ports = self._port_allocator.reserve()
 
         runtime_signature = runtime_server_signature(
             server_signature_key=job.server_signature_key,
-            gpu_id=self._active_lease.gpu_id,
+            gpu_ids=self._active_lease.gpu_ids,
             base_port=self._active_ports.base_port,
             metrics_port=self._active_ports.metrics_port,
         )
 
         server = self._lifecycle.ensure_server(
             job=job,
-            gpu_id=self._active_lease.gpu_id,
+            gpu_ids=self._active_lease.gpu_ids,
             ports=self._active_ports,
             runtime_signature=runtime_signature,
             logs_dir=self._state_store.logs_dir,
@@ -538,14 +561,14 @@ class OrchestratorScheduler:
 
         runtime_signature = runtime_server_signature(
             server_signature_key=job.server_signature_key,
-            gpu_id=slot.lease.gpu_id,
+            gpu_ids=slot.lease.gpu_ids,
             base_port=slot.ports.base_port,
             metrics_port=slot.ports.metrics_port,
         )
 
         server = slot.lifecycle.ensure_server(
             job=job,
-            gpu_id=slot.lease.gpu_id,
+            gpu_ids=slot.lease.gpu_ids,
             ports=slot.ports,
             runtime_signature=runtime_signature,
             logs_dir=self._state_store.logs_dir,
@@ -553,6 +576,23 @@ class OrchestratorScheduler:
         )
         slot.active_reuse_key = job.server_signature_key
         return server
+
+    def _preflight_error(self, job: ExpandedExperimentJob) -> str | None:
+        if job.launch.gpu_count > self._run_config.max_active_gpus:
+            return (
+                f"job requires gpu_count={job.launch.gpu_count}, "
+                f"but run.max_active_gpus={self._run_config.max_active_gpus}"
+            )
+        if job.probe is None or job.probe.required_gpu_count is None:
+            return None
+        if job.probe.required_gpu_count > job.launch.gpu_count:
+            return (
+                "resource probe estimates at least "
+                f"{job.probe.required_gpu_count} GPU(s) are needed for model/workload/hardware, "
+                f"but launch.gpu_count={job.launch.gpu_count}. "
+                "Increase launch.gpu_count or enable probe.auto_gpu_count."
+            )
+        return None
 
     def _release_active_server(self, *, reason: str) -> None:
         self._lifecycle.stop_active_server(reason=reason)

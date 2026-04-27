@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, Mapping
 
 
 SearchMode = Literal["closed-loop", "open-loop", "hybrid"]
@@ -58,8 +58,6 @@ class RunConfig:
                 raise ValueError(f"duplicate GPU id found: {gpu_id!r}")
             seen.add(gpu_id)
         _require_positive_int("max_active_gpus", self.max_active_gpus)
-        if self.max_active_gpus > 3:
-            raise ValueError("V1 supports at most 3 active GPUs")
         if self.max_active_gpus > len(self.allowed_gpu_ids):
             raise ValueError("max_active_gpus cannot exceed number of allowed_gpu_ids")
         if self.keep_one_gpu_spare and self.max_active_gpus >= len(self.allowed_gpu_ids):
@@ -78,6 +76,49 @@ class RunConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class HardwareConfig:
+    name: str = "local"
+    gpu_memory_gb: float | None = None
+    gpu_memory_utilization: float = 0.90
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("hardware name must be non-empty")
+        if self.gpu_memory_gb is not None:
+            _require_positive_float("gpu_memory_gb", self.gpu_memory_gb)
+        _require_positive_float("gpu_memory_utilization", self.gpu_memory_utilization)
+        if self.gpu_memory_utilization > 1.0:
+            raise ValueError("gpu_memory_utilization must be <= 1.0")
+
+
+@dataclass(frozen=True, slots=True)
+class ProbeConfig:
+    enabled: bool = True
+    auto_gpu_count: bool = False
+    activation_memory_gb: float = 2.0
+    memory_safety_factor: float = 1.20
+    kv_cache_request_count: int = 1
+    default_context_tokens: int = 4096
+    model_size_overrides_b: dict[str, float] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.enabled, bool):
+            raise ValueError("probe.enabled must be a boolean")
+        if not isinstance(self.auto_gpu_count, bool):
+            raise ValueError("probe.auto_gpu_count must be a boolean")
+        _require_positive_float("activation_memory_gb", self.activation_memory_gb)
+        _require_positive_float("memory_safety_factor", self.memory_safety_factor)
+        if self.memory_safety_factor < 1.0:
+            raise ValueError("memory_safety_factor must be >= 1.0")
+        _require_positive_int("kv_cache_request_count", self.kv_cache_request_count)
+        _require_positive_int("default_context_tokens", self.default_context_tokens)
+        for pattern, size_b in self.model_size_overrides_b.items():
+            if not pattern:
+                raise ValueError("model_size_overrides_b patterns must be non-empty")
+            _require_positive_float("model_size_overrides_b value", size_b)
+
+
+@dataclass(frozen=True, slots=True)
 class LaunchConfig:
     template: tuple[str, ...] | None = None
     executable: str = "vllm"
@@ -88,6 +129,7 @@ class LaunchConfig:
     dtype: str | None = None
     quantization: str | None = None
     tokenizer_mode: str | None = None
+    gpu_memory_utilization: float | None = None
     max_num_seqs: float | None = None
     max_num_batched_tokens: float | None = None
     host: str = "127.0.0.1"
@@ -102,8 +144,14 @@ class LaunchConfig:
             raise ValueError("launch executable must be non-empty")
         if self.tensor_parallel_size <= 0:
             raise ValueError("tensor_parallel_size must be positive")
-        if self.gpu_count != 1:
-            raise ValueError("V1 supports only single-GPU jobs (gpu_count must be 1)")
+        if self.gpu_count <= 0:
+            raise ValueError("gpu_count must be positive")
+        if self.tensor_parallel_size > self.gpu_count:
+            raise ValueError("tensor_parallel_size cannot exceed gpu_count")
+        if self.gpu_memory_utilization is not None:
+            _require_positive_float("gpu_memory_utilization", self.gpu_memory_utilization)
+            if self.gpu_memory_utilization > 1.0:
+                raise ValueError("gpu_memory_utilization must be <= 1.0")
         if self.max_num_seqs is not None:
             _require_positive_float("max_num_seqs", self.max_num_seqs)
         if self.max_num_batched_tokens is not None:
@@ -171,6 +219,58 @@ class SearchConfig:
             raise ValueError(f"unsupported ttft_slo_field {self.ttft_slo_field!r}")
         if self.tpot_slo_field not in {"tpot_p50_ms", "tpot_p90_ms", "tpot_p99_ms"}:
             raise ValueError(f"unsupported tpot_slo_field {self.tpot_slo_field!r}")
+        if self.max_num_seqs is not None:
+            _require_positive_int("max_num_seqs", self.max_num_seqs)
+        if self.max_num_batched_tokens is not None:
+            _require_positive_int("max_num_batched_tokens", self.max_num_batched_tokens)
+
+
+@dataclass(frozen=True, slots=True)
+class ExperimentOverride:
+    source_index: int
+    model_patterns: tuple[str, ...] = ()
+    workload_patterns: tuple[str, ...] = ()
+    hardware_patterns: tuple[str, ...] = ()
+    launch: Mapping[str, Any] | None = None
+    search: Mapping[str, Any] | None = None
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_non_negative_int("source_index", self.source_index)
+        if not self.model_patterns and not self.workload_patterns and not self.hardware_patterns:
+            raise ValueError("override match must include model, workload, or hardware")
+        if self.launch is None and self.search is None:
+            raise ValueError("override must include launch or search updates")
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceProbeResult:
+    hardware_name: str
+    gpu_memory_gb: float | None
+    model_params_b: float | None
+    estimated_weight_gb: float | None
+    estimated_activation_gb: float
+    estimated_kv_cache_gb: float | None
+    estimated_required_gb: float | None
+    usable_memory_per_gpu_gb: float | None
+    required_gpu_count: int | None
+    context_tokens: int
+    warnings: tuple[str, ...] = ()
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "hardware_name": self.hardware_name,
+            "gpu_memory_gb": self.gpu_memory_gb,
+            "model_params_b": self.model_params_b,
+            "estimated_weight_gb": self.estimated_weight_gb,
+            "estimated_activation_gb": self.estimated_activation_gb,
+            "estimated_kv_cache_gb": self.estimated_kv_cache_gb,
+            "estimated_required_gb": self.estimated_required_gb,
+            "usable_memory_per_gpu_gb": self.usable_memory_per_gpu_gb,
+            "required_gpu_count": self.required_gpu_count,
+            "context_tokens": self.context_tokens,
+            "warnings": list(self.warnings),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +282,9 @@ class ExperimentTemplate:
     endpoint: str
     launch: LaunchConfig
     search: SearchConfig
+    hardware: HardwareConfig
+    probe: ProbeConfig
+    overrides: tuple[ExperimentOverride, ...] = ()
     server_metadata_file: Path | None = None
 
     def __post_init__(self) -> None:
@@ -198,6 +301,9 @@ class ExperimentTemplate:
 class OrchestratorManifest:
     manifest_path: Path
     run: RunConfig
+    hardware: HardwareConfig
+    probe: ProbeConfig
+    overrides: tuple[ExperimentOverride, ...]
     experiments: tuple[ExperimentTemplate, ...]
 
 
@@ -210,6 +316,8 @@ class ExpandedExperimentJob:
     endpoint: str
     launch: LaunchConfig
     search: SearchConfig
+    hardware: HardwareConfig
+    probe: ResourceProbeResult | None
     result_dir: Path
     model_slug: str
     dataset_slug: str
@@ -220,7 +328,17 @@ class ExpandedExperimentJob:
 
 @dataclass(frozen=True, slots=True)
 class GPULease:
-    gpu_id: int
+    gpu_ids: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        if not self.gpu_ids:
+            raise ValueError("gpu_ids must be non-empty")
+        for gpu_id in self.gpu_ids:
+            _require_non_negative_int("gpu_id", gpu_id)
+
+    @property
+    def gpu_id(self) -> int:
+        return self.gpu_ids[0]
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,6 +354,7 @@ class ActiveServer:
     model: str
     endpoint: str
     gpu_id: int
+    gpu_ids: tuple[int, ...]
     base_port: int
     metrics_port: int
     command: tuple[str, ...]

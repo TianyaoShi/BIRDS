@@ -9,15 +9,18 @@ import yaml
 
 from .models import (
     ExperimentTemplate,
+    ExperimentOverride,
+    HardwareConfig,
     LaunchConfig,
     OrchestratorManifest,
+    ProbeConfig,
     RetryPolicy,
     RunConfig,
     SearchConfig,
 )
 
 
-_TOP_LEVEL_KEYS = {"run", "launch", "search", "experiments"}
+_TOP_LEVEL_KEYS = {"run", "hardware", "probe", "launch", "search", "overrides", "experiments"}
 _RUN_KEYS = {
     "run_id",
     "output_root",
@@ -39,9 +42,26 @@ _EXPERIMENT_KEYS = {
     "workload",
     "workloads",
     "endpoint",
+    "hardware",
+    "probe",
     "launch",
     "search",
+    "overrides",
     "server_metadata_file",
+}
+_HARDWARE_KEYS = {
+    "name",
+    "gpu_memory_gb",
+    "gpu_memory_utilization",
+}
+_PROBE_KEYS = {
+    "enabled",
+    "auto_gpu_count",
+    "activation_memory_gb",
+    "memory_safety_factor",
+    "kv_cache_request_count",
+    "default_context_tokens",
+    "model_size_overrides_b",
 }
 _LAUNCH_KEYS = {
     "template",
@@ -53,6 +73,7 @@ _LAUNCH_KEYS = {
     "dtype",
     "quantization",
     "tokenizer_mode",
+    "gpu_memory_utilization",
     "max_num_seqs",
     "max_num_batched_tokens",
     "host",
@@ -79,6 +100,8 @@ _SEARCH_KEYS = {
     "max_num_seqs",
     "max_num_batched_tokens",
 }
+_OVERRIDE_KEYS = {"match", "launch", "search", "reason"}
+_OVERRIDE_MATCH_KEYS = {"model", "models", "workload", "workloads", "hardware", "hardwares"}
 _STRUCTURED_LAUNCH_KEYS = {
     "executable",
     "extra_args",
@@ -87,6 +110,7 @@ _STRUCTURED_LAUNCH_KEYS = {
     "dtype",
     "quantization",
     "tokenizer_mode",
+    "gpu_memory_utilization",
     "max_num_seqs",
     "max_num_batched_tokens",
     "host",
@@ -106,8 +130,11 @@ def load_manifest(manifest_path: str | Path) -> OrchestratorManifest:
     _check_allowed_keys(payload, "manifest", _TOP_LEVEL_KEYS)
 
     run = _parse_run_config(payload.get("run"), manifest_path=path)
+    default_hardware = _merge_hardware_config(HardwareConfig(), payload.get("hardware"), field_name="hardware")
+    default_probe = _merge_probe_config(ProbeConfig(), payload.get("probe"), field_name="probe")
     default_launch = _merge_launch_config(LaunchConfig(), payload.get("launch"), field_name="launch")
     default_search = _merge_search_config(SearchConfig(), payload.get("search"), field_name="search")
+    default_overrides = _parse_override_rules(payload.get("overrides"), field_name="overrides")
 
     experiments_raw = payload.get("experiments")
     if not isinstance(experiments_raw, list) or not experiments_raw:
@@ -144,6 +171,20 @@ def load_manifest(manifest_path: str | Path) -> OrchestratorManifest:
             experiment_payload.get("search"),
             field_name=f"{field_name}.search",
         )
+        hardware = _merge_hardware_config(
+            default_hardware,
+            experiment_payload.get("hardware"),
+            field_name=f"{field_name}.hardware",
+        )
+        probe = _merge_probe_config(
+            default_probe,
+            experiment_payload.get("probe"),
+            field_name=f"{field_name}.probe",
+        )
+        overrides = _parse_override_rules(
+            experiment_payload.get("overrides"),
+            field_name=f"{field_name}.overrides",
+        )
 
         metadata_file_raw = experiment_payload.get("server_metadata_file")
         server_metadata_file: Path | None = None
@@ -167,6 +208,9 @@ def load_manifest(manifest_path: str | Path) -> OrchestratorManifest:
                 endpoint=resolved_endpoint,
                 launch=launch,
                 search=search,
+                hardware=hardware,
+                probe=probe,
+                overrides=overrides,
                 server_metadata_file=server_metadata_file,
             )
         )
@@ -174,6 +218,9 @@ def load_manifest(manifest_path: str | Path) -> OrchestratorManifest:
     return OrchestratorManifest(
         manifest_path=path,
         run=run,
+        hardware=default_hardware,
+        probe=default_probe,
+        overrides=default_overrides,
         experiments=tuple(experiments),
     )
 
@@ -245,23 +292,90 @@ def _parse_run_config(raw: Any, *, manifest_path: Path) -> RunConfig:
         raise ManifestValidationError(str(exc)) from exc
 
 
+def _merge_hardware_config(base: HardwareConfig, raw: Any, *, field_name: str) -> HardwareConfig:
+    if raw is None:
+        return base
+    payload = _expect_mapping(raw, field_name)
+    _check_allowed_keys(payload, field_name, _HARDWARE_KEYS)
+    updated = {
+        "name": base.name,
+        "gpu_memory_gb": base.gpu_memory_gb,
+        "gpu_memory_utilization": base.gpu_memory_utilization,
+    }
+    for key, value in payload.items():
+        if key == "name":
+            updated[key] = _expect_non_empty_string(value, f"{field_name}.{key}")
+            continue
+        if key in {"gpu_memory_gb", "gpu_memory_utilization"}:
+            updated[key] = _expect_optional_positive_float(value, f"{field_name}.{key}")
+            continue
+        raise ManifestValidationError(f"unsupported hardware field {key!r}")
+    try:
+        return HardwareConfig(**updated)
+    except ValueError as exc:
+        raise ManifestValidationError(str(exc)) from exc
+
+
+def _merge_probe_config(base: ProbeConfig, raw: Any, *, field_name: str) -> ProbeConfig:
+    if raw is None:
+        return base
+    payload = _expect_mapping(raw, field_name)
+    _check_allowed_keys(payload, field_name, _PROBE_KEYS)
+    updated = {
+        "enabled": base.enabled,
+        "auto_gpu_count": base.auto_gpu_count,
+        "activation_memory_gb": base.activation_memory_gb,
+        "memory_safety_factor": base.memory_safety_factor,
+        "kv_cache_request_count": base.kv_cache_request_count,
+        "default_context_tokens": base.default_context_tokens,
+        "model_size_overrides_b": dict(base.model_size_overrides_b),
+    }
+    for key, value in payload.items():
+        if key in {"enabled", "auto_gpu_count"}:
+            updated[key] = _expect_bool(value, f"{field_name}.{key}")
+            continue
+        if key in {"activation_memory_gb", "memory_safety_factor"}:
+            updated[key] = _expect_positive_float(value, f"{field_name}.{key}")
+            continue
+        if key in {"kv_cache_request_count", "default_context_tokens"}:
+            updated[key] = _expect_int(value, f"{field_name}.{key}", minimum=1)
+            continue
+        if key == "model_size_overrides_b":
+            overrides = _expect_mapping(value, f"{field_name}.{key}")
+            updated[key] = {
+                _expect_non_empty_string(pattern, f"{field_name}.{key}.pattern"): _expect_positive_float(
+                    size_b,
+                    f"{field_name}.{key}.{pattern}",
+                )
+                for pattern, size_b in overrides.items()
+            }
+            continue
+        raise ManifestValidationError(f"unsupported probe field {key!r}")
+    try:
+        return ProbeConfig(**updated)
+    except ValueError as exc:
+        raise ManifestValidationError(str(exc)) from exc
+
+
 def _merge_launch_config(base: LaunchConfig, raw: Any, *, field_name: str) -> LaunchConfig:
     if raw is None:
         return base
     payload = _expect_mapping(raw, field_name)
     _check_allowed_keys(payload, field_name, _LAUNCH_KEYS)
 
+    structured_keys = set(payload) & _STRUCTURED_LAUNCH_KEYS
     if "template" in payload and payload["template"] is not None:
         for key in _STRUCTURED_LAUNCH_KEYS:
             if key in payload:
                 raise ManifestValidationError(
                     f"{field_name} uses raw template and structured field {key!r}; choose one launch style"
                 )
-    if base.template is not None and any(key in payload for key in _STRUCTURED_LAUNCH_KEYS):
-        if payload.get("template") is not None:
-            raise ManifestValidationError(
-                f"{field_name} cannot combine structured launch overrides with an existing template"
-            )
+    clears_template = "template" in payload and payload["template"] is None
+    if base.template is not None and structured_keys and not clears_template:
+        raise ManifestValidationError(
+            f"{field_name} cannot combine structured launch overrides with an existing template; "
+            "set template: null before structured fields"
+        )
 
     updated = {
         "template": base.template,
@@ -273,6 +387,7 @@ def _merge_launch_config(base: LaunchConfig, raw: Any, *, field_name: str) -> La
         "dtype": base.dtype,
         "quantization": base.quantization,
         "tokenizer_mode": base.tokenizer_mode,
+        "gpu_memory_utilization": base.gpu_memory_utilization,
         "max_num_seqs": base.max_num_seqs,
         "max_num_batched_tokens": base.max_num_batched_tokens,
         "host": base.host,
@@ -300,7 +415,13 @@ def _merge_launch_config(base: LaunchConfig, raw: Any, *, field_name: str) -> La
         if key == "gpu_count":
             updated[key] = _expect_int(value, f"{field_name}.gpu_count", minimum=1)
             continue
-        if key in {"max_num_seqs", "max_num_batched_tokens", "readiness_timeout_s", "readiness_interval_s"}:
+        if key in {
+            "gpu_memory_utilization",
+            "max_num_seqs",
+            "max_num_batched_tokens",
+            "readiness_timeout_s",
+            "readiness_interval_s",
+        }:
             updated[key] = _expect_positive_float(value, f"{field_name}.{key}")
             continue
         raise ManifestValidationError(f"unsupported launch field {key!r}")
@@ -375,6 +496,78 @@ def _merge_search_config(base: SearchConfig, raw: Any, *, field_name: str) -> Se
         return replace(base, **updated)
     except ValueError as exc:
         raise ManifestValidationError(str(exc)) from exc
+
+
+def _parse_override_rules(raw: Any, *, field_name: str) -> tuple[ExperimentOverride, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ManifestValidationError(f"{field_name} must be a list")
+    rules: list[ExperimentOverride] = []
+    for index, item in enumerate(raw):
+        rule_field = f"{field_name}[{index}]"
+        payload = _expect_mapping(item, rule_field)
+        _check_allowed_keys(payload, rule_field, _OVERRIDE_KEYS)
+        match_payload = _expect_mapping(payload.get("match"), f"{rule_field}.match")
+        _check_allowed_keys(match_payload, f"{rule_field}.match", _OVERRIDE_MATCH_KEYS)
+
+        launch_updates = payload.get("launch")
+        if launch_updates is not None:
+            launch_updates = dict(_expect_mapping(launch_updates, f"{rule_field}.launch"))
+            _check_allowed_keys(launch_updates, f"{rule_field}.launch", _LAUNCH_KEYS)
+        search_updates = payload.get("search")
+        if search_updates is not None:
+            search_updates = dict(_expect_mapping(search_updates, f"{rule_field}.search"))
+            _check_allowed_keys(search_updates, f"{rule_field}.search", _SEARCH_KEYS)
+
+        try:
+            rules.append(
+                ExperimentOverride(
+                    source_index=index,
+                    model_patterns=_parse_match_patterns(
+                        match_payload,
+                        singular="model",
+                        plural="models",
+                        field_name=f"{rule_field}.match",
+                    ),
+                    workload_patterns=_parse_match_patterns(
+                        match_payload,
+                        singular="workload",
+                        plural="workloads",
+                        field_name=f"{rule_field}.match",
+                    ),
+                    hardware_patterns=_parse_match_patterns(
+                        match_payload,
+                        singular="hardware",
+                        plural="hardwares",
+                        field_name=f"{rule_field}.match",
+                    ),
+                    launch=launch_updates,
+                    search=search_updates,
+                    reason=_optional_non_empty_string(payload.get("reason"), f"{rule_field}.reason"),
+                )
+            )
+        except ValueError as exc:
+            raise ManifestValidationError(str(exc)) from exc
+    return tuple(rules)
+
+
+def _parse_match_patterns(
+    payload: Mapping[str, Any],
+    *,
+    singular: str,
+    plural: str,
+    field_name: str,
+) -> tuple[str, ...]:
+    has_singular = singular in payload
+    has_plural = plural in payload
+    if has_singular and has_plural:
+        raise ManifestValidationError(f"{field_name} cannot define both {singular} and {plural}")
+    if has_singular:
+        return (_expect_non_empty_string(payload[singular], f"{field_name}.{singular}"),)
+    if has_plural:
+        return _parse_string_list(payload[plural], field_name=f"{field_name}.{plural}")
+    return ()
 
 
 def _parse_models(payload: Mapping[str, Any], field_name: str) -> tuple[str, ...]:
@@ -480,7 +673,7 @@ def _expect_int(value: Any, field_name: str, *, minimum: int) -> int:
         raise ManifestValidationError(f"{field_name} must be >= {minimum}")
     return value
 
-def _expect_optional_positive_int(value: Any, field_name: str) -> int:
+def _expect_optional_positive_int(value: Any, field_name: str) -> int | None:
     if value is None:
         return None
     if isinstance(value, str) and value.lower() in {"none", "null", "off", "disabled"}:

@@ -36,6 +36,7 @@ hf_cached_models.txt
 # Deprecated code
 profiler/deprecated/pre_profiling_engine.py
 profiler/deprecated/run_offline_benchmark.py
+profiler/deprecated/submit_enhanced_profiling_jobs.sh
 
 # LLM MST finder local workload fixtures (generated test configs/datasets)
 tests/llm_mst_finder/fixtures/

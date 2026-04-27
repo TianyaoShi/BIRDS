@@ -35,14 +35,14 @@ def slugify(text: str, *, max_length: int = 48) -> str:
 def runtime_server_signature(
     *,
     server_signature_key: str,
-    gpu_id: int,
+    gpu_ids: tuple[int, ...],
     base_port: int,
     metrics_port: int,
 ) -> str:
     return stable_hash(
         {
             "server_signature_key": server_signature_key,
-            "gpu_id": gpu_id,
+            "gpu_ids": list(gpu_ids),
             "base_port": base_port,
             "metrics_port": metrics_port,
         }

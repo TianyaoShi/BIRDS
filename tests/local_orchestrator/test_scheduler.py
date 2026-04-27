@@ -8,9 +8,11 @@ import time
 from local_orchestrator.models import (
     ActiveServer,
     ExpandedExperimentJob,
+    HardwareConfig,
     LaunchConfig,
     RetryPolicy,
     RunConfig,
+    ResourceProbeResult,
     SearchConfig,
     SearchExecutionResult,
 )
@@ -50,7 +52,7 @@ class StubLifecycle:
         self,
         *,
         job: ExpandedExperimentJob,
-        gpu_id: int,
+        gpu_ids: tuple[int, ...],
         ports,
         runtime_signature: str,
         logs_dir,
@@ -70,7 +72,8 @@ class StubLifecycle:
             runtime_signature=runtime_signature,
             model=job.model,
             endpoint=job.endpoint,
-            gpu_id=gpu_id,
+            gpu_id=gpu_ids[0],
+            gpu_ids=gpu_ids,
             base_port=ports.base_port,
             metrics_port=ports.metrics_port,
             command=("fake",),
@@ -148,7 +151,14 @@ class StubAdapter:
         )
 
 
-def _make_job(tmp_path: Path, *, experiment_id: str, signature: str) -> ExpandedExperimentJob:
+def _make_job(
+    tmp_path: Path,
+    *,
+    experiment_id: str,
+    signature: str,
+    launch: LaunchConfig | None = None,
+    probe: ResourceProbeResult | None = None,
+) -> ExpandedExperimentJob:
     workload = tmp_path / f"{experiment_id}.yaml"
     workload.write_text("name: stub\n", encoding="utf-8")
     return ExpandedExperimentJob(
@@ -157,8 +167,10 @@ def _make_job(tmp_path: Path, *, experiment_id: str, signature: str) -> Expanded
         model="google/gemma-4-E4B-it",
         workload=workload,
         endpoint="/v1/chat/completions",
-        launch=LaunchConfig(),
+        launch=launch or LaunchConfig(),
         search=SearchConfig(),
+        hardware=HardwareConfig(),
+        probe=probe,
         result_dir=tmp_path / "results" / experiment_id,
         model_slug="gemma-4-e4b-it",
         dataset_slug="dataset",
@@ -269,16 +281,16 @@ def test_scheduler_parallel_uses_multiple_slots_and_gpu_ids(tmp_path: Path) -> N
             self,
             *,
             job: ExpandedExperimentJob,
-            gpu_id: int,
+            gpu_ids: tuple[int, ...],
             ports,
             runtime_signature: str,
             logs_dir,
             force_restart: bool = False,
         ) -> ActiveServer:
-            self.ensure_calls.append((job.experiment_id, gpu_id))
+            self.ensure_calls.append((job.experiment_id, gpu_ids[0]))
             return super().ensure_server(
                 job=job,
-                gpu_id=gpu_id,
+                gpu_ids=gpu_ids,
                 ports=ports,
                 runtime_signature=runtime_signature,
                 logs_dir=logs_dir,
@@ -396,6 +408,58 @@ def test_scheduler_force_rerun_resets_and_reexecutes(tmp_path: Path) -> None:
     assert int(final_job_state["attempts"]["startup"]) == 1
     assert int(final_job_state["attempts"]["search"]) == 1
     assert marker_path.exists() is False
+
+
+def test_scheduler_fails_job_when_probe_requires_more_gpus_than_launch(tmp_path: Path) -> None:
+    probe = ResourceProbeResult(
+        hardware_name="l40",
+        gpu_memory_gb=48,
+        model_params_b=70,
+        estimated_weight_gb=130.0,
+        estimated_activation_gb=4.0,
+        estimated_kv_cache_gb=8.0,
+        estimated_required_gb=170.0,
+        usable_memory_per_gpu_gb=43.2,
+        required_gpu_count=4,
+        context_tokens=4096,
+        warnings=(),
+    )
+    job = _make_job(
+        tmp_path,
+        experiment_id="job-preflight",
+        signature="sig-preflight",
+        launch=LaunchConfig(gpu_count=1, tensor_parallel_size=1),
+        probe=probe,
+    )
+    run_config = RunConfig(
+        output_root=tmp_path / "orchestrator-runs",
+        allowed_gpu_ids=(0, 1, 2, 3),
+        max_active_gpus=4,
+        keep_one_gpu_spare=False,
+        retry=RetryPolicy(startup_attempts=1, search_attempts=1),
+    )
+    adapter = StubAdapter({"job-preflight": [True]})
+    state_store = RunStateStore(tmp_path / "preflight-run")
+    state = state_store.initialize_new(
+        run_id="run-preflight",
+        manifest_path=tmp_path / "manifest.yaml",
+        jobs=[job],
+    )
+
+    scheduler = OrchestratorScheduler(
+        run_config=run_config,
+        gpu_manager=GPULeaseManager(allowed_gpu_ids=run_config.allowed_gpu_ids, max_active_gpus=4),
+        port_allocator=PortAllocator(base_port_start=8000, base_port_end=8010, metrics_port_offset=1000),
+        lifecycle=StubLifecycle(),
+        adapter=adapter,
+        state_store=state_store,
+    )
+    summary = scheduler.run(jobs=[job], state=state, resume=False)
+
+    assert summary["counts"]["failed"] == 1
+    assert adapter.calls == []
+    final_job = state_store.find_job(state_store.load(), "job-preflight")
+    assert "resource probe estimates" in final_job["last_error"]
 
 
 def test_state_store_summary_includes_search_result_aggregates(tmp_path: Path) -> None:

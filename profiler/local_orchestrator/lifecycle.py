@@ -41,7 +41,7 @@ class VLLMLifecycleManager:
         self,
         *,
         job: ExpandedExperimentJob,
-        gpu_id: int,
+        gpu_ids: tuple[int, ...],
         ports: PortReservation,
         runtime_signature: str,
         logs_dir: Path,
@@ -58,7 +58,8 @@ class VLLMLifecycleManager:
             self.stop_active_server(reason="signature_change_or_unhealthy")
 
         logs_dir.mkdir(parents=True, exist_ok=True)
-        log_suffix = f"gpu{gpu_id}_{runtime_signature[:12]}"
+        gpu_label = "-".join(str(gpu_id) for gpu_id in gpu_ids)
+        log_suffix = f"gpu{gpu_label}_{runtime_signature[:12]}"
         stdout_log = logs_dir / f"vllm_{log_suffix}.stdout.log"
         stderr_log = logs_dir / f"vllm_{log_suffix}.stderr.log"
         stdout_handle = stdout_log.open("a", encoding="utf-8")
@@ -67,13 +68,13 @@ class VLLMLifecycleManager:
         command = render_launch_command(
             launch=job.launch,
             model=job.model,
-            gpu_id=gpu_id,
+            gpu_ids=gpu_ids,
             base_port=ports.base_port,
             metrics_port=ports.metrics_port,
         )
         env = os.environ.copy()
         env.update(job.launch.env)
-        env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+        env["CUDA_VISIBLE_DEVICES"] = ",".join(str(gpu_id) for gpu_id in gpu_ids)
         process = self._process_factory(
             command,
             stdout=stdout_handle,
@@ -88,7 +89,8 @@ class VLLMLifecycleManager:
             runtime_signature=runtime_signature,
             model=job.model,
             endpoint=job.endpoint,
-            gpu_id=gpu_id,
+            gpu_id=gpu_ids[0],
+            gpu_ids=gpu_ids,
             base_port=ports.base_port,
             metrics_port=ports.metrics_port,
             command=command,
@@ -181,13 +183,14 @@ def render_launch_command(
     *,
     launch: LaunchConfig,
     model: str,
-    gpu_id: int,
+    gpu_ids: tuple[int, ...],
     base_port: int,
     metrics_port: int,
 ) -> tuple[str, ...]:
     context = {
         "model": model,
-        "gpu_id": str(gpu_id),
+        "gpu_id": str(gpu_ids[0]),
+        "gpu_ids": ",".join(str(gpu_id) for gpu_id in gpu_ids),
         "base_port": str(base_port),
         "port": str(base_port),
         "metrics_port": str(metrics_port),
@@ -216,6 +219,8 @@ def render_launch_command(
         command.extend(["--quantization", launch.quantization])
     if launch.tokenizer_mode is not None:
         command.extend(["--tokenizer-mode", launch.tokenizer_mode])
+    if launch.gpu_memory_utilization is not None:
+        command.extend(["--gpu-memory-utilization", _number_to_text(launch.gpu_memory_utilization)])
     if launch.max_num_seqs is not None:
         command.extend(["--max-num-seqs", _number_to_text(launch.max_num_seqs)])
     if launch.max_num_batched_tokens is not None:

@@ -1,6 +1,6 @@
 # Local Orchestrator (V1)
 
-This package runs small-scale, single-node orchestration for LLM MST Finder experiments. It reads a YAML manifest, expands model/workload pairs into jobs, leases GPUs and ports, boots vLLM servers, invokes MST search/report, and writes durable run state + summaries.
+This package runs small-scale, single-node orchestration for LLM MST Finder experiments. It reads a YAML manifest, expands model/workload pairs into fully planned jobs, leases GPUs and ports, boots vLLM servers, invokes MST search/report, and writes durable run state + summaries.
 
 ## What this package is
 
@@ -52,14 +52,85 @@ PYTHONPATH=/path/to/arr26/profiler \
 
 ## Manifest overview
 
-The manifest has four top-level sections: `run`, `launch`, `search`, `experiments`.
+The manifest has these top-level sections: `run`, `hardware`, `probe`, `launch`, `search`, `overrides`, `experiments`.
 
 - `run`: output location, GPU policy, ports, retry counts, and default endpoint.
+- `hardware`: target accelerator profile used by the resource probe (`name`, `gpu_memory_gb`, `gpu_memory_utilization`).
+- `probe`: conservative memory-estimation settings, including optional `auto_gpu_count`.
 - `launch`: vLLM launch settings (structured flags or a raw template command).
 - `search`: MST Finder search configuration.
-- `experiments`: model/workload pairs and per-experiment overrides.
+- `overrides`: selector-based launch/search updates that apply after model/workload expansion.
+- `experiments`: model/workload pairs, direct per-experiment overrides, experiment-local selector overrides, optional hardware/probe overrides, and metadata files.
 
 The parser is strict: unknown keys fail validation, and mutually-exclusive launch styles cannot be mixed. If you need new fields, add them in `manifest.py` and `models.py` in lockstep.
+
+### Model/workload/hardware-specific overrides
+
+Use `overrides` when one global launch/search template is too blunt for a matrix. Overrides are applied in order after each model/workload pair is expanded. A rule matches only the selectors it declares; selector values use shell-style wildcards and are case-insensitive.
+
+```
+hardware:
+  name: a100-80gb
+  gpu_memory_gb: 80
+  gpu_memory_utilization: 0.90
+
+probe:
+  enabled: true
+  auto_gpu_count: true
+  activation_memory_gb: 4
+  memory_safety_factor: 1.20
+
+launch:
+  tensor_parallel_size: 1
+  gpu_count: 1
+  dtype: float16
+
+search:
+  search_mode: hybrid
+  initial_request_rate: 1
+  max_request_rate: 8
+  max_binary_steps: 8
+  ttft_slo_ms: 1000
+  tpot_slo_ms: 125
+
+overrides:
+  - match:
+      model: "*1B*"
+    search:
+      max_request_rate: 40
+      max_binary_steps: 10
+  - match:
+      model: "*8B*"
+    search:
+      max_request_rate: 8
+      max_binary_steps: 7
+  - match:
+      workload: "*long-context*"
+    search:
+      ttft_slo_ms: 2000
+      tpot_slo_ms: 175
+
+experiments:
+  - id: chat-matrix
+    models:
+      - meta-llama/Llama-3.1-8B-Instruct
+      - Qwen/Qwen3-1.7B
+    workloads:
+      - workloads/sharegpt.yaml
+      - workloads/long-context.yaml
+```
+
+Experiment-local `overrides` use the same shape and run after top-level `overrides`, so they can refine a broad policy for one experiment group.
+
+### Resource probing
+
+The probe estimates the minimum GPU count needed for model weights, an activation-memory allowance, and at least `probe.kv_cache_request_count` request's KV cache. It infers model size from names such as `1B`, `4B`, `8B`, and `E4B`; use `probe.model_size_overrides_b` for names that do not encode parameter count clearly.
+
+When `probe.auto_gpu_count: true`, expansion raises `launch.gpu_count` to the estimated minimum and also raises `tensor_parallel_size` when it was tracking the old GPU count. When auto mode is off, the scheduler fails the job before launch if the probe estimates more GPUs than the final launch config requests.
+
+Dry-run output includes the final launch/search values and probe payload for each expanded job. This expanded job representation is the intended reuse point for a future Slurm adapter: Slurm should submit the already-expanded job plan and let the cluster manager allocate the requested GPUs.
+
+For local raw launch templates, `{gpu_id}` expands to the first leased GPU and `{gpu_ids}` expands to the comma-separated leased set. The lifecycle manager also sets `CUDA_VISIBLE_DEVICES` to that same comma-separated set.
 
 ### Search modes and reporting
 
@@ -105,10 +176,9 @@ results/mst/<model_slug>/<dataset_slug>/<server_slug>/
 
 The V1 orchestrator intentionally omits:
 
-- Multi-node or cluster scheduling (single host only).
-- Multi-GPU per model (only `gpu_count=1` jobs).
-- More than 3 active GPUs in a run (`max_active_gpus <= 3`).
-- GPU memory awareness or preflight checks (no `nvidia-smi` integration).
+- Multi-node or cluster scheduling (single host only; Slurm should be a thin submit-loop over expanded jobs).
+- Cross-node tensor parallelism.
+- Live GPU memory discovery from `nvidia-smi`; set `hardware.gpu_memory_gb` in the manifest for now.
 - Adaptive backoff, cancellation, or preemption of jobs.
 - Dynamic closed-loop search tuning (no closed-loop concurrency config in the manifest).
 - Report-only or search-only modes (search+report is always run together).
