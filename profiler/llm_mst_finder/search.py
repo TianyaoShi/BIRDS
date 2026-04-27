@@ -48,6 +48,8 @@ class SearchConfig:
     endpoint: str = "/v1/completions"
     model: str = ""
     trial_duration_s: float = 60.0
+    uncertain_trial_duration_s: float | None = None
+    uncertain_trial_duration_multiplier: float = 2.0
     final_confirmation_duration_s: float | None = None
     rate_precision: float = 0.03
     initial_request_rate: float = 1.0
@@ -83,6 +85,13 @@ class SearchConfig:
         if not self.model:
             raise ValueError("model must be non-empty")
         _require_positive("trial_duration_s", self.trial_duration_s)
+        if self.uncertain_trial_duration_s is not None:
+            _require_positive("uncertain_trial_duration_s", self.uncertain_trial_duration_s)
+            if self.uncertain_trial_duration_s <= self.trial_duration_s:
+                raise ValueError("uncertain_trial_duration_s must exceed trial_duration_s")
+        _require_positive("uncertain_trial_duration_multiplier", self.uncertain_trial_duration_multiplier)
+        if self.uncertain_trial_duration_multiplier <= 1.0:
+            raise ValueError("uncertain_trial_duration_multiplier must exceed 1.0")
         if self.final_confirmation_duration_s is not None:
             _require_positive("final_confirmation_duration_s", self.final_confirmation_duration_s)
         _require_positive("rate_precision", self.rate_precision)
@@ -115,6 +124,15 @@ class SearchConfig:
     @property
     def confirmation_duration_s(self) -> float:
         return self.final_confirmation_duration_s or self.trial_duration_s
+
+    @property
+    def uncertain_retry_duration_s(self) -> float:
+        if self.uncertain_trial_duration_s is not None:
+            return self.uncertain_trial_duration_s
+        return max(
+            self.confirmation_duration_s,
+            self.trial_duration_s * self.uncertain_trial_duration_multiplier,
+        )
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -546,8 +564,8 @@ class SearchController:
                 mode="open-loop",
                 concurrency=None,
                 request_rate=rate,
-                duration_s=config.trial_duration_s,
-                purpose=f"{purpose}_repeat_uncertain",
+                duration_s=config.uncertain_retry_duration_s,
+                purpose=f"{purpose}_extend_uncertain",
             )
             repeat_analysis = repeat_event["analysis_result"]
             self._reject_invalid_trial(repeat_analysis, repeat_event["trial_id"])

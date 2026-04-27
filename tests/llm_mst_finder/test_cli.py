@@ -248,6 +248,12 @@ def test_cli_search_records_server_metadata_file(
             "fake-model",
             "--workload",
             str(workload_path),
+            "--trial-min-duration-s",
+            "10",
+            "--trial-max-duration-s",
+            "25",
+            "--uncertain-trial-duration-multiplier",
+            "3",
             "--server-metadata-file",
             str(metadata_path),
             "--max-num-batched-tokens",
@@ -259,6 +265,10 @@ def test_cli_search_records_server_metadata_file(
     captured = json.loads(capsys.readouterr().out.strip())
     assert captured["search_id"] == "cli-search-metadata"
     config = StubSearchController.instances[-1].config
+    assert config.trial_duration_s == 10.0
+    assert config.uncertain_trial_duration_s == 25.0
+    assert config.uncertain_trial_duration_multiplier == 3.0
+    assert config.final_confirmation_duration_s == 25.0
     metadata = config.metadata
     assert "workload" in metadata
     server_metadata = metadata["server_metadata"]

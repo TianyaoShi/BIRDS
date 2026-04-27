@@ -226,6 +226,69 @@ def test_invalid_workload_trial_fails_without_updating_high_bound(tmp_path: Path
     asyncio.run(run())
 
 
+def test_uncertain_open_loop_rate_is_retried_with_extended_duration(tmp_path: Path) -> None:
+    class UncertainFirstHighRunner(FakeRunner):
+        def __init__(self) -> None:
+            super().__init__(sustainable_rate=1.0)
+            self.high_rate_calls = 0
+
+        async def run_trial(self, config: TrialConfig, *, request_source, output_dir: str | Path):
+            result = await super().run_trial(
+                config,
+                request_source=request_source,
+                output_dir=output_dir,
+            )
+            if config.mode == "open-loop" and config.request_rate == pytest.approx(2.0):
+                self.high_rate_calls += 1
+                if self.high_rate_calls == 1:
+                    self.analyses[config.trial_id] = _analysis(config.trial_id, status="uncertain")
+            return result
+
+    async def run() -> None:
+        runner = UncertainFirstHighRunner()
+        controller = SearchController(
+            runner,
+            request_source=_source(),
+            output_dir=tmp_path / "search-uncertain-extended",
+            analyze_trial=lambda trial_dir: runner.analyses[Path(trial_dir).name],
+            write_analysis=lambda trial_dir, result: Path(trial_dir) / "analysis.json",
+        )
+        await controller.search(
+            SearchConfig(
+                search_id="fixture-uncertain-extended",
+                search_mode="open-loop",
+                model="fake-model",
+                trial_duration_s=1.0,
+                uncertain_trial_duration_s=3.0,
+                rate_precision=0.9,
+                initial_request_rate=1.0,
+            )
+        )
+
+        high_rate_calls = [
+            call
+            for call in runner.calls
+            if call.mode == "open-loop" and call.request_rate == pytest.approx(2.0)
+        ]
+        assert [call.duration_s for call in high_rate_calls] == [1.0, 3.0]
+        trace = json.loads(
+            (tmp_path / "search-uncertain-extended" / "search_trace.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        high_rate_events = [
+            event
+            for event in trace["events"]
+            if event["mode"] == "open-loop" and event["request_rate"] == pytest.approx(2.0)
+        ]
+        assert [event["purpose"] for event in high_rate_events] == [
+            "open_loop_bracket_high",
+            "open_loop_bracket_high_extend_uncertain",
+        ]
+
+    asyncio.run(run())
+
+
 def test_open_loop_search_stops_early_on_high_confidence_scheduler_cap(tmp_path: Path) -> None:
     class SchedulerCapAtHighRunner(FakeRunner):
         async def run_trial(self, config: TrialConfig, *, request_source, output_dir: str | Path):

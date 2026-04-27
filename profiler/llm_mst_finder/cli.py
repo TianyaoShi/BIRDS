@@ -101,6 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--model", required=True)
     search.add_argument("--trial-min-duration-s", type=float, default=60.0)
     search.add_argument("--trial-max-duration-s", type=float, default=None)
+    search.add_argument("--uncertain-trial-duration-multiplier", type=float, default=2.0)
     search.add_argument("--final-confirmation-duration-s", type=float, default=None)
     search.add_argument("--rate-precision", type=float, default=0.03)
     search.add_argument("--initial-request-rate", type=float, default=1.0)
@@ -256,6 +257,8 @@ async def _search_command(args: argparse.Namespace) -> int:
         endpoint=args.endpoint,
         model=args.model,
         trial_duration_s=args.trial_min_duration_s,
+        uncertain_trial_duration_s=args.trial_max_duration_s,
+        uncertain_trial_duration_multiplier=args.uncertain_trial_duration_multiplier,
         final_confirmation_duration_s=(
             args.final_confirmation_duration_s
             if args.final_confirmation_duration_s is not None
