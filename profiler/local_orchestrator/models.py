@@ -138,6 +138,8 @@ class SearchConfig:
     tpot_slo_ms: float | None = None
     ttft_slo_field: str = "ttft_p90_ms"
     tpot_slo_field: str = "tpot_p90_ms"
+    max_num_seqs: int | None = None
+    max_num_batched_tokens: int | None = None
 
     def __post_init__(self) -> None:
         if self.search_mode not in {"closed-loop", "open-loop", "hybrid"}:

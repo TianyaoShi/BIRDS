@@ -76,6 +76,8 @@ _SEARCH_KEYS = {
     "tpot_slo_ms",
     "ttft_slo_field",
     "tpot_slo_field",
+    "max_num_seqs",
+    "max_num_batched_tokens",
 }
 _STRUCTURED_LAUNCH_KEYS = {
     "executable",
@@ -364,6 +366,9 @@ def _merge_search_config(base: SearchConfig, raw: Any, *, field_name: str) -> Se
         if key in {"ttft_slo_field", "tpot_slo_field"}:
             updated[key] = _expect_non_empty_string(value, f"{field_name}.{key}")
             continue
+        if key in {"max_num_seqs", "max_num_batched_tokens"}:
+            updated[key] = _expect_optional_positive_int(value, f"{field_name}.{key}")
+            continue
         raise ManifestValidationError(f"unsupported search field {key!r}")
 
     try:
@@ -474,6 +479,13 @@ def _expect_int(value: Any, field_name: str, *, minimum: int) -> int:
     if value < minimum:
         raise ManifestValidationError(f"{field_name} must be >= {minimum}")
     return value
+
+def _expect_optional_positive_int(value: Any, field_name: str) -> int:
+    if value is None:
+        return None
+    if isinstance(value, str) and value.lower() in {"none", "null", "off", "disabled"}:
+        return None
+    return _expect_int(value, field_name, minimum=1)
 
 
 def _expect_positive_float(value: Any, field_name: str) -> float:
