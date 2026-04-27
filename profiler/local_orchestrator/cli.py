@@ -30,6 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     resume = subparsers.add_parser("resume")
     resume.add_argument("--run-root", type=Path, required=True)
+    resume.add_argument(
+        "--force",
+        action="store_true",
+        help="rerun all jobs, including previously succeeded ones",
+    )
     resume.set_defaults(handler=_resume_command)
 
     status = subparsers.add_parser("status")
@@ -82,7 +87,7 @@ def _run_command(args: argparse.Namespace) -> int:
         jobs=jobs,
     )
     scheduler = _build_scheduler(state_store=state_store, manifest=manifest)
-    summary = scheduler.run(jobs=jobs, state=state, resume=False)
+    summary = scheduler.run(jobs=jobs, state=state, resume=False, force=False)
 
     print(json.dumps({"run_root": str(run_root), "summary": summary}, sort_keys=True))
     return 0
@@ -108,7 +113,7 @@ def _resume_command(args: argparse.Namespace) -> int:
         )
 
     scheduler = _build_scheduler(state_store=state_store, manifest=manifest)
-    summary = scheduler.run(jobs=jobs, state=state, resume=True)
+    summary = scheduler.run(jobs=jobs, state=state, resume=True, force=bool(args.force))
     print(json.dumps({"run_root": str(run_root), "summary": summary}, sort_keys=True))
     return 0
 

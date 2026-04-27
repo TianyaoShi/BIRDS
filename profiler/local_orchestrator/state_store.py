@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
@@ -169,15 +170,64 @@ class RunStateStore:
         job["last_error"] = error
         self.save(state)
 
+    def reset_job_for_rerun(
+        self,
+        state: dict[str, Any],
+        *,
+        experiment_id: str,
+    ) -> None:
+        job = self.find_job(state, experiment_id)
+        job["status"] = "planned"
+        job["last_error"] = None
+        job["attempts"] = {"startup": 0, "search": 0}
+        job["artifacts"] = {
+            "search_trace": None,
+            "final_report_json": None,
+            "final_report_md": None,
+            "stdout_log": None,
+            "stderr_log": None,
+        }
+        self.save(state)
+
     def summarize(self, state: dict[str, Any]) -> dict[str, Any]:
         jobs = state.get("jobs", [])
         counts = {"planned": 0, "running": 0, "succeeded": 0, "failed": 0, "skipped": 0}
+        termination_reason_counts: dict[str, int] = {}
+        bottleneck_class_counts: dict[str, int] = {}
+        max_no_drift_rates: list[float] = []
+        max_slo_rates: list[float] = []
         job_summaries: list[dict[str, Any]] = []
         for job in jobs:
             status = str(job.get("status", "planned"))
             if status not in counts:
                 status = "planned"
             counts[status] += 1
+
+            search_result = self._extract_search_result(job)
+            termination_reason = None if search_result is None else search_result.get("termination_reason")
+            bottleneck_class = None if search_result is None else search_result.get("bottleneck_class")
+
+            if isinstance(termination_reason, str) and termination_reason:
+                termination_reason_counts[termination_reason] = termination_reason_counts.get(termination_reason, 0) + 1
+            if isinstance(bottleneck_class, str) and bottleneck_class:
+                bottleneck_class_counts[bottleneck_class] = bottleneck_class_counts.get(bottleneck_class, 0) + 1
+
+            max_no_drift = self._as_finite_float(
+                None if search_result is None else search_result.get("max_no_drift_request_rate")
+            )
+            if max_no_drift is not None:
+                max_no_drift_rates.append(max_no_drift)
+
+            max_slo = self._as_finite_float(
+                None if search_result is None else search_result.get("max_slo_satisfying_request_rate")
+            )
+            if max_slo is not None:
+                max_slo_rates.append(max_slo)
+
+            artifacts = job.get("artifacts")
+            if not isinstance(artifacts, dict):
+                artifacts = {}
+
             job_summaries.append(
                 {
                     "experiment_id": job.get("experiment_id"),
@@ -185,13 +235,41 @@ class RunStateStore:
                     "result_dir": job.get("result_dir"),
                     "attempts": job.get("attempts", {}),
                     "last_error": job.get("last_error"),
+                    "termination_reason": termination_reason,
+                    "bottleneck_class": bottleneck_class,
+                    "max_no_drift_request_rate": max_no_drift,
+                    "max_slo_satisfying_request_rate": max_slo,
+                    "artifacts": {
+                        "search_trace": artifacts.get("search_trace"),
+                        "final_report_json": artifacts.get("final_report_json"),
+                        "final_report_md": artifacts.get("final_report_md"),
+                        "stdout_log": artifacts.get("stdout_log"),
+                        "stderr_log": artifacts.get("stderr_log"),
+                    },
                 }
             )
+
+        failed_jobs = [
+            {
+                "experiment_id": str(job.get("experiment_id")),
+                "error": job.get("last_error"),
+            }
+            for job in job_summaries
+            if job.get("status") == "failed"
+        ]
+
         return {
             "run_id": state.get("run_id"),
             "status": state.get("status"),
             "updated_at": state.get("updated_at"),
             "counts": counts,
+            "aggregate": {
+                "termination_reason_counts": dict(sorted(termination_reason_counts.items())),
+                "bottleneck_class_counts": dict(sorted(bottleneck_class_counts.items())),
+                "max_no_drift_request_rate": self._rate_stats(max_no_drift_rates),
+                "max_slo_satisfying_request_rate": self._rate_stats(max_slo_rates),
+                "failed_jobs": failed_jobs,
+            },
             "jobs": job_summaries,
         }
 
@@ -212,11 +290,16 @@ class RunStateStore:
             f"- Succeeded: {summary['counts']['succeeded']}",
             f"- Failed: {summary['counts']['failed']}",
             f"- Skipped: {summary['counts']['skipped']}",
+            f"- Termination Reasons: {json.dumps(summary['aggregate']['termination_reason_counts'], sort_keys=True)}",
+            f"- Bottleneck Classes: {json.dumps(summary['aggregate']['bottleneck_class_counts'], sort_keys=True)}",
             "",
             "## Jobs",
             "",
-            "| Experiment ID | Status | Startup Attempts | Search Attempts | Result Dir |",
-            "| --- | --- | --- | --- | --- |",
+            (
+                "| Experiment ID | Status | Startup Attempts | Search Attempts | "
+                "Termination | Bottleneck | Max No-Drift RPS | Max SLO RPS | Result Dir |"
+            ),
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         for job in summary["jobs"]:
             attempts = job.get("attempts", {})
@@ -226,10 +309,70 @@ class RunStateStore:
                 f"{job.get('status')} | "
                 f"{attempts.get('startup', 0)} | "
                 f"{attempts.get('search', 0)} | "
+                f"{job.get('termination_reason') or '-'} | "
+                f"{job.get('bottleneck_class') or '-'} | "
+                f"{self._format_rate(job.get('max_no_drift_request_rate'))} | "
+                f"{self._format_rate(job.get('max_slo_satisfying_request_rate'))} | "
                 f"{job.get('result_dir')} |"
             )
         self.summary_md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return summary
+
+    @staticmethod
+    def _extract_search_result(job: dict[str, Any]) -> dict[str, Any] | None:
+        artifacts = job.get("artifacts")
+        artifact_path: Path | None = None
+        if isinstance(artifacts, dict):
+            raw_search_trace = artifacts.get("search_trace")
+            if isinstance(raw_search_trace, str) and raw_search_trace:
+                artifact_path = Path(raw_search_trace)
+        if artifact_path is None:
+            artifact_path = Path(str(job.get("result_dir"))) / "search_trace.json"
+        if not artifact_path.is_file():
+            return None
+        payload = RunStateStore._read_json_mapping(artifact_path)
+        if payload is None:
+            return None
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            return None
+        return result
+
+    @staticmethod
+    def _read_json_mapping(path: Path) -> dict[str, Any] | None:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        return payload
+
+    @staticmethod
+    def _as_finite_float(value: object) -> float | None:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        numeric = float(value)
+        if not isfinite(numeric):
+            return None
+        return numeric
+
+    @staticmethod
+    def _rate_stats(values: list[float]) -> dict[str, float] | None:
+        if not values:
+            return None
+        return {
+            "min": min(values),
+            "max": max(values),
+            "mean": sum(values) / len(values),
+        }
+
+    @staticmethod
+    def _format_rate(value: object) -> str:
+        numeric = RunStateStore._as_finite_float(value)
+        if numeric is None:
+            return "-"
+        return f"{numeric:.6g}"
 
     @staticmethod
     def _job_payload(job: ExpandedExperimentJob) -> dict[str, Any]:

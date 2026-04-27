@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from queue import Empty, Queue
+import shutil
 from threading import Lock, Thread
 from typing import Any, Callable, Protocol
 
@@ -98,11 +99,12 @@ class OrchestratorScheduler:
         jobs: list[ExpandedExperimentJob],
         state: dict[str, Any],
         resume: bool,
+        force: bool = False,
     ) -> dict[str, Any]:
         if resume:
             self._with_state_lock(lambda: self._state_store.reconcile_jobs(state))
 
-        pending_jobs = self._collect_pending_jobs(jobs=jobs, state=state)
+        pending_jobs = self._collect_pending_jobs(jobs=jobs, state=state, force=force)
 
         try:
             if self._should_run_parallel(pending_jobs):
@@ -123,15 +125,45 @@ class OrchestratorScheduler:
         *,
         jobs: list[ExpandedExperimentJob],
         state: dict[str, Any],
+        force: bool,
     ) -> list[ExpandedExperimentJob]:
         pending_jobs: list[ExpandedExperimentJob] = []
         with self._state_lock:
             for job in jobs:
                 job_state = self._state_store.find_job(state, job.experiment_id)
+                prior_status = str(job_state.get("status", "planned"))
+                if force:
+                    self._prepare_job_for_force_rerun(
+                        job=job,
+                        state=state,
+                        prior_status=prior_status,
+                    )
+                    pending_jobs.append(job)
+                    continue
                 if job_state.get("status") in {"succeeded", "skipped"}:
                     continue
                 pending_jobs.append(job)
         return pending_jobs
+
+    def _prepare_job_for_force_rerun(
+        self,
+        *,
+        job: ExpandedExperimentJob,
+        state: dict[str, Any],
+        prior_status: str,
+    ) -> None:
+        if job.result_dir.exists():
+            shutil.rmtree(job.result_dir)
+        self._state_store.reset_job_for_rerun(state, experiment_id=job.experiment_id)
+        self._state_store.append_event(
+            state,
+            event_type="job_reset_for_force_rerun",
+            experiment_id=job.experiment_id,
+            payload={
+                "prior_status": prior_status,
+                "result_dir": str(job.result_dir),
+            },
+        )
 
     def _should_run_parallel(self, pending_jobs: list[ExpandedExperimentJob]) -> bool:
         return (

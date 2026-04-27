@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from io import StringIO
 from pathlib import Path
 import time
@@ -336,3 +337,128 @@ def test_scheduler_parallel_uses_multiple_slots_and_gpu_ids(tmp_path: Path) -> N
         }
     )
     assert used_gpu_ids == [0, 1]
+
+
+def test_scheduler_force_rerun_resets_and_reexecutes(tmp_path: Path) -> None:
+    job = _make_job(tmp_path, experiment_id="job-force", signature="sig-force")
+    run_config = RunConfig(
+        output_root=tmp_path / "orchestrator-runs",
+        allowed_gpu_ids=(0, 1, 2, 3),
+        max_active_gpus=1,
+        retry=RetryPolicy(startup_attempts=1, search_attempts=1),
+    )
+
+    lifecycle = StubLifecycle(startup_failures=0)
+    adapter = StubAdapter({"job-force": [True]})
+    state_store = RunStateStore(tmp_path / "force-run")
+    state = state_store.initialize_new(
+        run_id="run-force",
+        manifest_path=tmp_path / "manifest.yaml",
+        jobs=[job],
+    )
+
+    job.result_dir.mkdir(parents=True, exist_ok=True)
+    marker_path = job.result_dir / "old-marker.txt"
+    marker_path.write_text("old-result\n", encoding="utf-8")
+    search_trace_path = job.result_dir / "search_trace.json"
+    search_trace_path.write_text("{}\n", encoding="utf-8")
+    final_report_path = job.result_dir / "final_report.json"
+    final_report_path.write_text("{}\n", encoding="utf-8")
+
+    prior_job_state = state_store.find_job(state, "job-force")
+    prior_job_state["status"] = "succeeded"
+    prior_job_state["attempts"] = {"startup": 7, "search": 7}
+    prior_job_state["artifacts"] = {
+        "search_trace": str(search_trace_path),
+        "final_report_json": str(final_report_path),
+        "final_report_md": None,
+        "stdout_log": None,
+        "stderr_log": None,
+    }
+    state_store.save(state)
+
+    scheduler = OrchestratorScheduler(
+        run_config=run_config,
+        gpu_manager=GPULeaseManager(allowed_gpu_ids=run_config.allowed_gpu_ids, max_active_gpus=1),
+        port_allocator=PortAllocator(base_port_start=8000, base_port_end=8010, metrics_port_offset=1000),
+        lifecycle=lifecycle,
+        adapter=adapter,
+        state_store=state_store,
+    )
+    summary = scheduler.run(jobs=[job], state=state_store.load(), resume=True, force=True)
+
+    assert summary["counts"]["succeeded"] == 1
+    assert adapter.calls == ["job-force"]
+
+    final_state = state_store.load()
+    final_job_state = state_store.find_job(final_state, "job-force")
+    assert final_job_state["status"] == "succeeded"
+    assert int(final_job_state["attempts"]["startup"]) == 1
+    assert int(final_job_state["attempts"]["search"]) == 1
+    assert marker_path.exists() is False
+
+
+def test_state_store_summary_includes_search_result_aggregates(tmp_path: Path) -> None:
+    succeeded = _make_job(tmp_path, experiment_id="job-success", signature="sig-a")
+    failed = _make_job(tmp_path, experiment_id="job-failed", signature="sig-b")
+
+    state_store = RunStateStore(tmp_path / "summary-run")
+    state = state_store.initialize_new(
+        run_id="run-summary",
+        manifest_path=tmp_path / "manifest.yaml",
+        jobs=[succeeded, failed],
+    )
+
+    succeeded.result_dir.mkdir(parents=True, exist_ok=True)
+    search_trace_payload = {
+        "result": {
+            "termination_reason": "confirmed_stable",
+            "bottleneck_class": "decode_bandwidth",
+            "max_no_drift_request_rate": 9.25,
+            "max_slo_satisfying_request_rate": 8.75,
+        }
+    }
+    search_trace_path = succeeded.result_dir / "search_trace.json"
+    search_trace_path.write_text(json.dumps(search_trace_payload) + "\n", encoding="utf-8")
+    final_report_json_path = succeeded.result_dir / "final_report.json"
+    final_report_json_path.write_text("{}\n", encoding="utf-8")
+
+    succeeded_state = state_store.find_job(state, "job-success")
+    succeeded_state["status"] = "succeeded"
+    succeeded_state["attempts"] = {"startup": 1, "search": 1}
+    succeeded_state["artifacts"] = {
+        "search_trace": str(search_trace_path),
+        "final_report_json": str(final_report_json_path),
+        "final_report_md": None,
+        "stdout_log": None,
+        "stderr_log": None,
+    }
+
+    failed_state = state_store.find_job(state, "job-failed")
+    failed_state["status"] = "failed"
+    failed_state["last_error"] = "simulated failure"
+    failed_state["attempts"] = {"startup": 2, "search": 2}
+    state_store.save(state)
+
+    summary = state_store.write_summary_files(state)
+    assert summary["counts"]["succeeded"] == 1
+    assert summary["counts"]["failed"] == 1
+    assert summary["aggregate"]["termination_reason_counts"] == {"confirmed_stable": 1}
+    assert summary["aggregate"]["bottleneck_class_counts"] == {"decode_bandwidth": 1}
+    assert summary["aggregate"]["max_no_drift_request_rate"] == {
+        "min": 9.25,
+        "max": 9.25,
+        "mean": 9.25,
+    }
+    assert summary["aggregate"]["max_slo_satisfying_request_rate"] == {
+        "min": 8.75,
+        "max": 8.75,
+        "mean": 8.75,
+    }
+    assert summary["aggregate"]["failed_jobs"] == [
+        {"experiment_id": "job-failed", "error": "simulated failure"}
+    ]
+
+    markdown = state_store.summary_md_path.read_text(encoding="utf-8")
+    assert "confirmed_stable" in markdown
+    assert "decode_bandwidth" in markdown
