@@ -265,6 +265,37 @@ def test_classifies_stationary_slo_breach_as_slo_violation() -> None:
     assert any("TTFT p90 SLO violated" in reason for reason in result.reasons)
 
 
+def test_uses_configured_slo_percentile_fields() -> None:
+    windows = [
+        _window(idx, ttft_p90_ms=100.0, ttft_p99_ms=250.0, tpot_p90_ms=20.0, tpot_p99_ms=95.0)
+        for idx in range(6)
+    ]
+
+    result = classify_stability(
+        windows,
+        config=StabilityConfig(
+            ttft_slo_ms=200.0,
+            ttft_slo_field="ttft_p99_ms",
+            tpot_slo_ms=90.0,
+            tpot_slo_field="tpot_p99_ms",
+        ),
+    )
+
+    assert result.status == "slo_violation"
+    assert any("TTFT p99 SLO violated" in reason for reason in result.reasons)
+    assert any("TPOT p99 SLO violated" in reason for reason in result.reasons)
+
+
+def test_waiting_queue_reason_reports_non_empty_queue_not_zero_slope_drift() -> None:
+    windows = [_window(idx, num_waiting_mean=1.0) for idx in range(6)]
+
+    result = classify_stability(windows)
+
+    assert result.status == "unstable"
+    assert any("server waiting queue was non-empty" in reason for reason in result.reasons)
+    assert not any("server waiting requests drifted upward" in reason for reason in result.reasons)
+
+
 def test_insufficient_eval_windows_is_uncertain() -> None:
     result = classify_stability(
         _stable_windows()[:5],

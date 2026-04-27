@@ -115,6 +115,12 @@ def _expect_string(value: Any, field_name: str) -> str:
     return value
 
 
+def _optional_string(value: Any, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _expect_string(value, field_name)
+
+
 def _expect_int(value: Any, field_name: str, *, positive: bool = False) -> int:
     if not isinstance(value, int):
         raise ValueError(f"{field_name} must be an integer")
@@ -199,15 +205,22 @@ class RequestConfig:
 class DatasetConfig:
     type: str
     path: str | None = None
+    subset: str | None = None
+    split: str | None = None
+    conversation_field: str | None = None
+    prompt_field: str | None = None
+    completion_field: str | None = None
     prompt: str | None = None
     prompts: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        allowed = {"synthetic-fixed", "synthetic-distribution", "jsonl", "sharegpt"}
+        allowed = {"synthetic-fixed", "synthetic-distribution", "jsonl", "sharegpt", "hf"}
         if self.type not in allowed:
             raise ValueError(f"unsupported dataset type {self.type!r}")
-        if self.type in {"jsonl", "sharegpt"} and not self.path:
+        if self.type in {"jsonl", "sharegpt", "hf"} and not self.path:
             raise ValueError(f"dataset.path is required for dataset type {self.type!r}")
+        if self.type == "hf" and not self.split:
+            raise ValueError("dataset.split is required for dataset type 'hf'")
         if self.type == "synthetic-fixed":
             if self.path is not None:
                 raise ValueError("synthetic-fixed must not define dataset.path")
@@ -294,13 +307,27 @@ def _parse_length_spec(payload: Any, field_name: str) -> LengthSpec:
 
 def _parse_dataset(payload: Any, base_dir: Path) -> DatasetConfig:
     dataset_payload = _expect_mapping(payload, "dataset")
-    _check_allowed_keys(dataset_payload, "dataset", {"type", "path", "prompt", "prompts"})
+    _check_allowed_keys(
+        dataset_payload,
+        "dataset",
+        {
+            "type",
+            "path",
+            "subset",
+            "split",
+            "conversation_field",
+            "prompt_field",
+            "completion_field",
+            "prompt",
+            "prompts",
+        },
+    )
     dataset_type = _expect_string(dataset_payload.get("type"), "dataset.type")
     raw_path = dataset_payload.get("path")
     path_value: str | None = None
     if raw_path is not None:
         path_str = _expect_string(raw_path, "dataset.path")
-        path_value = str((base_dir / path_str).resolve())
+        path_value = path_str if dataset_type == "hf" else str((base_dir / path_str).resolve())
     prompt = dataset_payload.get("prompt")
     if prompt is not None and (not isinstance(prompt, str) or not prompt):
         raise ValueError("dataset.prompt must be a non-empty string when provided")
@@ -313,6 +340,17 @@ def _parse_dataset(payload: Any, base_dir: Path) -> DatasetConfig:
     return DatasetConfig(
         type=dataset_type,
         path=path_value,
+        subset=_optional_string(dataset_payload.get("subset"), "dataset.subset"),
+        split=_optional_string(dataset_payload.get("split"), "dataset.split"),
+        conversation_field=_optional_string(
+            dataset_payload.get("conversation_field"),
+            "dataset.conversation_field",
+        ),
+        prompt_field=_optional_string(dataset_payload.get("prompt_field"), "dataset.prompt_field"),
+        completion_field=_optional_string(
+            dataset_payload.get("completion_field"),
+            "dataset.completion_field",
+        ),
         prompt=prompt,
         prompts=prompts,
     )
@@ -424,7 +462,13 @@ def _manifest_cache_path(
     key_payload = {
         "cache_version": 1,
         "dataset_path": config.dataset.path,
+        "dataset_subset": config.dataset.subset,
+        "dataset_split": config.dataset.split,
+        "dataset_conversation_field": config.dataset.conversation_field,
+        "dataset_prompt_field": config.dataset.prompt_field,
+        "dataset_completion_field": config.dataset.completion_field,
         "dataset_type": config.dataset.type,
+        "num_requests": config.sampling.num_requests,
         "output_len_mode": config.sampling.output_len.mode,
         "prompt_len_mode": config.sampling.prompt_len.mode,
         "tokenizer_key": tokenizer_key,
@@ -500,7 +544,13 @@ def _write_entries_to_manifest(
     payload = {
         "cache_version": 1,
         "dataset_path": config.dataset.path,
+        "dataset_subset": config.dataset.subset,
+        "dataset_split": config.dataset.split,
+        "dataset_conversation_field": config.dataset.conversation_field,
+        "dataset_prompt_field": config.dataset.prompt_field,
+        "dataset_completion_field": config.dataset.completion_field,
         "dataset_type": config.dataset.type,
+        "num_requests": config.sampling.num_requests,
         "output_len_mode": config.sampling.output_len.mode,
         "prompt_len_mode": config.sampling.prompt_len.mode,
         "tokenizer_key": tokenizer_key,
@@ -625,6 +675,120 @@ def _load_sharegpt_entries_from_source(
     return entries
 
 
+def _load_hf_entries_from_source(
+    dataset: DatasetConfig,
+    tokenizer: PromptTokenizer,
+    *,
+    include_prompt_len: bool,
+    include_output_len: bool,
+    max_entries: int,
+) -> list[DatasetEntry]:
+    try:
+        from datasets import load_dataset
+    except ImportError as exc:  # pragma: no cover - optional dependency path
+        raise RuntimeError("datasets is required for dataset.type=hf workloads") from exc
+    assert dataset.path is not None
+    assert dataset.split is not None
+    rows = load_dataset(
+        dataset.path,
+        name=dataset.subset,
+        split=dataset.split,
+        streaming=True,
+    )
+    entries: list[DatasetEntry] = []
+    skipped_missing_prompt = 0
+    skipped_missing_completion = 0
+    for index, row in enumerate(rows):
+        if len(entries) >= max_entries:
+            break
+        if not isinstance(row, dict):
+            raise ValueError(f"hf row {index} must be a mapping")
+        prompt, completion = _extract_hf_prompt_completion(row, dataset, row_index=index)
+        if prompt is None:
+            skipped_missing_prompt += 1
+            continue
+        if completion is None or (include_output_len and not completion):
+            skipped_missing_completion += 1
+            continue
+        prompt_len = len(tokenizer.encode(prompt)) if include_prompt_len else None
+        expected_output_len = len(tokenizer.encode(completion)) if include_output_len else None
+        entries.append(
+            DatasetEntry(
+                prompt=prompt,
+                source_index=index,
+                prompt_len=prompt_len,
+                expected_output_len=expected_output_len,
+                metadata={
+                    "hf_dataset_path": dataset.path,
+                    "hf_dataset_subset": dataset.subset,
+                    "hf_dataset_split": dataset.split,
+                },
+            )
+        )
+    if not entries:
+        raise ValueError(
+            "hf dataset has no usable rows with prompt and completion: "
+            f"{dataset.path} split={dataset.split} "
+            f"(missing_prompt={skipped_missing_prompt}, "
+            f"missing_completion={skipped_missing_completion})"
+        )
+    return entries
+
+
+def _extract_hf_prompt_completion(
+    row: dict[str, Any],
+    dataset: DatasetConfig,
+    *,
+    row_index: int,
+) -> tuple[str | None, str | None]:
+    if dataset.prompt_field is not None:
+        prompt = row.get(dataset.prompt_field)
+        if not isinstance(prompt, str) or not prompt:
+            return None, None
+        if dataset.completion_field is None:
+            return prompt, ""
+        completion = row.get(dataset.completion_field)
+        return prompt, completion if isinstance(completion, str) and completion else None
+
+    conversation_field = dataset.conversation_field
+    if conversation_field is None:
+        for candidate in ("conversations", "conversation", "messages"):
+            if candidate in row:
+                conversation_field = candidate
+                break
+    if conversation_field is None:
+        raise ValueError(
+            f"hf row {row_index} does not contain a conversation field; "
+            "set dataset.conversation_field or dataset.prompt_field"
+        )
+    conversations = row.get(conversation_field)
+    if not isinstance(conversations, list):
+        raise ValueError(f"hf row {row_index}.{conversation_field} must be a list")
+    prompt = _find_hf_turn_text(conversations, {"human", "user"}, f"hf row {row_index}.{conversation_field}")
+    if prompt is None:
+        return None, None
+    assistant = _find_hf_turn_text(
+        conversations,
+        {"gpt", "assistant"},
+        f"hf row {row_index}.{conversation_field}",
+    )
+    return prompt, assistant
+
+
+def _find_hf_turn_text(
+    conversations: list[Any],
+    accepted_roles: set[str],
+    field_name: str,
+) -> str | None:
+    for index, turn in enumerate(conversations):
+        turn_payload = _expect_mapping(turn, f"{field_name}[{index}]")
+        role = turn_payload.get("from", turn_payload.get("role"))
+        text = turn_payload.get("value", turn_payload.get("content", turn_payload.get("text")))
+        if isinstance(role, str) and role.lower() in accepted_roles and isinstance(text, str) and text:
+            return text
+    return None
+
+
 def _render_prompt(base_text: str, target_len: int, sample_index: int) -> str:
     if target_len <= 0:
         raise ValueError("target_len must be positive")
@@ -677,6 +841,19 @@ def _sample_dataset_entries(
             tokenizer,
             include_prompt_len=config.sampling.prompt_len.mode == "from_dataset",
             include_output_len=config.sampling.output_len.mode == "from_dataset",
+        )
+        _write_entries_to_manifest(manifest_path, config=config, tokenizer_key=tokenizer_key, entries=entries)
+        return entries
+    if dataset.type == "hf":
+        manifest_path = _manifest_cache_path(config, tokenizer_key=tokenizer_key)
+        if manifest_path.exists():
+            return _load_entries_from_manifest(manifest_path)
+        entries = _load_hf_entries_from_source(
+            dataset,
+            tokenizer,
+            include_prompt_len=config.sampling.prompt_len.mode == "from_dataset",
+            include_output_len=config.sampling.output_len.mode == "from_dataset",
+            max_entries=min(max(config.sampling.num_requests * 4, config.sampling.num_requests), 4096),
         )
         _write_entries_to_manifest(manifest_path, config=config, tokenizer_key=tokenizer_key, entries=entries)
         return entries
@@ -820,7 +997,7 @@ def prepare_workload_for_trial(
     workload_tokenizer = resolve_tokenizer(config.tokenizer)
     workload_tokenizer_key = _tokenizer_cache_key(config.tokenizer, tokenizer=workload_tokenizer)
     samples = generate_sample_requests(config, tokenizer=workload_tokenizer)
-    requires_context_validation = config.dataset.type in {"jsonl", "sharegpt"}
+    requires_context_validation = config.dataset.type in {"jsonl", "sharegpt", "hf"}
 
     if config.context_policy is None:
         if requires_context_validation:

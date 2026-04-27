@@ -15,6 +15,7 @@ from .reporting import generate_report
 from .records import TrialConfig
 from .request_client import RequestClient
 from .search import SearchConfig, SearchController
+from .stability import StabilityConfig
 from .trial_runner import TrialRunner
 from .windowing import FixedWindowAggregator
 from .workload import prepare_workload_for_trial
@@ -78,10 +79,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_trial.add_argument("--metrics-interval-s", type=float, default=1.0)
     run_trial.add_argument("--window-s", type=float, default=10.0)
     _add_server_metadata_args(run_trial)
+    _add_stability_policy_args(run_trial)
     run_trial.set_defaults(handler=_run_trial_command)
 
     analyze = subparsers.add_parser("analyze")
     analyze.add_argument("--trial-dir", type=Path, required=True)
+    _add_stability_policy_args(analyze, defaults_from_policy=False)
     analyze.set_defaults(handler=_analyze_command)
 
     search = subparsers.add_parser("search")
@@ -122,6 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--metrics-interval-s", type=float, default=1.0)
     search.add_argument("--window-s", type=float, default=10.0)
     _add_server_metadata_args(search)
+    _add_stability_policy_args(search)
     search.set_defaults(handler=_search_command)
 
     report = subparsers.add_parser("report")
@@ -167,7 +171,11 @@ async def _run_trial_command(args: argparse.Namespace) -> int:
         metrics_poller=metrics_poller,
         window_aggregator=FixedWindowAggregator(window_s=args.window_s),
     )
-    metadata = _merge_cli_metadata(prepared_workload.metadata, _parse_server_metadata_args(args))
+    metadata = _merge_cli_metadata(
+        prepared_workload.metadata,
+        _parse_server_metadata_args(args),
+        _stability_policy_payload_from_args(args),
+    )
     config = TrialConfig(
         trial_id=args.trial_id,
         mode=args.mode,
@@ -216,7 +224,10 @@ async def _run_trial_command(args: argparse.Namespace) -> int:
 
 
 async def _analyze_command(args: argparse.Namespace) -> int:
-    result = analyze_trial_dir(args.trial_dir)
+    result = analyze_trial_dir(
+        args.trial_dir,
+        stability_config=_stability_config_override_from_args(args),
+    )
     write_analysis_artifact(args.trial_dir, result)
     print(json.dumps(result.to_dict(), sort_keys=True))
     return 0
@@ -249,7 +260,11 @@ async def _search_command(args: argparse.Namespace) -> int:
         metrics_poller=metrics_poller,
         window_aggregator=FixedWindowAggregator(window_s=args.window_s),
     )
-    metadata = _merge_cli_metadata(prepared_workload.metadata, _parse_server_metadata_args(args))
+    metadata = _merge_cli_metadata(
+        prepared_workload.metadata,
+        _parse_server_metadata_args(args),
+        _stability_policy_payload_from_args(args),
+    )
     config = SearchConfig(
         search_id=args.search_id,
         search_mode=args.search_mode,
@@ -344,6 +359,47 @@ def _add_server_metadata_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_stability_policy_args(
+    parser: argparse.ArgumentParser,
+    *,
+    defaults_from_policy: bool = True,
+) -> None:
+    defaults = StabilityConfig()
+    parser.add_argument(
+        "--ttft-slo-ms",
+        type=_optional_positive_float_arg,
+        default=defaults.ttft_slo_ms if defaults_from_policy else None,
+        help="TTFT SLO threshold in milliseconds; use 'none' to disable",
+    )
+    parser.add_argument(
+        "--tpot-slo-ms",
+        type=_optional_positive_float_arg,
+        default=defaults.tpot_slo_ms if defaults_from_policy else None,
+        help="TPOT SLO threshold in milliseconds; use 'none' to disable",
+    )
+    parser.add_argument(
+        "--e2e-slo-ms",
+        type=_optional_positive_float_arg,
+        default=defaults.e2e_slo_ms if defaults_from_policy else None,
+        help="end-to-end latency SLO threshold in milliseconds; use 'none' to disable",
+    )
+    parser.add_argument(
+        "--ttft-slo-field",
+        choices=("ttft_p50_ms", "ttft_p90_ms", "ttft_p99_ms"),
+        default=defaults.ttft_slo_field if defaults_from_policy else None,
+    )
+    parser.add_argument(
+        "--tpot-slo-field",
+        choices=("tpot_p50_ms", "tpot_p90_ms", "tpot_p99_ms"),
+        default=defaults.tpot_slo_field if defaults_from_policy else None,
+    )
+    parser.add_argument(
+        "--e2e-slo-field",
+        choices=("e2e_p90_ms", "e2e_p99_ms"),
+        default=defaults.e2e_slo_field if defaults_from_policy else None,
+    )
+
+
 def _parse_extra_headers(raw_headers: Sequence[str]) -> dict[str, str]:
     headers: dict[str, str] = {}
     for raw_header in raw_headers:
@@ -373,6 +429,65 @@ def _positive_server_metadata_arg(raw_value: str) -> float:
     if not isfinite(value) or value <= 0.0:
         raise argparse.ArgumentTypeError("must be a positive finite number")
     return value
+
+
+def _optional_positive_float_arg(raw_value: str) -> float | None:
+    if raw_value.lower() in {"none", "null", "off", "disabled"}:
+        return None
+    try:
+        value = float(raw_value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive finite number or 'none'") from exc
+    if not isfinite(value) or value <= 0.0:
+        raise argparse.ArgumentTypeError("must be a positive finite number or 'none'")
+    return value
+
+
+def _stability_policy_payload_from_args(args: argparse.Namespace) -> dict[str, object]:
+    config = _stability_config_from_args(args)
+    return {
+        "warmup_windows": config.warmup_windows,
+        "min_eval_windows": config.min_eval_windows,
+        "completion_arrival_tolerance": config.completion_arrival_tolerance,
+        "max_positive_backlog_slope": config.max_positive_backlog_slope,
+        "min_backlog_growth_for_hard_pressure": config.min_backlog_growth_for_hard_pressure,
+        "token_throughput_plateau_relative_growth": config.token_throughput_plateau_relative_growth,
+        "max_error_rate": config.max_error_rate,
+        "ttft_slo_ms": config.ttft_slo_ms,
+        "tpot_slo_ms": config.tpot_slo_ms,
+        "e2e_slo_ms": config.e2e_slo_ms,
+        "ttft_slo_field": config.ttft_slo_field,
+        "tpot_slo_field": config.tpot_slo_field,
+        "e2e_slo_field": config.e2e_slo_field,
+    }
+
+
+def _stability_config_override_from_args(args: argparse.Namespace) -> StabilityConfig | None:
+    if all(
+        getattr(args, name) is None
+        for name in (
+            "ttft_slo_ms",
+            "tpot_slo_ms",
+            "e2e_slo_ms",
+            "ttft_slo_field",
+            "tpot_slo_field",
+            "e2e_slo_field",
+        )
+    ):
+        return None
+    return _stability_config_from_args(args)
+
+
+def _stability_config_from_args(args: argparse.Namespace) -> StabilityConfig:
+    defaults = StabilityConfig()
+    return StabilityConfig(
+        ttft_slo_ms=args.ttft_slo_ms,
+        tpot_slo_ms=args.tpot_slo_ms,
+        e2e_slo_ms=args.e2e_slo_ms,
+        ttft_slo_field=args.ttft_slo_field or defaults.ttft_slo_field,
+        tpot_slo_field=args.tpot_slo_field or defaults.tpot_slo_field,
+        e2e_slo_field=args.e2e_slo_field or defaults.e2e_slo_field,
+    )
 
 
 def _parse_server_metadata_args(args: argparse.Namespace) -> dict[str, object] | None:
@@ -452,17 +567,19 @@ def _merge_server_metadata_value(metadata: dict[str, object], key: str, value: f
 def _merge_cli_metadata(
     workload_metadata: Mapping[str, Any],
     server_metadata: Mapping[str, object] | None,
+    stability_policy: Mapping[str, object] | None,
 ) -> dict[str, Any]:
     metadata = dict(workload_metadata)
-    if server_metadata is None:
-        return metadata
-    existing = metadata.get("server_metadata")
-    if existing is None:
-        metadata["server_metadata"] = dict(server_metadata)
-        return metadata
-    if not isinstance(existing, Mapping):
-        raise ValueError("workload metadata field 'server_metadata' must be a mapping when provided")
-    metadata["server_metadata"] = _merge_metadata_mappings(existing, server_metadata, path="server_metadata")
+    if stability_policy is not None:
+        metadata["stability_policy"] = dict(stability_policy)
+    if server_metadata is not None:
+        existing = metadata.get("server_metadata")
+        if existing is None:
+            metadata["server_metadata"] = dict(server_metadata)
+        else:
+            if not isinstance(existing, Mapping):
+                raise ValueError("workload metadata field 'server_metadata' must be a mapping when provided")
+            metadata["server_metadata"] = _merge_metadata_mappings(existing, server_metadata, path="server_metadata")
     return metadata
 
 

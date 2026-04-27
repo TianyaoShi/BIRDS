@@ -37,6 +37,9 @@ class StabilityConfig:
     ttft_slo_ms: float | None = 2000.0
     tpot_slo_ms: float | None = 80.0
     e2e_slo_ms: float | None = None
+    ttft_slo_field: str = "ttft_p90_ms"
+    tpot_slo_field: str = "tpot_p90_ms"
+    e2e_slo_field: str = "e2e_p90_ms"
     drift_test: DriftTestConfig = field(default_factory=DriftTestConfig)
 
     def __post_init__(self) -> None:
@@ -65,6 +68,9 @@ class StabilityConfig:
         _require_optional_positive_finite("ttft_slo_ms", self.ttft_slo_ms)
         _require_optional_positive_finite("tpot_slo_ms", self.tpot_slo_ms)
         _require_optional_positive_finite("e2e_slo_ms", self.e2e_slo_ms)
+        _require_slo_field("ttft_slo_field", self.ttft_slo_field, {"ttft_p50_ms", "ttft_p90_ms", "ttft_p99_ms"})
+        _require_slo_field("tpot_slo_field", self.tpot_slo_field, {"tpot_p50_ms", "tpot_p90_ms", "tpot_p99_ms"})
+        _require_slo_field("e2e_slo_field", self.e2e_slo_field, {"e2e_p90_ms", "e2e_p99_ms"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,11 +193,10 @@ def classify_stability(
         key_metrics["num_waiting_mean_slope_per_s"] = num_waiting_trend.slope
         key_metrics["num_waiting_mean_delta"] = num_waiting_trend.delta
         waiting_values = _present_values(active_eval_windows, "num_waiting_mean")
-        if num_waiting_trend.slope > stability_config.max_positive_backlog_slope or (
-            _has_repeated_increase(waiting_values) and waiting_values[-1] > 0.0
-        ):
+        if waiting_values and max(waiting_values) > 0.0:
             direct_unstable_reasons.append(
-                "server waiting requests drifted upward: "
+                "server waiting queue was non-empty after warmup: "
+                f"max num_waiting_mean={max(waiting_values):.3f}, "
                 f"Theil-Sen slope={num_waiting_trend.slope:.3f}/s"
             )
 
@@ -614,36 +619,41 @@ def _slo_reasons(
 ) -> list[str]:
     reasons: list[str] = []
     if config.ttft_slo_ms is not None:
-        ttft_values = _present_values(windows, "ttft_p90_ms")
+        ttft_values = _present_values(windows, config.ttft_slo_field)
         if ttft_values:
             max_ttft = max(ttft_values)
-            key_metrics["ttft_p90_ms_max"] = max_ttft
+            key_metrics[f"{config.ttft_slo_field}_max"] = max_ttft
             if max_ttft > config.ttft_slo_ms:
                 reasons.append(
-                    f"TTFT p90 SLO violated: max={max_ttft:.3f} ms "
+                    f"{_display_slo_field(config.ttft_slo_field)} SLO violated: max={max_ttft:.3f} ms "
                     f"> {config.ttft_slo_ms:.3f} ms"
                 )
     if config.tpot_slo_ms is not None:
-        tpot_values = _present_values(windows, "tpot_p90_ms")
+        tpot_values = _present_values(windows, config.tpot_slo_field)
         if tpot_values:
             max_tpot = max(tpot_values)
-            key_metrics["tpot_p90_ms_max"] = max_tpot
+            key_metrics[f"{config.tpot_slo_field}_max"] = max_tpot
             if max_tpot > config.tpot_slo_ms:
                 reasons.append(
-                    f"TPOT p90 SLO violated: max={max_tpot:.3f} ms "
+                    f"{_display_slo_field(config.tpot_slo_field)} SLO violated: max={max_tpot:.3f} ms "
                     f"> {config.tpot_slo_ms:.3f} ms"
                 )
     if config.e2e_slo_ms is not None:
-        e2e_values = _present_values(windows, "e2e_p90_ms")
+        e2e_values = _present_values(windows, config.e2e_slo_field)
         if e2e_values:
             max_e2e = max(e2e_values)
-            key_metrics["e2e_p90_ms_max"] = max_e2e
+            key_metrics[f"{config.e2e_slo_field}_max"] = max_e2e
             if max_e2e > config.e2e_slo_ms:
                 reasons.append(
-                    f"E2E p90 SLO violated: max={max_e2e:.3f} ms "
+                    f"{_display_slo_field(config.e2e_slo_field)} SLO violated: max={max_e2e:.3f} ms "
                     f"> {config.e2e_slo_ms:.3f} ms"
                 )
     return reasons
+
+
+def _display_slo_field(field_name: str) -> str:
+    metric, percentile, _unit = field_name.split("_", 2)
+    return f"{metric.upper()} {percentile}"
 
 
 def _confidence_after_penalties(base: Confidence, penalties: int) -> Confidence:
@@ -698,6 +708,11 @@ def _require_optional_positive_finite(name: str, value: float | None) -> None:
         return
     if not isfinite(value) or value <= 0.0:
         raise ValueError(f"{name} must be positive and finite, got {value!r}")
+
+
+def _require_slo_field(name: str, value: str, allowed: set[str]) -> None:
+    if value not in allowed:
+        raise ValueError(f"{name} must be one of {sorted(allowed)}, got {value!r}")
 
 
 def _require_non_negative_finite(name: str, value: float) -> None:

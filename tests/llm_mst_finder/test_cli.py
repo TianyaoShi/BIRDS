@@ -254,6 +254,12 @@ def test_cli_search_records_server_metadata_file(
             "25",
             "--uncertain-trial-duration-multiplier",
             "3",
+            "--ttft-slo-ms",
+            "1500",
+            "--ttft-slo-field",
+            "ttft_p99_ms",
+            "--tpot-slo-ms",
+            "none",
             "--server-metadata-file",
             str(metadata_path),
             "--max-num-batched-tokens",
@@ -270,6 +276,9 @@ def test_cli_search_records_server_metadata_file(
     assert config.uncertain_trial_duration_multiplier == 3.0
     assert config.final_confirmation_duration_s == 25.0
     metadata = config.metadata
+    assert metadata["stability_policy"]["ttft_slo_ms"] == 1500.0
+    assert metadata["stability_policy"]["ttft_slo_field"] == "ttft_p99_ms"
+    assert metadata["stability_policy"]["tpot_slo_ms"] is None
     assert "workload" in metadata
     server_metadata = metadata["server_metadata"]
     assert server_metadata["engine"] == "vllm"

@@ -7,14 +7,18 @@ from typing import Any
 
 from .bottleneck import classify_bottleneck
 from .records import RequestRecord, ServerMetricSample, TrialAnalysisResult, TrialSummary
-from .stability import classify_stability, load_window_summaries_csv
+from .stability import StabilityConfig, classify_stability, load_window_summaries_csv
 from .windowing import FixedWindowAggregator
 
 _OPEN_LOOP_SEND_RATE_TOLERANCE = 0.05
 _SCHEDULING_DELAY_WARNING_S = 0.25
 
 
-def analyze_trial_dir(trial_dir: str | Path) -> TrialAnalysisResult:
+def analyze_trial_dir(
+    trial_dir: str | Path,
+    *,
+    stability_config: StabilityConfig | None = None,
+) -> TrialAnalysisResult:
     directory = Path(trial_dir)
     if not directory.is_dir():
         raise FileNotFoundError(f"trial directory not found: {directory}")
@@ -56,7 +60,11 @@ def analyze_trial_dir(trial_dir: str | Path) -> TrialAnalysisResult:
             server_metrics=server_metrics_result,
         )
 
-    stability = classify_stability(windows, aborted_safety=summary.status == "aborted_safety")
+    stability = classify_stability(
+        windows,
+        config=stability_config or _stability_config_from_metadata(config_payload),
+        aborted_safety=summary.status == "aborted_safety",
+    )
     bottleneck = classify_bottleneck(
         windows,
         stability_result=stability,
@@ -245,6 +253,35 @@ def _load_server_metadata(
     for candidate in candidates:
         merged = _merge_mappings(merged, candidate)
     return merged
+
+
+def _stability_config_from_metadata(config_payload: Mapping[str, Any]) -> StabilityConfig:
+    metadata = config_payload.get("metadata")
+    if not isinstance(metadata, Mapping):
+        return StabilityConfig()
+    payload = metadata.get("stability_policy")
+    if payload is None:
+        return StabilityConfig()
+    policy = _require_mapping(payload, "summary.json.config.metadata.stability_policy")
+    allowed = {
+        "warmup_windows",
+        "min_eval_windows",
+        "completion_arrival_tolerance",
+        "max_positive_backlog_slope",
+        "min_backlog_growth_for_hard_pressure",
+        "token_throughput_plateau_relative_growth",
+        "max_error_rate",
+        "ttft_slo_ms",
+        "tpot_slo_ms",
+        "e2e_slo_ms",
+        "ttft_slo_field",
+        "tpot_slo_field",
+        "e2e_slo_field",
+    }
+    unknown = set(policy) - allowed
+    if unknown:
+        raise ValueError(f"stability_policy has unknown keys: {sorted(unknown)}")
+    return StabilityConfig(**dict(policy))
 
 
 def _merge_mappings(

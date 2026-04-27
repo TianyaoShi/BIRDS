@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -73,6 +75,67 @@ def test_sharegpt_skips_rows_missing_prompt_or_assistant() -> None:
     assert len(samples) == 3
     assert all(sample.prompt == "valid prompt text" for sample in samples)
     assert all(sample.expected_output_len == 4 for sample in samples)
+
+
+def test_hf_dataset_uses_conversation_rows(monkeypatch, tmp_path: Path) -> None:
+    rows = [
+        {
+            "conversation": [
+                {"role": "user", "content": "How do I roast carrots?"},
+                {"role": "assistant", "content": "Use oil, salt, and a hot oven."},
+            ]
+        },
+        {
+            "conversation": [
+                {"role": "user", "content": "What is TTFT?"},
+                {"role": "assistant", "content": "Time to first token."},
+            ]
+        },
+    ]
+
+    def load_dataset(path, *, name, split, streaming):
+        assert path == "allenai/WildChat"
+        assert name is None
+        assert split == "train"
+        assert streaming is True
+        return rows
+
+    monkeypatch.setitem(sys.modules, "datasets", types.SimpleNamespace(load_dataset=load_dataset))
+    workload_path = tmp_path / "hf_wildchat.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: hf-wildchat",
+                "dataset:",
+                "  type: hf",
+                "  path: allenai/WildChat",
+                "  split: train",
+                "tokenizer: whitespace",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 2",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+                "request:",
+                "  stream: true",
+                "context_policy:",
+                "  max_model_len: 4096",
+                "  tokenizer_source: workload_tokenizer",
+                "  unsafe_allow_workload_tokenizer_for_real_datasets: true",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    samples = prepare_workload_for_trial(workload_path, model_name="fake-model").samples
+
+    assert len(samples) == 2
+    assert {sample.prompt for sample in samples} <= {"How do I roast carrots?", "What is TTFT?"}
+    assert all(sample.metadata["dataset_type"] == "hf" for sample in samples)
+    assert all(sample.metadata["hf_dataset_path"] == "allenai/WildChat" for sample in samples)
+    assert all(sample.expected_output_len > 0 for sample in samples)
 
 
 def test_missing_dataset_file_raises(tmp_path: Path) -> None:

@@ -135,7 +135,7 @@ def _build_report_payload(
     report_payload: dict[str, object] = {
         "result_dir": str(bundle["result_dir"]),
         "workload": workload,
-        "stability_policy": _stability_policy_payload(),
+        "stability_policy": _stability_policy_payload(trials),
         "server_config": server_config,
         "search_trace": search_trace_summary,
         "closed_loop": search_result.get("closed_loop"),
@@ -403,8 +403,11 @@ def _render_markdown(payload: Mapping[str, object]) -> str:
         "",
         "## 7. Stability SLOs and decision basis",
         f"- ttft_slo_ms: {stability_policy.get('ttft_slo_ms')}",
+        f"- ttft_slo_field: {stability_policy.get('ttft_slo_field')}",
         f"- tpot_slo_ms: {stability_policy.get('tpot_slo_ms')}",
+        f"- tpot_slo_field: {stability_policy.get('tpot_slo_field')}",
         f"- e2e_slo_ms: {stability_policy.get('e2e_slo_ms')}",
+        f"- e2e_slo_field: {stability_policy.get('e2e_slo_field')}",
         f"- decision_subject: {decision_context.get('subject')}",
         f"- decision_trial_id: {decision_context.get('trial_id')}",
         f"- decision_trial_rate: {decision_context.get('request_rate')}",
@@ -625,17 +628,29 @@ def _extract_workload_payload(
     }
 
 
-def _stability_policy_payload() -> dict[str, object]:
+def _stability_policy_payload(trials: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    for trial in trials:
+        metadata = _require_mapping(trial["summary_payload"].get("config"), "summary.json.config").get("metadata")
+        if not isinstance(metadata, Mapping):
+            continue
+        policy = metadata.get("stability_policy")
+        if policy is not None:
+            return dict(_require_mapping(policy, "summary.json.config.metadata.stability_policy"))
     config = StabilityConfig()
     return {
         "warmup_windows": config.warmup_windows,
         "min_eval_windows": config.min_eval_windows,
         "completion_arrival_tolerance": config.completion_arrival_tolerance,
         "max_positive_backlog_slope": config.max_positive_backlog_slope,
+        "min_backlog_growth_for_hard_pressure": config.min_backlog_growth_for_hard_pressure,
+        "token_throughput_plateau_relative_growth": config.token_throughput_plateau_relative_growth,
         "max_error_rate": config.max_error_rate,
         "ttft_slo_ms": config.ttft_slo_ms,
         "tpot_slo_ms": config.tpot_slo_ms,
         "e2e_slo_ms": config.e2e_slo_ms,
+        "ttft_slo_field": config.ttft_slo_field,
+        "tpot_slo_field": config.tpot_slo_field,
+        "e2e_slo_field": config.e2e_slo_field,
     }
 
 
