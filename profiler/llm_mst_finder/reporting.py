@@ -641,6 +641,8 @@ def _stability_policy_payload(trials: Sequence[Mapping[str, object]]) -> dict[st
         "completion_arrival_tolerance": config.completion_arrival_tolerance,
         "max_positive_backlog_slope": config.max_positive_backlog_slope,
         "min_backlog_growth_for_hard_pressure": config.min_backlog_growth_for_hard_pressure,
+        "min_waiting_queue_mean_for_pressure": config.min_waiting_queue_mean_for_pressure,
+        "min_waiting_queue_active_fraction": config.min_waiting_queue_active_fraction,
         "token_throughput_plateau_relative_growth": config.token_throughput_plateau_relative_growth,
         "max_error_rate": config.max_error_rate,
         "ttft_slo_ms": config.ttft_slo_ms,

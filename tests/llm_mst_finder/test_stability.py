@@ -286,14 +286,41 @@ def test_uses_configured_slo_percentile_fields() -> None:
     assert any("TPOT p99 SLO violated" in reason for reason in result.reasons)
 
 
-def test_waiting_queue_reason_reports_non_empty_queue_not_zero_slope_drift() -> None:
+def test_sparse_waiting_queue_noise_does_not_trigger_instability() -> None:
+    waiting_values = [0.0, 0.0, 0.0, 0.3, 0.0, 0.1, 0.3, 0.0]
+    windows = [
+        _window(idx, num_waiting_mean=waiting_values[idx])
+        for idx in range(len(waiting_values))
+    ]
+
+    result = classify_stability(windows)
+
+    assert result.status == "stable"
+    assert result.key_metrics["num_waiting_mean_max"] == pytest.approx(0.3)
+    assert not any("waiting queue showed material pressure" in reason for reason in result.reasons)
+
+
+def test_waiting_queue_reason_reports_material_pressure_not_zero_slope_drift() -> None:
     windows = [_window(idx, num_waiting_mean=1.0) for idx in range(6)]
 
     result = classify_stability(windows)
 
     assert result.status == "unstable"
-    assert any("server waiting queue was non-empty" in reason for reason in result.reasons)
+    assert any("server waiting queue showed material pressure" in reason for reason in result.reasons)
     assert not any("server waiting requests drifted upward" in reason for reason in result.reasons)
+
+
+def test_slo_violation_takes_priority_over_waiting_queue_pressure() -> None:
+    windows = [
+        _window(idx, ttft_p90_ms=2500.0, ttft_p99_ms=2600.0, num_waiting_mean=1.0)
+        for idx in range(6)
+    ]
+
+    result = classify_stability(windows)
+
+    assert result.status == "slo_violation"
+    assert "TTFT p90 SLO violated" in result.reasons[0]
+    assert any("waiting queue showed material pressure" in reason for reason in result.reasons)
 
 
 def test_insufficient_eval_windows_is_uncertain() -> None:

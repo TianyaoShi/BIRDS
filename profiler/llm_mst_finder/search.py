@@ -403,36 +403,81 @@ class SearchController:
         for _ in range(config.max_binary_steps):
             if bounds.low_rate is None:
                 raise SearchConvergenceError("cannot confirm a search without a stable low bound")
-            event = await self._run_and_analyze_trial(
-                config,
-                mode="open-loop",
-                concurrency=None,
-                request_rate=bounds.low_rate,
-                duration_s=config.confirmation_duration_s,
-                purpose="open_loop_confirmation",
-            )
-            analysis = event["analysis_result"]
-            self._reject_invalid_trial(analysis, event["trial_id"])
-            decision = self._analysis_decision(analysis)
-            if decision is True:
+            failed_rate = bounds.low_rate
+            stable_votes = 1
+            rejecting_votes = 0
+            stable_event: dict[str, object] | None = None
+            stable_analysis: TrialAnalysisResult | None = None
+            rejecting_event: dict[str, object] | None = None
+            latest_event: dict[str, object] | None = None
+            latest_analysis: TrialAnalysisResult | None = None
+
+            for purpose in ("open_loop_confirmation", "open_loop_confirmation_majority"):
+                event = await self._run_and_analyze_trial(
+                    config,
+                    mode="open-loop",
+                    concurrency=None,
+                    request_rate=failed_rate,
+                    duration_s=config.confirmation_duration_s,
+                    purpose=purpose,
+                )
+                analysis = event["analysis_result"]
+                self._reject_invalid_trial(analysis, event["trial_id"])
+                decision = self._analysis_decision(analysis)
+                latest_event = event
+                latest_analysis = analysis
+                if decision is True:
+                    stable_votes += 1
+                    stable_event = event
+                    stable_analysis = analysis
+                elif decision is False:
+                    rejecting_votes += 1
+                    rejecting_event = event
+                if stable_votes >= 2 or rejecting_votes >= 2:
+                    break
+
+            if stable_votes >= 2:
+                if stable_event is None or stable_analysis is None:
+                    raise RuntimeError("confirmation majority was stable without a stable confirmation event")
                 return self._build_search_result(
                     config=config,
                     bounds=bounds,
                     closed_loop_result=closed_loop_result,
-                    confirmation_trial_id=str(event["trial_id"]),
-                    confirmation_analysis=analysis,
+                    confirmation_trial_id=str(stable_event["trial_id"]),
+                    confirmation_analysis=stable_analysis,
                 )
-            failed_rate = bounds.low_rate
+
             previous_stable = self._stable_open_loop_point_below(failed_rate)
             if previous_stable is None:
-                status = None if analysis.stability is None else analysis.stability.status
-                raise SearchConvergenceError(
-                    "final confirmation trial did not prove the selected rate sustainable "
-                    "and no lower stable open-loop trial is available: "
-                    f"trial_id={event['trial_id']}, rate={failed_rate:.6g}, status={status!r}"
+                if latest_event is None or latest_analysis is None:
+                    raise RuntimeError("confirmation completed without a trial event")
+                termination_reason = (
+                    "no_confirmed_stable_open_loop_rate"
+                    if rejecting_votes >= 2
+                    else "confirmation_inconclusive"
+                )
+                reported_rate = None if rejecting_votes >= 2 else failed_rate
+                return self._build_unconfirmed_result(
+                    config=config,
+                    bounds=bounds,
+                    closed_loop_result=closed_loop_result,
+                    reported_rate=reported_rate,
+                    confirmation_trial_id=str(latest_event["trial_id"]),
+                    confirmation_analysis=latest_analysis,
+                    termination_reason=termination_reason,
+                    message=(
+                        "confirmation majority rejected the selected low-bound rate "
+                        "and no lower stable open-loop trial is available"
+                        if rejecting_votes >= 2
+                        else "confirmation passes did not produce a stable majority "
+                        "and no lower stable open-loop trial is available"
+                    ),
                 )
             bounds.high_rate = failed_rate
-            bounds.high_trial_id = str(event["trial_id"])
+            if rejecting_event is not None:
+                bounds.high_trial_id = str(rejecting_event["trial_id"])
+            elif latest_event is not None:
+                bounds.high_trial_id = str(latest_event["trial_id"])
             bounds.low_rate = previous_stable.rate
             bounds.low_trial_id = previous_stable.trial_id
             self._record_bounds(bounds)
@@ -440,6 +485,50 @@ class SearchController:
         raise SearchConvergenceError(
             "confirmation did not converge within max_binary_steps="
             f"{config.max_binary_steps}"
+        )
+
+    def _build_unconfirmed_result(
+        self,
+        *,
+        config: SearchConfig,
+        bounds: _SearchBounds,
+        closed_loop_result: ClosedLoopScoutResult | None,
+        reported_rate: float | None,
+        confirmation_trial_id: str,
+        confirmation_analysis: TrialAnalysisResult,
+        termination_reason: str,
+        message: str,
+    ) -> SearchResult:
+        bottleneck_class = "unknown"
+        reasons = [message]
+        if confirmation_analysis.stability is not None:
+            reasons.extend(
+                f"confirmation evidence: {reason}"
+                for reason in confirmation_analysis.stability.reasons
+            )
+        if confirmation_analysis.bottleneck is not None:
+            bottleneck_class = confirmation_analysis.bottleneck.bottleneck_class
+            reasons.extend(
+                f"confirmation bottleneck evidence: {item}"
+                for item in confirmation_analysis.bottleneck.evidence
+            )
+        high_bottleneck = self._trace_bottleneck(bounds.high_trial_id)
+        if high_bottleneck is not None:
+            bottleneck_class = str(high_bottleneck["bottleneck_class"])
+            reasons.extend(f"high-bound evidence: {item}" for item in high_bottleneck["evidence"])
+
+        return SearchResult(
+            search_id=config.search_id,
+            search_mode=config.search_mode,
+            max_no_drift_request_rate=reported_rate,
+            max_slo_satisfying_request_rate=reported_rate,
+            rate_precision=config.rate_precision,
+            confirmation_trial_id=confirmation_trial_id,
+            termination_reason=termination_reason,
+            closed_loop=closed_loop_result,
+            bottleneck_class=bottleneck_class,
+            confidence="low",
+            reasons=reasons,
         )
 
     def _build_search_result(

@@ -32,6 +32,8 @@ class StabilityConfig:
     completion_arrival_tolerance: float = 0.03
     max_positive_backlog_slope: float = 0.05
     min_backlog_growth_for_hard_pressure: float = 2.0
+    min_waiting_queue_mean_for_pressure: float = 1.0
+    min_waiting_queue_active_fraction: float = 0.5
     token_throughput_plateau_relative_growth: float = 0.05
     max_error_rate: float = 0.01
     ttft_slo_ms: float | None = 2000.0
@@ -56,6 +58,18 @@ class StabilityConfig:
             "min_backlog_growth_for_hard_pressure",
             self.min_backlog_growth_for_hard_pressure,
         )
+        _require_non_negative_finite(
+            "min_waiting_queue_mean_for_pressure",
+            self.min_waiting_queue_mean_for_pressure,
+        )
+        if self.min_waiting_queue_mean_for_pressure <= 0.0:
+            raise ValueError("min_waiting_queue_mean_for_pressure must be positive")
+        _require_non_negative_finite(
+            "min_waiting_queue_active_fraction",
+            self.min_waiting_queue_active_fraction,
+        )
+        if self.min_waiting_queue_active_fraction > 1.0:
+            raise ValueError("min_waiting_queue_active_fraction must be at most 1.0")
         _require_non_negative_finite(
             "token_throughput_plateau_relative_growth",
             self.token_throughput_plateau_relative_growth,
@@ -189,12 +203,31 @@ def classify_stability(
         key_metrics["num_waiting_mean_slope_per_s"] = num_waiting_trend.slope
         key_metrics["num_waiting_mean_delta"] = num_waiting_trend.delta
         waiting_values = _present_values(active_eval_windows, "num_waiting_mean")
-        if waiting_values and max(waiting_values) > 0.0:
-            direct_unstable_reasons.append(
-                "server waiting queue was non-empty after warmup: "
-                f"max num_waiting_mean={max(waiting_values):.3f}, "
-                f"Theil-Sen slope={num_waiting_trend.slope:.3f}/s"
+        if waiting_values:
+            waiting_max = max(waiting_values)
+            waiting_mean = sum(waiting_values) / len(waiting_values)
+            waiting_positive_fraction = sum(value > 0.0 for value in waiting_values) / len(waiting_values)
+            key_metrics["num_waiting_mean_max"] = waiting_max
+            key_metrics["num_waiting_mean_mean"] = waiting_mean
+            key_metrics["num_waiting_positive_window_fraction"] = waiting_positive_fraction
+            sustained_waiting_pressure = (
+                waiting_mean >= stability_config.min_waiting_queue_mean_for_pressure
+                and waiting_positive_fraction >= stability_config.min_waiting_queue_active_fraction
             )
+            rising_waiting_pressure = (
+                waiting_max >= stability_config.min_waiting_queue_mean_for_pressure
+                and num_waiting_trend.slope > stability_config.max_positive_backlog_slope
+                and num_waiting_trend.delta
+                >= stability_config.min_backlog_growth_for_hard_pressure
+            )
+            if sustained_waiting_pressure or rising_waiting_pressure:
+                direct_unstable_reasons.append(
+                    "server waiting queue showed material pressure after warmup: "
+                    f"max num_waiting_mean={waiting_max:.3f}, "
+                    f"mean={waiting_mean:.3f}, "
+                    f"positive_window_fraction={waiting_positive_fraction:.3f}, "
+                    f"Theil-Sen slope={num_waiting_trend.slope:.3f}/s"
+                )
 
     swapped_values = _present_values(active_eval_windows, "num_swapped_mean")
     if swapped_values:
@@ -285,20 +318,23 @@ def classify_stability(
             + "; confidence lowered"
         )
 
+    slo_reasons = _slo_reasons(active_eval_windows, stability_config, key_metrics)
+    if slo_reasons:
+        slo_priority_reasons = list(slo_reasons)
+        slo_priority_reasons.extend(reasons)
+        if direct_unstable_reasons:
+            slo_priority_reasons.extend(direct_unstable_reasons)
+        return StabilityResult(
+            status="slo_violation",
+            confidence=_confidence_after_penalties("high", confidence_penalties),
+            reasons=slo_priority_reasons,
+            key_metrics=key_metrics,
+        )
+
     if direct_unstable_reasons:
         reasons.extend(direct_unstable_reasons)
         return StabilityResult(
             status="unstable",
-            confidence=_confidence_after_penalties("high", confidence_penalties),
-            reasons=reasons,
-            key_metrics=key_metrics,
-        )
-
-    slo_reasons = _slo_reasons(active_eval_windows, stability_config, key_metrics)
-    if slo_reasons:
-        reasons.extend(slo_reasons)
-        return StabilityResult(
-            status="slo_violation",
             confidence=_confidence_after_penalties("high", confidence_penalties),
             reasons=reasons,
             key_metrics=key_metrics,

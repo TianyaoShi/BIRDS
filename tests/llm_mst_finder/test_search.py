@@ -337,3 +337,113 @@ def test_open_loop_search_stops_early_on_high_confidence_scheduler_cap(tmp_path:
         assert trace["bounds"]["high_rate"] == 2.0
 
     asyncio.run(run())
+
+
+def test_confirmation_conflict_uses_second_pass_majority(tmp_path: Path) -> None:
+    class FlakyConfirmationRunner(FakeRunner):
+        def __init__(self) -> None:
+            super().__init__(sustainable_rate=1.0)
+            self.low_rate_calls = 0
+
+        async def run_trial(self, config: TrialConfig, *, request_source, output_dir: str | Path):
+            result = await super().run_trial(config, request_source=request_source, output_dir=output_dir)
+            if config.mode == "open-loop" and config.request_rate == pytest.approx(1.0):
+                self.low_rate_calls += 1
+                if self.low_rate_calls == 2:
+                    self.analyses[config.trial_id] = _analysis(
+                        config.trial_id,
+                        status="slo_violation",
+                    )
+                elif self.low_rate_calls == 3:
+                    self.analyses[config.trial_id] = _analysis(config.trial_id, status="stable")
+            return result
+
+    async def run() -> None:
+        runner = FlakyConfirmationRunner()
+        controller = SearchController(
+            runner,
+            request_source=_source(),
+            output_dir=tmp_path / "search-confirmation-majority",
+            analyze_trial=lambda trial_dir: runner.analyses[Path(trial_dir).name],
+            write_analysis=lambda trial_dir, result: Path(trial_dir) / "analysis.json",
+        )
+        result = await controller.search(
+            SearchConfig(
+                search_id="fixture-confirmation-majority",
+                search_mode="open-loop",
+                model="fake-model",
+                trial_duration_s=1.0,
+                rate_precision=0.9,
+                initial_request_rate=1.0,
+            )
+        )
+
+        assert result.max_no_drift_request_rate == 1.0
+        assert result.termination_reason == "confirmed_stable"
+        trace = json.loads(
+            (tmp_path / "search-confirmation-majority" / "search_trace.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        confirmation_events = [
+            event for event in trace["events"] if event["purpose"].startswith("open_loop_confirmation")
+        ]
+        assert [event["purpose"] for event in confirmation_events] == [
+            "open_loop_confirmation",
+            "open_loop_confirmation_majority",
+        ]
+        assert result.confirmation_trial_id == confirmation_events[-1]["trial_id"]
+        assert trace["result"]["termination_reason"] == "confirmed_stable"
+
+    asyncio.run(run())
+
+
+def test_confirmation_majority_rejection_finishes_without_lower_stable_bound(tmp_path: Path) -> None:
+    class RejectingConfirmationRunner(FakeRunner):
+        def __init__(self) -> None:
+            super().__init__(sustainable_rate=1.0)
+            self.low_rate_calls = 0
+
+        async def run_trial(self, config: TrialConfig, *, request_source, output_dir: str | Path):
+            result = await super().run_trial(config, request_source=request_source, output_dir=output_dir)
+            if config.mode == "open-loop" and config.request_rate == pytest.approx(1.0):
+                self.low_rate_calls += 1
+                if self.low_rate_calls >= 2:
+                    self.analyses[config.trial_id] = _analysis(
+                        config.trial_id,
+                        status="slo_violation",
+                    )
+            return result
+
+    async def run() -> None:
+        runner = RejectingConfirmationRunner()
+        controller = SearchController(
+            runner,
+            request_source=_source(),
+            output_dir=tmp_path / "search-confirmation-rejected",
+            analyze_trial=lambda trial_dir: runner.analyses[Path(trial_dir).name],
+            write_analysis=lambda trial_dir, result: Path(trial_dir) / "analysis.json",
+        )
+        result = await controller.search(
+            SearchConfig(
+                search_id="fixture-confirmation-rejected",
+                search_mode="open-loop",
+                model="fake-model",
+                trial_duration_s=1.0,
+                rate_precision=0.9,
+                initial_request_rate=1.0,
+            )
+        )
+
+        assert result.max_no_drift_request_rate is None
+        assert result.max_slo_satisfying_request_rate is None
+        assert result.termination_reason == "no_confirmed_stable_open_loop_rate"
+        assert result.confidence == "low"
+        trace = json.loads(
+            (tmp_path / "search-confirmation-rejected" / "search_trace.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert trace["result"]["termination_reason"] == "no_confirmed_stable_open_loop_rate"
+
+    asyncio.run(run())
