@@ -1,0 +1,257 @@
+from __future__ import annotations
+
+from io import StringIO
+from pathlib import Path
+
+from local_orchestrator.models import (
+    ActiveServer,
+    ExpandedExperimentJob,
+    LaunchConfig,
+    RetryPolicy,
+    RunConfig,
+    SearchConfig,
+    SearchExecutionResult,
+)
+from local_orchestrator.resources import GPULeaseManager, PortAllocator
+from local_orchestrator.scheduler import OrchestratorScheduler
+from local_orchestrator.state_store import RunStateStore
+
+
+class _FakeProcess:
+    def __init__(self) -> None:
+        self._return_code: int | None = None
+
+    def poll(self):
+        return self._return_code
+
+    def terminate(self) -> None:
+        self._return_code = 0
+
+    def kill(self) -> None:
+        self._return_code = -9
+
+    def wait(self, timeout=None):
+        del timeout
+        return self._return_code
+
+
+class StubLifecycle:
+    def __init__(self, *, startup_failures: int = 0) -> None:
+        self.startup_failures = startup_failures
+        self._active_server: ActiveServer | None = None
+
+    @property
+    def active_server(self) -> ActiveServer | None:
+        return self._active_server
+
+    def ensure_server(
+        self,
+        *,
+        job: ExpandedExperimentJob,
+        gpu_id: int,
+        ports,
+        runtime_signature: str,
+        logs_dir,
+        force_restart: bool = False,
+    ) -> ActiveServer:
+        del force_restart
+        if self.startup_failures > 0:
+            self.startup_failures -= 1
+            raise RuntimeError("startup failed")
+        if self._active_server is not None and self._active_server.runtime_signature == runtime_signature:
+            return self._active_server
+        logs_dir = Path(logs_dir)
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        process = _FakeProcess()
+        server = ActiveServer(
+            reuse_key=job.server_signature_key,
+            runtime_signature=runtime_signature,
+            model=job.model,
+            endpoint=job.endpoint,
+            gpu_id=gpu_id,
+            base_port=ports.base_port,
+            metrics_port=ports.metrics_port,
+            command=("fake",),
+            base_url=f"http://127.0.0.1:{ports.base_port}",
+            stdout_log=logs_dir / "stub.stdout.log",
+            stderr_log=logs_dir / "stub.stderr.log",
+            process=process,
+            stdout_handle=StringIO(),
+            stderr_handle=StringIO(),
+        )
+        self._active_server = server
+        return server
+
+    def is_ready(self, server: ActiveServer, *, timeout_s: float = 2.0) -> bool:
+        del timeout_s
+        return server.process.poll() is None
+
+    def stop_active_server(self, *, reason: str) -> None:
+        del reason
+        if self._active_server is None:
+            return
+        self._active_server.process.terminate()
+        self._active_server = None
+
+    def shutdown(self) -> None:
+        self.stop_active_server(reason="shutdown")
+
+
+class StubAdapter:
+    def __init__(self, outcomes: dict[str, list[bool]]) -> None:
+        self.outcomes = {key: list(values) for key, values in outcomes.items()}
+        self.calls: list[str] = []
+
+    def invoke(self, *, job: ExpandedExperimentJob, server: ActiveServer, logs_dir: Path) -> SearchExecutionResult:
+        del server
+        self.calls.append(job.experiment_id)
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        stdout_log = logs_dir / f"{job.experiment_id}.stdout.log"
+        stderr_log = logs_dir / f"{job.experiment_id}.stderr.log"
+        stdout_log.write_text("stdout\n", encoding="utf-8")
+        stderr_log.write_text("stderr\n", encoding="utf-8")
+
+        remaining = self.outcomes.get(job.experiment_id, [True])
+        success = remaining.pop(0) if remaining else True
+        self.outcomes[job.experiment_id] = remaining
+
+        if success:
+            job.result_dir.mkdir(parents=True, exist_ok=True)
+            search_trace = job.result_dir / "search_trace.json"
+            final_report = job.result_dir / "final_report.json"
+            search_trace.write_text("{}\n", encoding="utf-8")
+            final_report.write_text("{}\n", encoding="utf-8")
+            return SearchExecutionResult(
+                success=True,
+                return_code=0,
+                commands=(("fake-search",),),
+                stdout_log=stdout_log,
+                stderr_log=stderr_log,
+                search_trace_path=search_trace,
+                final_report_json_path=final_report,
+                final_report_md_path=None,
+                error=None,
+            )
+
+        return SearchExecutionResult(
+            success=False,
+            return_code=1,
+            commands=(("fake-search",),),
+            stdout_log=stdout_log,
+            stderr_log=stderr_log,
+            search_trace_path=None,
+            final_report_json_path=None,
+            final_report_md_path=None,
+            error="simulated search failure",
+        )
+
+
+def _make_job(tmp_path: Path, *, experiment_id: str, signature: str) -> ExpandedExperimentJob:
+    workload = tmp_path / f"{experiment_id}.yaml"
+    workload.write_text("name: stub\n", encoding="utf-8")
+    return ExpandedExperimentJob(
+        experiment_id=experiment_id,
+        source_index=0,
+        model="google/gemma-4-E4B-it",
+        workload=workload,
+        endpoint="/v1/chat/completions",
+        launch=LaunchConfig(),
+        search=SearchConfig(),
+        result_dir=tmp_path / "results" / experiment_id,
+        model_slug="gemma-4-e4b-it",
+        dataset_slug="dataset",
+        server_config_slug="server-abc",
+        server_signature_key=signature,
+        server_metadata_file=None,
+    )
+
+
+def test_scheduler_retries_and_marks_terminal_states(tmp_path: Path) -> None:
+    jobs = [
+        _make_job(tmp_path, experiment_id="job-success-after-retry", signature="sig-a"),
+        _make_job(tmp_path, experiment_id="job-fails", signature="sig-b"),
+    ]
+    run_config = RunConfig(
+        output_root=tmp_path / "orchestrator-runs",
+        allowed_gpu_ids=(0, 1, 2, 3),
+        max_active_gpus=3,
+        retry=RetryPolicy(startup_attempts=2, search_attempts=2),
+    )
+
+    lifecycle = StubLifecycle(startup_failures=1)
+    adapter = StubAdapter(
+        {
+            "job-success-after-retry": [False, True],
+            "job-fails": [False, False],
+        }
+    )
+    state_store = RunStateStore(tmp_path / "run")
+    state = state_store.initialize_new(
+        run_id="run-1",
+        manifest_path=tmp_path / "manifest.yaml",
+        jobs=jobs,
+    )
+
+    scheduler = OrchestratorScheduler(
+        run_config=run_config,
+        gpu_manager=GPULeaseManager(allowed_gpu_ids=run_config.allowed_gpu_ids, max_active_gpus=3),
+        port_allocator=PortAllocator(base_port_start=8000, base_port_end=8010, metrics_port_offset=1000),
+        lifecycle=lifecycle,
+        adapter=adapter,
+        state_store=state_store,
+    )
+    summary = scheduler.run(jobs=jobs, state=state, resume=False)
+
+    assert summary["counts"]["succeeded"] == 1
+    assert summary["counts"]["failed"] == 1
+
+    final_state = state_store.load()
+    success_job = state_store.find_job(final_state, "job-success-after-retry")
+    failed_job = state_store.find_job(final_state, "job-fails")
+
+    assert success_job["status"] == "succeeded"
+    assert int(success_job["attempts"]["search"]) == 2
+    assert int(success_job["attempts"]["startup"]) >= 2
+
+    assert failed_job["status"] == "failed"
+    assert int(failed_job["attempts"]["search"]) == 2
+
+
+def test_scheduler_resume_reconciles_existing_artifacts(tmp_path: Path) -> None:
+    job = _make_job(tmp_path, experiment_id="job-existing", signature="sig-a")
+    run_config = RunConfig(
+        output_root=tmp_path / "orchestrator-runs",
+        allowed_gpu_ids=(0, 1, 2, 3),
+        max_active_gpus=3,
+        retry=RetryPolicy(startup_attempts=1, search_attempts=1),
+    )
+
+    lifecycle = StubLifecycle(startup_failures=0)
+    adapter = StubAdapter({"job-existing": [True]})
+    state_store = RunStateStore(tmp_path / "resume-run")
+    state = state_store.initialize_new(
+        run_id="run-resume",
+        manifest_path=tmp_path / "manifest.yaml",
+        jobs=[job],
+    )
+
+    state_job = state_store.find_job(state, "job-existing")
+    state_job["status"] = "running"
+    state_store.save(state)
+
+    job.result_dir.mkdir(parents=True, exist_ok=True)
+    (job.result_dir / "search_trace.json").write_text("{}\n", encoding="utf-8")
+    (job.result_dir / "final_report.json").write_text("{}\n", encoding="utf-8")
+
+    scheduler = OrchestratorScheduler(
+        run_config=run_config,
+        gpu_manager=GPULeaseManager(allowed_gpu_ids=run_config.allowed_gpu_ids, max_active_gpus=3),
+        port_allocator=PortAllocator(base_port_start=8000, base_port_end=8010, metrics_port_offset=1000),
+        lifecycle=lifecycle,
+        adapter=adapter,
+        state_store=state_store,
+    )
+    summary = scheduler.run(jobs=[job], state=state_store.load(), resume=True)
+
+    assert summary["counts"]["succeeded"] == 1
+    assert adapter.calls == []
