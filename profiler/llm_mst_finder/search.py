@@ -774,7 +774,7 @@ class SearchController:
         if analysis.stability is None:
             raise ValueError("closed-loop stop reason requires stability analysis")
         if analysis.stability.status == "slo_violation":
-            return "TPOT/TTFT/E2E SLO violation detected during closed-loop scouting"
+            return "TPOT/TTFT SLO violation detected during closed-loop scouting"
         if analysis.bottleneck is not None and analysis.bottleneck.bottleneck_class == "kv_cache":
             return "KV/preemption wall detected during closed-loop scouting"
         return f"closed-loop scouting stopped on stability status {analysis.stability.status!r}"

@@ -378,12 +378,6 @@ def _add_stability_policy_args(
         help="TPOT SLO threshold in milliseconds; use 'none' to disable",
     )
     parser.add_argument(
-        "--e2e-slo-ms",
-        type=_optional_positive_float_arg,
-        default=defaults.e2e_slo_ms if defaults_from_policy else None,
-        help="end-to-end latency SLO threshold in milliseconds; use 'none' to disable",
-    )
-    parser.add_argument(
         "--ttft-slo-field",
         choices=("ttft_p50_ms", "ttft_p90_ms", "ttft_p99_ms"),
         default=defaults.ttft_slo_field if defaults_from_policy else None,
@@ -392,11 +386,6 @@ def _add_stability_policy_args(
         "--tpot-slo-field",
         choices=("tpot_p50_ms", "tpot_p90_ms", "tpot_p99_ms"),
         default=defaults.tpot_slo_field if defaults_from_policy else None,
-    )
-    parser.add_argument(
-        "--e2e-slo-field",
-        choices=("e2e_p90_ms", "e2e_p99_ms"),
-        default=defaults.e2e_slo_field if defaults_from_policy else None,
     )
 
 
@@ -455,10 +444,8 @@ def _stability_policy_payload_from_args(args: argparse.Namespace) -> dict[str, o
         "max_error_rate": config.max_error_rate,
         "ttft_slo_ms": config.ttft_slo_ms,
         "tpot_slo_ms": config.tpot_slo_ms,
-        "e2e_slo_ms": config.e2e_slo_ms,
         "ttft_slo_field": config.ttft_slo_field,
         "tpot_slo_field": config.tpot_slo_field,
-        "e2e_slo_field": config.e2e_slo_field,
     }
 
 
@@ -468,10 +455,8 @@ def _stability_config_override_from_args(args: argparse.Namespace) -> StabilityC
         for name in (
             "ttft_slo_ms",
             "tpot_slo_ms",
-            "e2e_slo_ms",
             "ttft_slo_field",
             "tpot_slo_field",
-            "e2e_slo_field",
         )
     ):
         return None
@@ -483,10 +468,8 @@ def _stability_config_from_args(args: argparse.Namespace) -> StabilityConfig:
     return StabilityConfig(
         ttft_slo_ms=args.ttft_slo_ms,
         tpot_slo_ms=args.tpot_slo_ms,
-        e2e_slo_ms=args.e2e_slo_ms,
         ttft_slo_field=args.ttft_slo_field or defaults.ttft_slo_field,
         tpot_slo_field=args.tpot_slo_field or defaults.tpot_slo_field,
-        e2e_slo_field=args.e2e_slo_field or defaults.e2e_slo_field,
     )
 
 

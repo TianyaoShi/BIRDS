@@ -36,10 +36,8 @@ class StabilityConfig:
     max_error_rate: float = 0.01
     ttft_slo_ms: float | None = 2000.0
     tpot_slo_ms: float | None = 80.0
-    e2e_slo_ms: float | None = None
     ttft_slo_field: str = "ttft_p90_ms"
     tpot_slo_field: str = "tpot_p90_ms"
-    e2e_slo_field: str = "e2e_p90_ms"
     drift_test: DriftTestConfig = field(default_factory=DriftTestConfig)
 
     def __post_init__(self) -> None:
@@ -67,10 +65,8 @@ class StabilityConfig:
             raise ValueError("max_error_rate must be less than 1.0")
         _require_optional_positive_finite("ttft_slo_ms", self.ttft_slo_ms)
         _require_optional_positive_finite("tpot_slo_ms", self.tpot_slo_ms)
-        _require_optional_positive_finite("e2e_slo_ms", self.e2e_slo_ms)
         _require_slo_field("ttft_slo_field", self.ttft_slo_field, {"ttft_p50_ms", "ttft_p90_ms", "ttft_p99_ms"})
         _require_slo_field("tpot_slo_field", self.tpot_slo_field, {"tpot_p50_ms", "tpot_p90_ms", "tpot_p99_ms"})
-        _require_slo_field("e2e_slo_field", self.e2e_slo_field, {"e2e_p90_ms", "e2e_p99_ms"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -637,16 +633,6 @@ def _slo_reasons(
                 reasons.append(
                     f"{_display_slo_field(config.tpot_slo_field)} SLO violated: max={max_tpot:.3f} ms "
                     f"> {config.tpot_slo_ms:.3f} ms"
-                )
-    if config.e2e_slo_ms is not None:
-        e2e_values = _present_values(windows, config.e2e_slo_field)
-        if e2e_values:
-            max_e2e = max(e2e_values)
-            key_metrics[f"{config.e2e_slo_field}_max"] = max_e2e
-            if max_e2e > config.e2e_slo_ms:
-                reasons.append(
-                    f"{_display_slo_field(config.e2e_slo_field)} SLO violated: max={max_e2e:.3f} ms "
-                    f"> {config.e2e_slo_ms:.3f} ms"
                 )
     return reasons
 

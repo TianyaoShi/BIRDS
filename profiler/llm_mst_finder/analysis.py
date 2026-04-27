@@ -273,10 +273,8 @@ def _stability_config_from_metadata(config_payload: Mapping[str, Any]) -> Stabil
         "max_error_rate",
         "ttft_slo_ms",
         "tpot_slo_ms",
-        "e2e_slo_ms",
         "ttft_slo_field",
         "tpot_slo_field",
-        "e2e_slo_field",
     }
     unknown = set(policy) - allowed
     if unknown:

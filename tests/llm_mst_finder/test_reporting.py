@@ -415,7 +415,7 @@ def test_generate_report_shows_slo_defaults_and_non_slo_instability(tmp_path: Pa
     payload = json.loads((result_dir / "final_report.json").read_text(encoding="utf-8"))
     assert payload["stability_policy"]["ttft_slo_ms"] == 2000.0
     assert payload["stability_policy"]["tpot_slo_ms"] == 80.0
-    assert payload["stability_policy"]["e2e_slo_ms"] is None
+    assert all(not key.startswith("e2e_") for key in payload["stability_policy"])
     assert payload["decision_context"]["subject"] == "high_bound"
     assert payload["decision_context"]["stability_status"] == "unstable"
     assert payload["decision_context"]["decision_reasoning"] == "failed_due_to_latency_drift"
@@ -423,7 +423,7 @@ def test_generate_report_shows_slo_defaults_and_non_slo_instability(tmp_path: Pa
     markdown = (result_dir / "final_report.md").read_text(encoding="utf-8")
     assert "- ttft_slo_ms: 2000.0" in markdown
     assert "- tpot_slo_ms: 80.0" in markdown
-    assert "- e2e_slo_ms: None" in markdown
+    assert "e2e_" not in markdown
     assert "- decision_reasoning: failed_due_to_latency_drift" in markdown
 
 

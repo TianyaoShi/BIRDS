@@ -406,8 +406,6 @@ def _render_markdown(payload: Mapping[str, object]) -> str:
         f"- ttft_slo_field: {stability_policy.get('ttft_slo_field')}",
         f"- tpot_slo_ms: {stability_policy.get('tpot_slo_ms')}",
         f"- tpot_slo_field: {stability_policy.get('tpot_slo_field')}",
-        f"- e2e_slo_ms: {stability_policy.get('e2e_slo_ms')}",
-        f"- e2e_slo_field: {stability_policy.get('e2e_slo_field')}",
         f"- decision_subject: {decision_context.get('subject')}",
         f"- decision_trial_id: {decision_context.get('trial_id')}",
         f"- decision_trial_rate: {decision_context.get('request_rate')}",
@@ -647,10 +645,8 @@ def _stability_policy_payload(trials: Sequence[Mapping[str, object]]) -> dict[st
         "max_error_rate": config.max_error_rate,
         "ttft_slo_ms": config.ttft_slo_ms,
         "tpot_slo_ms": config.tpot_slo_ms,
-        "e2e_slo_ms": config.e2e_slo_ms,
         "ttft_slo_field": config.ttft_slo_field,
         "tpot_slo_field": config.tpot_slo_field,
-        "e2e_slo_field": config.e2e_slo_field,
     }
 
 
