@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import time
 import urllib.error
@@ -160,13 +161,27 @@ class VLLMLifecycleManager:
             kill_fn = getattr(process, "kill", None)
             wait_fn = getattr(process, "wait", None)
             if callable(poll_fn) and poll_fn() is None:
-                if callable(terminate_fn):
+                pid = getattr(process, "pid", None)
+                used_process_group = False
+                if isinstance(pid, int) and pid > 0:
+                    try:
+                        os.killpg(os.getpgid(pid), signal.SIGTERM)
+                        used_process_group = True
+                    except Exception:
+                        used_process_group = False
+                if not used_process_group and callable(terminate_fn):
                     terminate_fn()
                 if callable(wait_fn):
                     try:
                         wait_fn(timeout=10)
                     except Exception:
-                        if callable(kill_fn):
+                        if used_process_group and isinstance(pid, int) and pid > 0:
+                            try:
+                                os.killpg(os.getpgid(pid), signal.SIGKILL)
+                            except Exception:
+                                if callable(kill_fn):
+                                    kill_fn()
+                        elif callable(kill_fn):
                             kill_fn()
                         if callable(wait_fn):
                             wait_fn(timeout=5)
@@ -221,6 +236,8 @@ def render_launch_command(
         command.extend(["--tokenizer-mode", launch.tokenizer_mode])
     if launch.gpu_memory_utilization is not None:
         command.extend(["--gpu-memory-utilization", _number_to_text(launch.gpu_memory_utilization)])
+    if launch.max_model_len is not None:
+        command.extend(["--max-model-len", str(launch.max_model_len)])
     if launch.max_num_seqs is not None:
         command.extend(["--max-num-seqs", _number_to_text(launch.max_num_seqs)])
     if launch.max_num_batched_tokens is not None:
@@ -257,4 +274,5 @@ def _default_readiness_probe(base_url: str, readiness_path: str, timeout_s: floa
 
 
 def _default_process_factory(command: tuple[str, ...], **kwargs) -> object:
+    kwargs.setdefault("start_new_session", True)
     return subprocess.Popen(command, **kwargs)

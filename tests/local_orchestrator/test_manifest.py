@@ -34,6 +34,7 @@ def test_load_manifest_accepts_valid_structured_config(tmp_path: Path) -> None:
                 "executable": "vllm",
                 "tensor_parallel_size": 1,
                 "gpu_count": 1,
+                "max_model_len": 32768,
                 "max_num_seqs": 128,
             },
             "search": {
@@ -58,6 +59,7 @@ def test_load_manifest_accepts_valid_structured_config(tmp_path: Path) -> None:
     assert manifest.run.max_active_gpus == 3
     assert len(manifest.experiments) == 1
     assert manifest.experiments[0].experiment_id == "exp-chat"
+    assert manifest.experiments[0].launch.max_model_len == 32768
 
 
 def test_load_manifest_rejects_missing_workload_path(tmp_path: Path) -> None:

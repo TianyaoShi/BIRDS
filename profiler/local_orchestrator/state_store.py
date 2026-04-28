@@ -385,6 +385,7 @@ class RunStateStore:
             "hardware": job.hardware.name,
             "gpu_count": job.launch.gpu_count,
             "tensor_parallel_size": job.launch.tensor_parallel_size,
+            "max_model_len": job.launch.max_model_len,
             "probe": None if job.probe is None else job.probe.to_payload(),
             "result_dir": str(job.result_dir),
             "server_signature_key": job.server_signature_key,

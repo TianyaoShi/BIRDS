@@ -74,6 +74,7 @@ _LAUNCH_KEYS = {
     "quantization",
     "tokenizer_mode",
     "gpu_memory_utilization",
+    "max_model_len",
     "max_num_seqs",
     "max_num_batched_tokens",
     "host",
@@ -111,6 +112,7 @@ _STRUCTURED_LAUNCH_KEYS = {
     "quantization",
     "tokenizer_mode",
     "gpu_memory_utilization",
+    "max_model_len",
     "max_num_seqs",
     "max_num_batched_tokens",
     "host",
@@ -388,6 +390,7 @@ def _merge_launch_config(base: LaunchConfig, raw: Any, *, field_name: str) -> La
         "quantization": base.quantization,
         "tokenizer_mode": base.tokenizer_mode,
         "gpu_memory_utilization": base.gpu_memory_utilization,
+        "max_model_len": base.max_model_len,
         "max_num_seqs": base.max_num_seqs,
         "max_num_batched_tokens": base.max_num_batched_tokens,
         "host": base.host,
@@ -414,6 +417,9 @@ def _merge_launch_config(base: LaunchConfig, raw: Any, *, field_name: str) -> La
             continue
         if key == "gpu_count":
             updated[key] = _expect_int(value, f"{field_name}.gpu_count", minimum=1)
+            continue
+        if key == "max_model_len":
+            updated[key] = _expect_int(value, f"{field_name}.max_model_len", minimum=1)
             continue
         if key in {
             "gpu_memory_utilization",

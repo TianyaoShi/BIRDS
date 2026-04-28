@@ -29,6 +29,7 @@ launch:
   gpu_count: 1
   dtype: float16
   gpu_memory_utilization: 0.90
+  max_model_len: 32768
 
 search:
   search_mode: hybrid

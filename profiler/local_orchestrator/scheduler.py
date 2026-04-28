@@ -289,11 +289,22 @@ class OrchestratorScheduler:
                 self._release_active_server(reason="startup_failed")
                 continue
 
-            result = self._adapter.invoke(
-                job=job,
-                server=server,
-                logs_dir=self._state_store.logs_dir,
-            )
+            try:
+                result = self._adapter.invoke(
+                    job=job,
+                    server=server,
+                    logs_dir=self._state_store.logs_dir,
+                )
+            except Exception as exc:
+                last_error = f"search adapter raised before completing attempt {search_attempt}: {exc}"
+                self._append_event(
+                    state,
+                    event_type="search_failed",
+                    experiment_id=job.experiment_id,
+                    payload={"attempt": search_attempt, "error": last_error},
+                )
+                self._release_active_server(reason="search_exception")
+                continue
             if result.success:
                 self._mark_job_succeeded(state, experiment_id=job.experiment_id, result=result)
                 self._append_event(
@@ -380,11 +391,26 @@ class OrchestratorScheduler:
                 self._release_slot_server(slot, reason="startup_failed")
                 continue
 
-            result = self._adapter.invoke(
-                job=job,
-                server=server,
-                logs_dir=self._state_store.logs_dir,
-            )
+            try:
+                result = self._adapter.invoke(
+                    job=job,
+                    server=server,
+                    logs_dir=self._state_store.logs_dir,
+                )
+            except Exception as exc:
+                last_error = f"search adapter raised before completing attempt {search_attempt}: {exc}"
+                self._append_event(
+                    state,
+                    event_type="search_failed",
+                    experiment_id=job.experiment_id,
+                    payload={
+                        "attempt": search_attempt,
+                        "slot_index": slot.slot_index,
+                        "error": last_error,
+                    },
+                )
+                self._release_slot_server(slot, reason="search_exception")
+                continue
             if result.success:
                 self._mark_job_succeeded(state, experiment_id=job.experiment_id, result=result)
                 self._append_event(

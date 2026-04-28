@@ -18,5 +18,6 @@ request:
   stream: true
 
 context_policy:
+  max_model_len: 32768
   over_limit: skip_sample
   truncation_side: left

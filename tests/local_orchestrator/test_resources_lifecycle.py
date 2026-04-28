@@ -35,3 +35,22 @@ def test_render_launch_command_expands_multi_gpu_template_placeholders() -> None
     )
 
     assert command == ("serve", "model-8b", "--gpus", "2,3", "--primary", "2")
+
+
+def test_render_launch_command_includes_max_model_len() -> None:
+    command = render_launch_command(
+        launch=LaunchConfig(
+            tensor_parallel_size=1,
+            gpu_count=1,
+            dtype="float16",
+            gpu_memory_utilization=0.9,
+            max_model_len=32768,
+        ),
+        model="model-4b",
+        gpu_ids=(0,),
+        base_port=8300,
+        metrics_port=9300,
+    )
+
+    assert "--max-model-len" in command
+    assert command[command.index("--max-model-len") + 1] == "32768"

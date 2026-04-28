@@ -200,6 +200,7 @@ def _server_signature_key(*, model: str, endpoint: str, launch: LaunchConfig) ->
                 "quantization": launch.quantization,
                 "tokenizer_mode": launch.tokenizer_mode,
                 "gpu_memory_utilization": launch.gpu_memory_utilization,
+                "max_model_len": launch.max_model_len,
                 "max_num_seqs": launch.max_num_seqs,
                 "max_num_batched_tokens": launch.max_num_batched_tokens,
             }

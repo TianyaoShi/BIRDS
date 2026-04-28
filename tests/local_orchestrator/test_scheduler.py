@@ -462,6 +462,43 @@ def test_scheduler_does_not_block_on_probe_gpu_estimate(tmp_path: Path) -> None:
     assert final_job["last_error"] is None
 
 
+def test_scheduler_marks_adapter_exceptions_failed(tmp_path: Path) -> None:
+    class RaisingAdapter:
+        def invoke(self, *, job: ExpandedExperimentJob, server: ActiveServer, logs_dir: Path):
+            del job, server, logs_dir
+            raise RuntimeError("adapter exploded")
+
+    job = _make_job(tmp_path, experiment_id="job-raises", signature="sig-raises")
+    run_config = RunConfig(
+        output_root=tmp_path / "orchestrator-runs",
+        allowed_gpu_ids=(0,),
+        max_active_gpus=1,
+        keep_one_gpu_spare=False,
+        retry=RetryPolicy(startup_attempts=1, search_attempts=1),
+    )
+    state_store = RunStateStore(tmp_path / "exception-run")
+    state = state_store.initialize_new(
+        run_id="run-exception",
+        manifest_path=tmp_path / "manifest.yaml",
+        jobs=[job],
+    )
+
+    scheduler = OrchestratorScheduler(
+        run_config=run_config,
+        gpu_manager=GPULeaseManager(allowed_gpu_ids=run_config.allowed_gpu_ids, max_active_gpus=1),
+        port_allocator=PortAllocator(base_port_start=8000, base_port_end=8010, metrics_port_offset=1000),
+        lifecycle=StubLifecycle(),
+        adapter=RaisingAdapter(),
+        state_store=state_store,
+    )
+    summary = scheduler.run(jobs=[job], state=state, resume=False)
+
+    final_job = state_store.find_job(state_store.load(), "job-raises")
+    assert summary["counts"]["failed"] == 1
+    assert final_job["status"] == "failed"
+    assert "adapter exploded" in final_job["last_error"]
+
+
 def test_state_store_summary_includes_search_result_aggregates(tmp_path: Path) -> None:
     succeeded = _make_job(tmp_path, experiment_id="job-success", signature="sig-a")
     failed = _make_job(tmp_path, experiment_id="job-failed", signature="sig-b")

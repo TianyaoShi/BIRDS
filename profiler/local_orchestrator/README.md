@@ -84,6 +84,7 @@ launch:
   tensor_parallel_size: 1
   gpu_count: 1
   dtype: float16
+  max_model_len: 32768
 
 search:
   search_mode: hybrid
@@ -131,6 +132,8 @@ When `probe.auto_gpu_count: true`, expansion raises `launch.gpu_count` to the es
 Dry-run output includes the final launch/search values and probe payload for each expanded job. This expanded job representation is the intended reuse point for a future Slurm adapter: Slurm should submit the already-expanded job plan and let the cluster manager allocate the requested GPUs.
 
 For local raw launch templates, `{gpu_id}` expands to the first leased GPU and `{gpu_ids}` expands to the comma-separated leased set. The lifecycle manager also sets `CUDA_VISIBLE_DEVICES` to that same comma-separated set.
+
+`launch.max_model_len` is passed to vLLM as `--max-model-len`. Keep this aligned with the workload context cap when using long-context model cards; workload `context_policy.max_model_len` filters or truncates requests for MST, but it does not constrain the vLLM engine allocation by itself.
 
 ### Search modes and reporting
 

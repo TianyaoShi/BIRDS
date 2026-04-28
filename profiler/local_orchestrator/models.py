@@ -130,6 +130,7 @@ class LaunchConfig:
     quantization: str | None = None
     tokenizer_mode: str | None = None
     gpu_memory_utilization: float | None = None
+    max_model_len: int | None = None
     max_num_seqs: float | None = None
     max_num_batched_tokens: float | None = None
     host: str = "127.0.0.1"
@@ -152,6 +153,8 @@ class LaunchConfig:
             _require_positive_float("gpu_memory_utilization", self.gpu_memory_utilization)
             if self.gpu_memory_utilization > 1.0:
                 raise ValueError("gpu_memory_utilization must be <= 1.0")
+        if self.max_model_len is not None:
+            _require_positive_int("max_model_len", self.max_model_len)
         if self.max_num_seqs is not None:
             _require_positive_float("max_num_seqs", self.max_num_seqs)
         if self.max_num_batched_tokens is not None:
