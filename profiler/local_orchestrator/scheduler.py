@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from queue import Empty, Queue
 import shutil
 from threading import Lock, Thread
@@ -152,8 +153,15 @@ class OrchestratorScheduler:
         state: dict[str, Any],
         prior_status: str,
     ) -> None:
+        state_job = self._state_store.find_job(state, job.experiment_id)
+        prior_result_dir_raw = state_job.get("result_dir")
+        if isinstance(prior_result_dir_raw, str):
+            prior_result_dir = Path(prior_result_dir_raw)
+            if prior_result_dir != job.result_dir and prior_result_dir.exists():
+                shutil.rmtree(prior_result_dir)
         if job.result_dir.exists():
             shutil.rmtree(job.result_dir)
+        self._state_store.refresh_job_plan(state, job=job)
         self._state_store.reset_job_for_rerun(state, experiment_id=job.experiment_id)
         self._state_store.append_event(
             state,

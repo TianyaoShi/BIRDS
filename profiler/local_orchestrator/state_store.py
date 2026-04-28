@@ -170,6 +170,25 @@ class RunStateStore:
         job["last_error"] = error
         self.save(state)
 
+    def refresh_job_plan(self, state: dict[str, Any], *, job: ExpandedExperimentJob) -> None:
+        job_state = self.find_job(state, job.experiment_id)
+        fresh = self._job_payload(job)
+        for key in (
+            "source_index",
+            "model",
+            "workload",
+            "endpoint",
+            "hardware",
+            "gpu_count",
+            "tensor_parallel_size",
+            "max_model_len",
+            "probe",
+            "result_dir",
+            "server_signature_key",
+        ):
+            job_state[key] = fresh[key]
+        self.save(state)
+
     def reset_job_for_rerun(
         self,
         state: dict[str, Any],

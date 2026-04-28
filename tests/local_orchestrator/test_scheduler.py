@@ -379,6 +379,10 @@ def test_scheduler_force_rerun_resets_and_reexecutes(tmp_path: Path) -> None:
 
     prior_job_state = state_store.find_job(state, "job-force")
     prior_job_state["status"] = "succeeded"
+    prior_job_state["result_dir"] = str(tmp_path / "results" / "old-signature")
+    old_signature_dir = Path(prior_job_state["result_dir"])
+    old_signature_dir.mkdir(parents=True, exist_ok=True)
+    (old_signature_dir / "old-trace.json").write_text("{}\n", encoding="utf-8")
     prior_job_state["attempts"] = {"startup": 7, "search": 7}
     prior_job_state["artifacts"] = {
         "search_trace": str(search_trace_path),
@@ -405,9 +409,11 @@ def test_scheduler_force_rerun_resets_and_reexecutes(tmp_path: Path) -> None:
     final_state = state_store.load()
     final_job_state = state_store.find_job(final_state, "job-force")
     assert final_job_state["status"] == "succeeded"
+    assert final_job_state["result_dir"] == str(job.result_dir)
     assert int(final_job_state["attempts"]["startup"]) == 1
     assert int(final_job_state["attempts"]["search"]) == 1
     assert marker_path.exists() is False
+    assert old_signature_dir.exists() is False
 
 
 def test_scheduler_does_not_block_on_probe_gpu_estimate(tmp_path: Path) -> None:

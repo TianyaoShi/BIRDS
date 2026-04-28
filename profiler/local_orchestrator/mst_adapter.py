@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -36,6 +37,8 @@ class MSTSearchAdapter:
         stdout_log = logs_dir / f"{job.experiment_id}.mst.stdout.log"
         stderr_log = logs_dir / f"{job.experiment_id}.mst.stderr.log"
 
+        if job.result_dir.exists():
+            shutil.rmtree(job.result_dir)
         job.result_dir.mkdir(parents=True, exist_ok=True)
 
         env = os.environ.copy()
