@@ -29,13 +29,13 @@ class DriftTestConfig:
 class StabilityConfig:
     warmup_windows: int = 2
     min_eval_windows: int = 4
-    completion_arrival_tolerance: float = 0.03
-    max_positive_backlog_slope: float = 0.05
+    completion_arrival_tolerance: float = 0.05
+    max_positive_backlog_slope: float = 0.10
     min_backlog_growth_for_hard_pressure: float = 2.0
     min_waiting_queue_mean_for_pressure: float = 1.0
     min_waiting_queue_active_fraction: float = 0.5
     token_throughput_plateau_relative_growth: float = 0.05
-    max_error_rate: float = 0.01
+    max_error_rate: float = 0.03
     ttft_slo_ms: float | None = 2000.0
     tpot_slo_ms: float | None = 80.0
     ttft_slo_field: str = "ttft_p90_ms"
