@@ -126,7 +126,7 @@ Experiment-local `overrides` use the same shape and run after top-level `overrid
 
 The probe estimates the minimum GPU count needed for model weights, an activation-memory allowance, and at least `probe.kv_cache_request_count` request's KV cache. It infers model size from names such as `1B`, `4B`, `8B`, and `E4B`; use `probe.model_size_overrides_b` for names that do not encode parameter count clearly.
 
-When `probe.auto_gpu_count: true`, expansion raises `launch.gpu_count` to the estimated minimum and also raises `tensor_parallel_size` when it was tracking the old GPU count. When auto mode is off, the scheduler fails the job before launch if the probe estimates more GPUs than the final launch config requests.
+When `probe.auto_gpu_count: true`, expansion raises `launch.gpu_count` to the estimated minimum and also raises `tensor_parallel_size` when it was tracking the old GPU count. When auto mode is off, the probe is advisory: dry-run and state output still expose the estimate, but the local scheduler only blocks on concrete configured resource constraints such as `launch.gpu_count > run.max_active_gpus`.
 
 Dry-run output includes the final launch/search values and probe payload for each expanded job. This expanded job representation is the intended reuse point for a future Slurm adapter: Slurm should submit the already-expanded job plan and let the cluster manager allocate the requested GPUs.
 

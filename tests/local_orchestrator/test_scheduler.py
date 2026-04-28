@@ -410,7 +410,7 @@ def test_scheduler_force_rerun_resets_and_reexecutes(tmp_path: Path) -> None:
     assert marker_path.exists() is False
 
 
-def test_scheduler_fails_job_when_probe_requires_more_gpus_than_launch(tmp_path: Path) -> None:
+def test_scheduler_does_not_block_on_probe_gpu_estimate(tmp_path: Path) -> None:
     probe = ResourceProbeResult(
         hardware_name="l40",
         gpu_memory_gb=48,
@@ -456,10 +456,10 @@ def test_scheduler_fails_job_when_probe_requires_more_gpus_than_launch(tmp_path:
     )
     summary = scheduler.run(jobs=[job], state=state, resume=False)
 
-    assert summary["counts"]["failed"] == 1
-    assert adapter.calls == []
+    assert summary["counts"]["succeeded"] == 1
+    assert adapter.calls == ["job-preflight"]
     final_job = state_store.find_job(state_store.load(), "job-preflight")
-    assert "resource probe estimates" in final_job["last_error"]
+    assert final_job["last_error"] is None
 
 
 def test_state_store_summary_includes_search_result_aggregates(tmp_path: Path) -> None:

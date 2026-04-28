@@ -583,15 +583,6 @@ class OrchestratorScheduler:
                 f"job requires gpu_count={job.launch.gpu_count}, "
                 f"but run.max_active_gpus={self._run_config.max_active_gpus}"
             )
-        if job.probe is None or job.probe.required_gpu_count is None:
-            return None
-        if job.probe.required_gpu_count > job.launch.gpu_count:
-            return (
-                "resource probe estimates at least "
-                f"{job.probe.required_gpu_count} GPU(s) are needed for model/workload/hardware, "
-                f"but launch.gpu_count={job.launch.gpu_count}. "
-                "Increase launch.gpu_count or enable probe.auto_gpu_count."
-            )
         return None
 
     def _release_active_server(self, *, reason: str) -> None:

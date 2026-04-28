@@ -106,14 +106,7 @@ overrides:
       max_request_rate: 6
 
 experiments:
-  - id: single-gpu-model-loop-llama2-4096
-    models:
-      - meta-llama/Llama-2-7b-chat-hf
-      - meta-llama/Llama-2-13b-chat-hf
-    workloads:
-      - ./live_sharegpt_workload_context_4096.yaml
-
-  - id: single-gpu-model-loop-non-llama2-40960
+  - id: single-gpu-model-loop
     models:
       - Qwen/Qwen3-0.6B
       - Qwen/Qwen3-1.7B
@@ -127,5 +120,7 @@ experiments:
       - meta-llama/Llama-3.2-1B-Instruct
       - meta-llama/Llama-3.2-3B-Instruct
       - openai/gpt-oss-20b
+      - meta-llama/Llama-2-7b-chat-hf
+      - meta-llama/Llama-2-13b-chat-hf
     workloads:
-      - ./live_sharegpt_workload_context_40960.yaml
+      - ./live_sharegpt_workload_context.yaml
