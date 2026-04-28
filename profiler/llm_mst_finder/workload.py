@@ -12,7 +12,9 @@ import yaml
 from .model_context import (
     ContextPolicy,
     ContextValidationReport,
+    ModelContextInfo,
     parse_context_policy,
+    resolve_model_context_info,
     resolve_model_tokenizer_for_policy,
     validate_samples_against_context_window,
 )
@@ -874,9 +876,10 @@ def generate_sample_requests(
     config: WorkloadConfig,
     *,
     tokenizer: PromptTokenizer | None = None,
+    tokenizer_key: str | None = None,
 ) -> list[SampleRequest]:
     resolved_tokenizer = tokenizer if tokenizer is not None else resolve_tokenizer(config.tokenizer)
-    workload_tokenizer_key = _tokenizer_cache_key(config.tokenizer, tokenizer=resolved_tokenizer)
+    workload_tokenizer_key = tokenizer_key or _tokenizer_cache_key(config.tokenizer, tokenizer=resolved_tokenizer)
     dataset_entries = _sample_dataset_entries(
         config,
         resolved_tokenizer,
@@ -958,6 +961,8 @@ def _build_workload_metadata(
     *,
     sample_count: int,
     context_validation_report: ContextValidationReport | None,
+    effective_context_policy: ContextPolicy | None = None,
+    model_context_info: ModelContextInfo | None = None,
 ) -> dict[str, Any]:
     metadata: dict[str, Any] = {
         "workload": {
@@ -968,15 +973,16 @@ def _build_workload_metadata(
         }
     }
     if config.context_policy is not None:
+        policy = effective_context_policy or config.context_policy
         report = context_validation_report
         metadata["workload"]["context_policy"] = {
-            "max_model_len": config.context_policy.max_model_len,
-            "tokenizer_source": config.context_policy.tokenizer_source,
-            "tokenizer": config.context_policy.tokenizer,
-            "over_limit": config.context_policy.over_limit,
-            "truncation_side": config.context_policy.truncation_side,
+            "max_model_len": policy.max_model_len,
+            "tokenizer_source": policy.tokenizer_source,
+            "tokenizer": policy.tokenizer,
+            "over_limit": policy.over_limit,
+            "truncation_side": policy.truncation_side,
             "unsafe_allow_workload_tokenizer_for_real_datasets": (
-                config.context_policy.unsafe_allow_workload_tokenizer_for_real_datasets
+                policy.unsafe_allow_workload_tokenizer_for_real_datasets
             ),
             "total_samples": report.total_samples if report is not None else sample_count,
             "kept_samples": report.kept_samples if report is not None else sample_count,
@@ -985,6 +991,8 @@ def _build_workload_metadata(
             "skipped_source_indexes": list(report.skipped_source_indexes) if report is not None else [],
             "truncated_source_indexes": list(report.truncated_source_indexes) if report is not None else [],
         }
+        if model_context_info is not None:
+            metadata["workload"]["model_context"] = model_context_info.to_metadata()
     return metadata
 
 
@@ -994,9 +1002,9 @@ def prepare_workload_for_trial(
     model_name: str,
 ) -> PreparedWorkload:
     config = load_workload_config(path)
-    workload_tokenizer = resolve_tokenizer(config.tokenizer)
-    workload_tokenizer_key = _tokenizer_cache_key(config.tokenizer, tokenizer=workload_tokenizer)
-    samples = generate_sample_requests(config, tokenizer=workload_tokenizer)
+    fallback_tokenizer = resolve_tokenizer(config.tokenizer)
+    fallback_tokenizer_key = _tokenizer_cache_key(config.tokenizer, tokenizer=fallback_tokenizer)
+    fallback_tokenizer_name = _normalized_tokenizer_spec(config.tokenizer)
     requires_context_validation = config.dataset.type in {"jsonl", "sharegpt", "hf"}
 
     if config.context_policy is None:
@@ -1004,6 +1012,11 @@ def prepare_workload_for_trial(
             raise ValueError(
                 "real dataset workloads require context_policy for pre-trial context validation"
             )
+        samples = generate_sample_requests(
+            config,
+            tokenizer=fallback_tokenizer,
+            tokenizer_key=fallback_tokenizer_key,
+        )
         return PreparedWorkload(
             config=config,
             samples=samples,
@@ -1026,21 +1039,26 @@ def prepare_workload_for_trial(
             "explicitly unsafe test-only runs."
         )
 
-    model_tokenizer = resolve_model_tokenizer_for_policy(
+    model_context_info = resolve_model_context_info(
         config.context_policy,
-        workload_tokenizer=workload_tokenizer,
+        workload_tokenizer=fallback_tokenizer,
+        workload_tokenizer_key=fallback_tokenizer_key,
         model_name=model_name,
+        fallback_tokenizer=fallback_tokenizer,
+        fallback_tokenizer_key=fallback_tokenizer_key,
+        fallback_tokenizer_name=fallback_tokenizer_name,
     )
-    model_tokenizer_key = _context_tokenizer_cache_key(
+    effective_context_policy = model_context_info.effective_policy(config.context_policy)
+    samples = generate_sample_requests(
         config,
-        model_name=model_name,
-        workload_tokenizer_key=workload_tokenizer_key,
+        tokenizer=model_context_info.tokenizer,
+        tokenizer_key=model_context_info.tokenizer_key,
     )
     validation_result = validate_samples_against_context_window(
         samples,
-        tokenizer=model_tokenizer,
-        policy=config.context_policy,
-        tokenizer_key=model_tokenizer_key,
+        tokenizer=model_context_info.tokenizer,
+        policy=effective_context_policy,
+        tokenizer_key=model_context_info.tokenizer_key,
     )
     if not validation_result.samples:
         raise ValueError(
@@ -1053,6 +1071,8 @@ def prepare_workload_for_trial(
             config,
             sample_count=len(validation_result.samples),
             context_validation_report=validation_result.report,
+            effective_context_policy=effective_context_policy,
+            model_context_info=model_context_info,
         ),
         context_validation_report=validation_result.report,
     )

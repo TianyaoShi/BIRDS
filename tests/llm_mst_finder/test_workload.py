@@ -222,12 +222,12 @@ def test_context_policy_is_loaded_from_yaml(tmp_path: Path) -> None:
     assert config.context_policy.tokenizer_source == "workload_tokenizer"
 
 
-def test_context_policy_missing_max_model_len_raises_from_yaml(tmp_path: Path) -> None:
-    workload_path = tmp_path / "bad_context_policy.yaml"
+def test_context_policy_can_omit_model_specific_max_model_len(tmp_path: Path) -> None:
+    workload_path = tmp_path / "model_resolved_context_policy.yaml"
     workload_path.write_text(
         "\n".join(
             [
-                "name: bad-context-policy",
+                "name: model-resolved-context-policy",
                 "dataset:",
                 "  type: synthetic-fixed",
                 "sampling:",
@@ -246,8 +246,107 @@ def test_context_policy_missing_max_model_len_raises_from_yaml(tmp_path: Path) -
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="context_policy.max_model_len is required"):
-        load_workload_config(workload_path)
+    config = load_workload_config(workload_path)
+    assert config.context_policy is not None
+    assert config.context_policy.max_model_len is None
+    assert config.context_policy.tokenizer_source == "vllm_model_config"
+
+
+def test_prepare_workload_for_trial_uses_model_tokenizer_for_dataset_lengths(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    class CharacterModelTokenizer:
+        model_max_length = 128
+
+        def encode(self, text: str) -> list[int]:
+            return list(range(len(text)))
+
+    monkeypatch.setattr(
+        "llm_mst_finder.model_context._resolve_vllm_tokenizer",
+        lambda tokenizer_name: CharacterModelTokenizer(),
+    )
+    dataset_path = tmp_path / "requests.jsonl"
+    dataset_path.write_text(
+        json.dumps({"prompt": "alpha beta", "expected_output_len": 2}) + "\n",
+        encoding="utf-8",
+    )
+    workload_path = tmp_path / "jsonl_model_tokenizer.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: jsonl-model-tokenizer",
+                "dataset:",
+                "  type: jsonl",
+                f"  path: {dataset_path}",
+                "tokenizer: whitespace",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 1",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+                "context_policy:",
+                "  over_limit: fail",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    prepared = prepare_workload_for_trial(workload_path, model_name="fake/model")
+
+    assert prepared.samples[0].prompt_len == len("alpha beta")
+    assert prepared.samples[0].metadata["prompt_tokenizer_key"] == "tokenizer:fake/model"
+    model_context = prepared.metadata["workload"]["model_context"]
+    assert model_context["max_model_len"] == 128
+    assert model_context["model_max_model_len"] == 128
+
+
+def test_prepare_workload_for_trial_falls_back_to_workload_tokenizer_when_model_unavailable(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "llm_mst_finder.model_context._resolve_vllm_tokenizer",
+        lambda tokenizer_name: (_ for _ in ()).throw(RuntimeError("missing model tokenizer")),
+    )
+    dataset_path = tmp_path / "requests.jsonl"
+    dataset_path.write_text(
+        json.dumps({"prompt": "alpha beta", "expected_output_len": 2}) + "\n",
+        encoding="utf-8",
+    )
+    workload_path = tmp_path / "jsonl_fallback_tokenizer.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: jsonl-fallback-tokenizer",
+                "dataset:",
+                "  type: jsonl",
+                f"  path: {dataset_path}",
+                "tokenizer: whitespace",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 1",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+                "context_policy:",
+                "  max_model_len: 16",
+                "  over_limit: fail",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    prepared = prepare_workload_for_trial(workload_path, model_name="missing/model")
+
+    assert prepared.samples[0].prompt_len == 2
+    model_context = prepared.metadata["workload"]["model_context"]
+    assert model_context["fallback_used"] is True
+    assert model_context["tokenizer_source"] == "fallback"
+    assert "missing model tokenizer" in model_context["fallback_reason"]
 
 
 def test_prepare_workload_for_trial_requires_context_policy_for_real_dataset() -> None:

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any, Protocol
 
 from .records import SampleRequest
@@ -20,7 +22,7 @@ class DecodingModelTokenizer(ModelTokenizer, Protocol):
 
 @dataclass(frozen=True, slots=True)
 class ContextPolicy:
-    max_model_len: int
+    max_model_len: int | None = None
     tokenizer_source: str = "vllm_model_config"
     tokenizer: str | None = None
     over_limit: str = "fail"
@@ -28,7 +30,7 @@ class ContextPolicy:
     unsafe_allow_workload_tokenizer_for_real_datasets: bool = False
 
     def __post_init__(self) -> None:
-        if self.max_model_len <= 0:
+        if self.max_model_len is not None and self.max_model_len <= 0:
             raise ValueError("context_policy.max_model_len must be positive")
         if self.tokenizer_source not in {"vllm_model_config", "explicit", "workload_tokenizer"}:
             raise ValueError(
@@ -78,6 +80,34 @@ class ContextValidationResult:
     report: ContextValidationReport
 
 
+@dataclass(frozen=True, slots=True)
+class ModelContextInfo:
+    tokenizer: ModelTokenizer
+    tokenizer_key: str
+    max_model_len: int
+    model_max_model_len: int | None
+    workload_max_model_len: int | None
+    tokenizer_source: str
+    tokenizer_name: str | None
+    fallback_used: bool = False
+    fallback_reason: str | None = None
+
+    def effective_policy(self, policy: ContextPolicy) -> ContextPolicy:
+        return replace(policy, max_model_len=self.max_model_len)
+
+    def to_metadata(self) -> dict[str, Any]:
+        return {
+            "fallback_reason": self.fallback_reason,
+            "fallback_used": self.fallback_used,
+            "max_model_len": self.max_model_len,
+            "model_max_model_len": self.model_max_model_len,
+            "tokenizer": self.tokenizer_name,
+            "tokenizer_key": self.tokenizer_key,
+            "tokenizer_source": self.tokenizer_source,
+            "workload_max_model_len": self.workload_max_model_len,
+        }
+
+
 def _expect_mapping(value: Any, field_name: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{field_name} must be a mapping")
@@ -120,9 +150,9 @@ def parse_context_policy(payload: Any | None) -> ContextPolicy | None:
             "unsafe_allow_workload_tokenizer_for_real_datasets",
         },
     )
-    if "max_model_len" not in policy_payload:
-        raise ValueError("context_policy.max_model_len is required")
-    max_model_len = _expect_int(policy_payload["max_model_len"], "context_policy.max_model_len", positive=True)
+    max_model_len = None
+    if "max_model_len" in policy_payload:
+        max_model_len = _expect_int(policy_payload["max_model_len"], "context_policy.max_model_len", positive=True)
     tokenizer_source = policy_payload.get("tokenizer_source", "vllm_model_config")
     if not isinstance(tokenizer_source, str):
         raise ValueError("context_policy.tokenizer_source must be a string")
@@ -322,6 +352,165 @@ def resolve_model_tokenizer_for_policy(
             "context_policy.tokenizer_source=vllm_model_config requires "
             "context_policy.tokenizer or model_name"
         )
+    return _resolve_vllm_tokenizer(resolved_name)
+
+
+def resolve_model_context_info(
+    policy: ContextPolicy,
+    *,
+    workload_tokenizer: ModelTokenizer | None = None,
+    workload_tokenizer_key: str | None = None,
+    model_name: str | None,
+    fallback_tokenizer: ModelTokenizer,
+    fallback_tokenizer_key: str,
+    fallback_tokenizer_name: str,
+    default_max_model_len: int = 4096,
+) -> ModelContextInfo:
+    if default_max_model_len <= 0:
+        raise ValueError("default_max_model_len must be positive")
+
+    if policy.tokenizer_source == "workload_tokenizer":
+        if workload_tokenizer is None or workload_tokenizer_key is None:
+            raise ValueError(
+                "context_policy.tokenizer_source=workload_tokenizer requires workload_tokenizer"
+            )
+        max_model_len = _effective_max_model_len(
+            model_max_model_len=None,
+            workload_max_model_len=policy.max_model_len,
+            default_max_model_len=default_max_model_len,
+        )
+        return ModelContextInfo(
+            tokenizer=workload_tokenizer,
+            tokenizer_key=workload_tokenizer_key,
+            max_model_len=max_model_len,
+            model_max_model_len=None,
+            workload_max_model_len=policy.max_model_len,
+            tokenizer_source="workload_tokenizer",
+            tokenizer_name=fallback_tokenizer_name,
+        )
+
+    if policy.tokenizer_source == "explicit":
+        tokenizer_name = policy.tokenizer
+        if tokenizer_name is None:
+            raise ValueError("context_policy.tokenizer is required when tokenizer_source=explicit")
+        from .workload import HuggingFaceTokenizer
+
+        tokenizer = HuggingFaceTokenizer(tokenizer_name)
+        model_max_model_len = infer_model_max_model_len(tokenizer_name, tokenizer=tokenizer)
+        max_model_len = _effective_max_model_len(
+            model_max_model_len=model_max_model_len,
+            workload_max_model_len=policy.max_model_len,
+            default_max_model_len=default_max_model_len,
+        )
+        return ModelContextInfo(
+            tokenizer=tokenizer,
+            tokenizer_key=f"tokenizer:{tokenizer_name}",
+            max_model_len=max_model_len,
+            model_max_model_len=model_max_model_len,
+            workload_max_model_len=policy.max_model_len,
+            tokenizer_source="explicit",
+            tokenizer_name=tokenizer_name,
+        )
+
+    if policy.tokenizer_source != "vllm_model_config":
+        raise ValueError(f"unsupported context_policy.tokenizer_source {policy.tokenizer_source!r}")
+
+    tokenizer_name = policy.tokenizer or model_name
+    if tokenizer_name:
+        try:
+            tokenizer = _resolve_vllm_tokenizer(tokenizer_name)
+            model_max_model_len = infer_model_max_model_len(tokenizer_name, tokenizer=tokenizer)
+            max_model_len = _effective_max_model_len(
+                model_max_model_len=model_max_model_len,
+                workload_max_model_len=policy.max_model_len,
+                default_max_model_len=default_max_model_len,
+            )
+            return ModelContextInfo(
+                tokenizer=tokenizer,
+                tokenizer_key=f"tokenizer:{tokenizer_name}",
+                max_model_len=max_model_len,
+                model_max_model_len=model_max_model_len,
+                workload_max_model_len=policy.max_model_len,
+                tokenizer_source="vllm_model_config",
+                tokenizer_name=tokenizer_name,
+            )
+        except Exception as exc:
+            fallback_reason = str(exc)
+    else:
+        fallback_reason = (
+            "context_policy.tokenizer_source=vllm_model_config requires "
+            "context_policy.tokenizer or model_name"
+        )
+
+    max_model_len = _effective_max_model_len(
+        model_max_model_len=None,
+        workload_max_model_len=policy.max_model_len,
+        default_max_model_len=default_max_model_len,
+    )
+    return ModelContextInfo(
+        tokenizer=fallback_tokenizer,
+        tokenizer_key=fallback_tokenizer_key,
+        max_model_len=max_model_len,
+        model_max_model_len=None,
+        workload_max_model_len=policy.max_model_len,
+        tokenizer_source="fallback",
+        tokenizer_name=fallback_tokenizer_name,
+        fallback_used=True,
+        fallback_reason=fallback_reason,
+    )
+
+
+def infer_model_max_model_len(
+    model_name: str | None,
+    *,
+    tokenizer: ModelTokenizer | None = None,
+) -> int | None:
+    config = _load_cached_hf_config(model_name)
+    if config is not None:
+        for key in (
+            "max_model_len",
+            "max_position_embeddings",
+            "model_max_length",
+            "n_positions",
+            "seq_length",
+            "max_seq_len",
+            "max_sequence_length",
+        ):
+            value = config.get(key)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, int) and 0 < value < 1_000_000_000:
+                return value
+            if isinstance(value, float) and value.is_integer() and 0 < value < 1_000_000_000:
+                return int(value)
+    if tokenizer is not None:
+        value = getattr(tokenizer, "model_max_length", None)
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int) and 0 < value < 1_000_000_000:
+            return value
+        if isinstance(value, float) and value.is_integer() and 0 < value < 1_000_000_000:
+            return int(value)
+    return None
+
+
+def _effective_max_model_len(
+    *,
+    model_max_model_len: int | None,
+    workload_max_model_len: int | None,
+    default_max_model_len: int,
+) -> int:
+    candidates = [
+        value
+        for value in (model_max_model_len, workload_max_model_len)
+        if value is not None
+    ]
+    if candidates:
+        return min(candidates)
+    return default_max_model_len
+
+
+def _resolve_vllm_tokenizer(tokenizer_name: str) -> ModelTokenizer:
     try:
         from vllm.tokenizers import get_tokenizer
     except ImportError:
@@ -334,10 +523,39 @@ def resolve_model_tokenizer_for_policy(
             ) from exc
     with _force_hf_offline_mode():
         tokenizer = get_tokenizer(
-            tokenizer_name=resolved_name,
+            tokenizer_name=tokenizer_name,
             tokenizer_mode="auto",
             trust_remote_code=False,
         )
     if not hasattr(tokenizer, "encode"):
         raise TypeError("resolved tokenizer does not implement encode(text)")
     return tokenizer
+
+
+def _load_cached_hf_config(model_name: str | None) -> dict[str, Any] | None:
+    if model_name is None or "/" not in model_name:
+        return None
+    cache_root = Path.home() / ".cache" / "huggingface" / "hub"
+    model_cache = cache_root / f"models--{model_name.replace('/', '--')}"
+    snapshots_dir = model_cache / "snapshots"
+    if not snapshots_dir.is_dir():
+        return None
+
+    candidates: list[Path] = []
+    ref_path = model_cache / "refs" / "main"
+    try:
+        ref = ref_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        ref = ""
+    if ref:
+        candidates.append(snapshots_dir / ref / "config.json")
+    candidates.extend(sorted(snapshots_dir.glob("*/config.json")))
+
+    for config_path in candidates:
+        try:
+            payload = json.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None

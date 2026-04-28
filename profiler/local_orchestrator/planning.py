@@ -95,7 +95,7 @@ def _workload_context_tokens(workload: Path, *, probe: ProbeConfig, warnings: li
         warnings.append(f"failed to inspect workload context: {exc}")
         return probe.default_context_tokens
 
-    if config.context_policy is not None:
+    if config.context_policy is not None and config.context_policy.max_model_len is not None:
         return config.context_policy.max_model_len
 
     prompt_tokens = _max_length_spec(config.sampling.prompt_len)

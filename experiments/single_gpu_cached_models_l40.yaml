@@ -1,0 +1,131 @@
+run:
+  run_id: todo-single-gpu-model-loop
+  output_root: ../results/orchestrator
+  allowed_gpu_ids: [0]  
+  max_active_gpus: 1  # single-GPU jobs only; raise this if you want more local parallelism
+  keep_one_gpu_spare: false
+  default_endpoint: /v1/chat/completions
+  base_port_start: 8300
+  base_port_end: 8399
+  metrics_port_offset: 1000
+  python_executable: /local/scratch/a/shi676/.venv/bin/python
+
+hardware:
+  name: l40-48gb
+  gpu_memory_gb: 48
+  gpu_memory_utilization: 0.90
+
+probe:
+  enabled: true
+  auto_gpu_count: false
+  default_context_tokens: 4096
+  activation_memory_gb: 2.0
+  memory_safety_factor: 1.20
+  kv_cache_request_count: 1
+
+launch:
+  executable: vllm
+  tensor_parallel_size: 1
+  gpu_count: 1
+  dtype: float16
+  gpu_memory_utilization: 0.90
+
+search:
+  search_mode: hybrid
+  trial_min_duration_s: 90
+  trial_max_duration_s: 180
+  final_confirmation_duration_s: 180
+  rate_precision: 0.10
+  initial_request_rate: 1
+  max_request_rate: 12
+  max_binary_steps: 8
+  max_bracket_trials: 14
+  metrics_interval_s: 1.0
+  window_s: 10.0
+  ttft_slo_ms: 1000
+  tpot_slo_ms: 150
+  ttft_slo_field: ttft_p90_ms
+  tpot_slo_field: tpot_p90_ms
+
+overrides:
+  - match:
+      models:
+        - Qwen/Qwen3-0.6B
+        - Qwen/Qwen3-1.7B
+        - google/gemma-4-E2B-it
+        - meta-llama/Llama-3.2-1B-Instruct
+    reason: Small models can explore a much higher ceiling and benefit from more binary steps.
+    launch:
+      max_num_seqs: 1024
+      max_num_batched_tokens: 8192
+    search:
+      initial_request_rate: 2
+      max_request_rate: 64
+      max_binary_steps: 11
+      max_bracket_trials: 20
+      ttft_slo_ms: 250
+      tpot_slo_ms: 50
+
+  - match:
+      models:
+        - Qwen/Qwen3-4B-Instruct-2507
+        - Qwen/Qwen3-4B-Thinking-2507
+        - google/gemma-4-E4B-it
+        - meta-llama/Llama-3.2-3B-Instruct
+    reason: Mid-size models get a middle search envelope.
+    search:
+      initial_request_rate: 1
+      max_request_rate: 24
+      max_binary_steps: 9
+      max_bracket_trials: 16
+      ttft_slo_ms: 500
+      tpot_slo_ms: 100
+
+  - match:
+      models:
+        - Qwen/Qwen3-8B
+        - Qwen/Qwen3-14B
+        - meta-llama/Llama-2-7b-chat-hf
+        - meta-llama/Llama-2-13b-chat-hf
+        - meta-llama/Llama-3.1-8B-Instruct
+        - openai/gpt-oss-20b
+    reason: Larger models keep a lower request-rate ceiling to reduce wasted bracket trials.
+    search:
+      initial_request_rate: 1
+      max_request_rate: 8
+      max_binary_steps: 7
+      max_bracket_trials: 12
+
+  - match:
+      model: openai/gpt-oss-20b
+    reason: gpt-oss-20b uses cached mxfp4 quantization; let vLLM pick dtype automatically and give it a slightly higher memory fraction.
+    launch:
+      dtype: auto
+      gpu_memory_utilization: 0.95
+    search:
+      max_request_rate: 6
+
+experiments:
+  - id: single-gpu-model-loop-llama2-4096
+    models:
+      - meta-llama/Llama-2-7b-chat-hf
+      - meta-llama/Llama-2-13b-chat-hf
+    workloads:
+      - ./live_sharegpt_workload_context_4096.yaml
+
+  - id: single-gpu-model-loop-non-llama2-40960
+    models:
+      - Qwen/Qwen3-0.6B
+      - Qwen/Qwen3-1.7B
+      - Qwen/Qwen3-14B
+      - Qwen/Qwen3-4B-Instruct-2507
+      - Qwen/Qwen3-4B-Thinking-2507
+      - Qwen/Qwen3-8B
+      - google/gemma-4-E2B-it
+      - google/gemma-4-E4B-it
+      - meta-llama/Llama-3.1-8B-Instruct
+      - meta-llama/Llama-3.2-1B-Instruct
+      - meta-llama/Llama-3.2-3B-Instruct
+      - openai/gpt-oss-20b
+    workloads:
+      - ./live_sharegpt_workload_context_40960.yaml

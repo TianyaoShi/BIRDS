@@ -9,6 +9,7 @@ import pytest
 from llm_mst_finder.model_context import (
     ContextPolicy,
     parse_context_policy,
+    resolve_model_context_info,
     resolve_model_tokenizer_for_policy,
     validate_samples_against_context_window,
 )
@@ -133,9 +134,12 @@ def test_context_validation_truncate_prompt_shortens_and_records_indexes() -> No
     assert result.report.truncated_source_indexes == (33,)
 
 
-def test_parse_context_policy_missing_max_model_len_raises() -> None:
-    with pytest.raises(ValueError, match="context_policy.max_model_len is required"):
-        parse_context_policy({"over_limit": "fail"})
+def test_parse_context_policy_allows_model_resolved_max_model_len() -> None:
+    policy = parse_context_policy({"over_limit": "fail"})
+
+    assert policy is not None
+    assert policy.max_model_len is None
+    assert policy.tokenizer_source == "vllm_model_config"
 
 
 def test_resolve_model_tokenizer_missing_workload_tokenizer_raises() -> None:
@@ -193,6 +197,55 @@ def test_resolve_model_tokenizer_vllm_forces_offline_env(monkeypatch) -> None:
     assert observed["TRANSFORMERS_OFFLINE"] == "1"
     assert os.environ.get("HF_HUB_OFFLINE") is None
     assert os.environ.get("TRANSFORMERS_OFFLINE") is None
+
+
+def test_resolve_model_context_info_uses_model_limit_with_workload_cap(monkeypatch) -> None:
+    class FakeTokenizer:
+        model_max_length = 16
+
+        def encode(self, text: str) -> list[int]:
+            return text.split()
+
+    monkeypatch.setattr(
+        "llm_mst_finder.model_context._resolve_vllm_tokenizer",
+        lambda tokenizer_name: FakeTokenizer(),
+    )
+
+    info = resolve_model_context_info(
+        ContextPolicy(max_model_len=8, tokenizer_source="vllm_model_config"),
+        model_name="fake/model",
+        fallback_tokenizer=WordTokenizer(),
+        fallback_tokenizer_key="tokenizer:fallback",
+        fallback_tokenizer_name="fallback",
+    )
+
+    assert info.max_model_len == 8
+    assert info.model_max_model_len == 16
+    assert info.workload_max_model_len == 8
+    assert info.fallback_used is False
+
+
+def test_resolve_model_context_info_falls_back_when_model_tokenizer_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "llm_mst_finder.model_context._resolve_vllm_tokenizer",
+        lambda tokenizer_name: (_ for _ in ()).throw(RuntimeError("missing tokenizer")),
+    )
+    fallback = WordTokenizer()
+
+    info = resolve_model_context_info(
+        ContextPolicy(tokenizer_source="vllm_model_config"),
+        model_name="missing/model",
+        fallback_tokenizer=fallback,
+        fallback_tokenizer_key="tokenizer:fallback",
+        fallback_tokenizer_name="fallback",
+        default_max_model_len=2048,
+    )
+
+    assert info.tokenizer is fallback
+    assert info.tokenizer_key == "tokenizer:fallback"
+    assert info.max_model_len == 2048
+    assert info.fallback_used is True
+    assert "missing tokenizer" in str(info.fallback_reason)
 
 
 def test_context_validation_reuses_cached_prompt_length_when_tokenizer_key_matches() -> None:

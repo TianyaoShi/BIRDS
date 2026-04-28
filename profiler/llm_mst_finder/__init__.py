@@ -4,7 +4,9 @@ from .model_context import (
     ContextPolicy,
     ContextValidationReport,
     ContextValidationResult,
+    ModelContextInfo,
     parse_context_policy,
+    resolve_model_context_info,
     resolve_model_tokenizer_for_policy,
     validate_samples_against_context_window,
 )
@@ -53,6 +55,7 @@ __all__ = [
     "ContextValidationResult",
     "InvalidSearchTrial",
     "OpenLoopLoadGenerator",
+    "ModelContextInfo",
     "PreparedWorkload",
     "PrometheusMetricsPoller",
     "RequestClient",
@@ -87,5 +90,6 @@ __all__ = [
     "parse_prometheus_text",
     "parse_server_metrics_sample",
     "resolve_model_tokenizer_for_policy",
+    "resolve_model_context_info",
     "validate_samples_against_context_window",
 ]
