@@ -57,6 +57,7 @@ class SearchConfig:
     max_binary_steps: int = 24
     max_bracket_trials: int = 16
     closed_loop_initial_concurrency: int = 1
+    closed_loop_min_trials: int = 2
     max_closed_loop_concurrency: int = 128
     closed_loop_plateau_relative_gain: float = 0.05
     closed_loop_start_rate_fraction: float = 0.6
@@ -105,6 +106,7 @@ class SearchConfig:
         _require_positive_int("max_binary_steps", self.max_binary_steps)
         _require_positive_int("max_bracket_trials", self.max_bracket_trials)
         _require_positive_int("closed_loop_initial_concurrency", self.closed_loop_initial_concurrency)
+        _require_positive_int("closed_loop_min_trials", self.closed_loop_min_trials)
         _require_positive_int("max_closed_loop_concurrency", self.max_closed_loop_concurrency)
         if self.closed_loop_initial_concurrency > self.max_closed_loop_concurrency:
             raise ValueError("closed_loop_initial_concurrency must be <= max_closed_loop_concurrency")
@@ -274,6 +276,7 @@ class SearchController:
         peak_output_token_throughput: float | None = None
         plateau_concurrency: int | None = None
         stop_reason = "max_closed_loop_concurrency reached"
+        completed_trials = 0
 
         while concurrency <= config.max_closed_loop_concurrency:
             event = await self._run_and_analyze_trial(
@@ -287,6 +290,7 @@ class SearchController:
             analysis = event["analysis_result"]
             summary = event["run_result"].summary
             self._reject_invalid_trial(analysis, event["trial_id"])
+            completed_trials += 1
 
             throughput = summary.successful_completion_rate
             output_tok_s = summary.benchmark_metrics.generation_token_throughput
@@ -295,10 +299,18 @@ class SearchController:
                 peak_output_token_throughput = output_tok_s
                 plateau_concurrency = concurrency
 
-            if self._should_stop_closed_loop(analysis):
+            if self._should_stop_closed_loop(
+                analysis,
+                completed_trials=completed_trials,
+                config=config,
+            ):
                 stop_reason = self._closed_loop_stop_reason(analysis)
                 break
-            if previous_throughput is not None and previous_throughput > 0.0:
+            if (
+                completed_trials >= config.closed_loop_min_trials
+                and previous_throughput is not None
+                and previous_throughput > 0.0
+            ):
                 relative_gain = (throughput - previous_throughput) / previous_throughput
                 if relative_gain < config.closed_loop_plateau_relative_gain:
                     stop_reason = (
@@ -327,7 +339,7 @@ class SearchController:
     ) -> _SearchBounds:
         if closed_loop_result is not None and closed_loop_result.peak_request_throughput is not None:
             peak = closed_loop_result.peak_request_throughput
-            first_rate = max(config.initial_request_rate, peak * config.closed_loop_start_rate_fraction)
+            first_rate = peak * config.closed_loop_start_rate_fraction
             second_rate = peak * config.closed_loop_high_rate_fraction
             if second_rate <= first_rate:
                 second_rate = first_rate * 2.0
@@ -647,6 +659,19 @@ class SearchController:
         analysis = event["analysis_result"]
         self._reject_invalid_trial(analysis, event["trial_id"])
         decision = self._analysis_decision(analysis)
+        if decision is False and self._is_soft_unstable(analysis):
+            repeat_event = await self._run_and_analyze_trial(
+                config,
+                mode="open-loop",
+                concurrency=None,
+                request_rate=rate,
+                duration_s=config.uncertain_retry_duration_s,
+                purpose=f"{purpose}_extend_unstable",
+            )
+            repeat_analysis = repeat_event["analysis_result"]
+            self._reject_invalid_trial(repeat_analysis, repeat_event["trial_id"])
+            decision = self._analysis_decision(repeat_analysis)
+            event = repeat_event
         if decision is None:
             repeat_event = await self._run_and_analyze_trial(
                 config,
@@ -869,12 +894,32 @@ class SearchController:
         return f"closed-loop scouting stopped on stability status {analysis.stability.status!r}"
 
     @staticmethod
-    def _should_stop_closed_loop(analysis: TrialAnalysisResult) -> bool:
+    def _is_soft_unstable(analysis: TrialAnalysisResult) -> bool:
+        if analysis.stability is None:
+            raise ValueError("valid search trial requires a stability result")
+        return analysis.stability.status == "unstable"
+
+    @staticmethod
+    def _should_stop_closed_loop(
+        analysis: TrialAnalysisResult,
+        *,
+        completed_trials: int,
+        config: SearchConfig,
+    ) -> bool:
         if analysis.stability is None:
             raise ValueError("closed-loop search trial requires a stability result")
-        if analysis.stability.status in {"slo_violation", "aborted_safety"}:
+        if analysis.stability.status == "aborted_safety":
             return True
-        if analysis.bottleneck is not None and analysis.bottleneck.bottleneck_class == "kv_cache":
+        if completed_trials < config.closed_loop_min_trials:
+            return False
+        if analysis.stability.status == "slo_violation":
+            return True
+        if (
+            analysis.stability.status != "stable"
+            and analysis.bottleneck is not None
+            and analysis.bottleneck.bottleneck_class == "kv_cache"
+            and analysis.bottleneck.confidence == "high"
+        ):
             return True
         return False
 

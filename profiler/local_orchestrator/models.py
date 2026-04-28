@@ -183,6 +183,10 @@ class SearchConfig:
     max_request_rate: float | None = None
     max_binary_steps: int = 24
     max_bracket_trials: int = 16
+    closed_loop_initial_concurrency: int = 1
+    closed_loop_min_trials: int = 2
+    max_closed_loop_concurrency: int = 128
+    closed_loop_plateau_relative_gain: float = 0.05
     metrics_interval_s: float = 1.0
     window_s: float = 10.0
     ttft_slo_ms: float | None = None
@@ -212,6 +216,12 @@ class SearchConfig:
                 raise ValueError("max_request_rate must be >= initial_request_rate")
         _require_positive_int("max_binary_steps", self.max_binary_steps)
         _require_positive_int("max_bracket_trials", self.max_bracket_trials)
+        _require_positive_int("closed_loop_initial_concurrency", self.closed_loop_initial_concurrency)
+        _require_positive_int("closed_loop_min_trials", self.closed_loop_min_trials)
+        _require_positive_int("max_closed_loop_concurrency", self.max_closed_loop_concurrency)
+        if self.closed_loop_initial_concurrency > self.max_closed_loop_concurrency:
+            raise ValueError("closed_loop_initial_concurrency must be <= max_closed_loop_concurrency")
+        _require_positive_float("closed_loop_plateau_relative_gain", self.closed_loop_plateau_relative_gain)
         _require_positive_float("metrics_interval_s", self.metrics_interval_s)
         _require_positive_float("window_s", self.window_s)
         if self.ttft_slo_ms is not None:

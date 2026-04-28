@@ -254,6 +254,8 @@ def test_cli_search_records_server_metadata_file(
             "25",
             "--uncertain-trial-duration-multiplier",
             "3",
+            "--closed-loop-min-trials",
+            "4",
             "--ttft-slo-ms",
             "1500",
             "--ttft-slo-field",
@@ -275,6 +277,7 @@ def test_cli_search_records_server_metadata_file(
     assert config.uncertain_trial_duration_s == 25.0
     assert config.uncertain_trial_duration_multiplier == 3.0
     assert config.final_confirmation_duration_s == 25.0
+    assert config.closed_loop_min_trials == 4
     metadata = config.metadata
     assert metadata["stability_policy"]["ttft_slo_ms"] == 1500.0
     assert metadata["stability_policy"]["ttft_slo_field"] == "ttft_p99_ms"

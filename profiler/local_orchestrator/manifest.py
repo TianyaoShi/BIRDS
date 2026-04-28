@@ -92,6 +92,10 @@ _SEARCH_KEYS = {
     "max_request_rate",
     "max_binary_steps",
     "max_bracket_trials",
+    "closed_loop_initial_concurrency",
+    "closed_loop_min_trials",
+    "max_closed_loop_concurrency",
+    "closed_loop_plateau_relative_gain",
     "metrics_interval_s",
     "window_s",
     "ttft_slo_ms",
@@ -460,6 +464,10 @@ def _merge_search_config(base: SearchConfig, raw: Any, *, field_name: str) -> Se
         "max_request_rate": base.max_request_rate,
         "max_binary_steps": base.max_binary_steps,
         "max_bracket_trials": base.max_bracket_trials,
+        "closed_loop_initial_concurrency": base.closed_loop_initial_concurrency,
+        "closed_loop_min_trials": base.closed_loop_min_trials,
+        "max_closed_loop_concurrency": base.max_closed_loop_concurrency,
+        "closed_loop_plateau_relative_gain": base.closed_loop_plateau_relative_gain,
         "metrics_interval_s": base.metrics_interval_s,
         "window_s": base.window_s,
         "ttft_slo_ms": base.ttft_slo_ms,
@@ -484,8 +492,11 @@ def _merge_search_config(base: SearchConfig, raw: Any, *, field_name: str) -> Se
         if key in {"trial_max_duration_s", "final_confirmation_duration_s", "max_request_rate"}:
             updated[key] = _expect_optional_positive_float(value, f"{field_name}.{key}")
             continue
-        if key in {"max_binary_steps", "max_bracket_trials"}:
+        if key in {"max_binary_steps", "max_bracket_trials", "closed_loop_initial_concurrency", "closed_loop_min_trials", "max_closed_loop_concurrency"}:
             updated[key] = _expect_int(value, f"{field_name}.{key}", minimum=1)
+            continue
+        if key == "closed_loop_plateau_relative_gain":
+            updated[key] = _expect_positive_float(value, f"{field_name}.{key}")
             continue
         if key in {"ttft_slo_ms", "tpot_slo_ms"}:
             updated[key] = _expect_optional_positive_float(value, f"{field_name}.{key}")

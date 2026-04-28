@@ -41,6 +41,7 @@ def test_load_manifest_accepts_valid_structured_config(tmp_path: Path) -> None:
                 "search_mode": "open-loop",
                 "ttft_slo_ms": 2000,
                 "tpot_slo_ms": 80,
+                "closed_loop_min_trials": 3,
                 "ttft_slo_field": "ttft_p90_ms",
                 "tpot_slo_field": "tpot_p90_ms",
             },
@@ -60,6 +61,7 @@ def test_load_manifest_accepts_valid_structured_config(tmp_path: Path) -> None:
     assert len(manifest.experiments) == 1
     assert manifest.experiments[0].experiment_id == "exp-chat"
     assert manifest.experiments[0].launch.max_model_len == 32768
+    assert manifest.experiments[0].search.closed_loop_min_trials == 3
 
 
 def test_load_manifest_rejects_missing_workload_path(tmp_path: Path) -> None:

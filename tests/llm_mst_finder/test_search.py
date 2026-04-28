@@ -187,6 +187,102 @@ def test_hybrid_search_converges_and_writes_trace(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
+def test_closed_loop_does_not_stop_on_low_confidence_stable_kv_label(tmp_path: Path) -> None:
+    class LowConfidenceKvRunner(FakeRunner):
+        async def run_trial(self, config: TrialConfig, *, request_source, output_dir: str | Path):
+            result = await super().run_trial(config, request_source=request_source, output_dir=output_dir)
+            if config.mode == "closed-loop" and config.concurrency == 1:
+                self.analyses[config.trial_id] = _analysis(
+                    config.trial_id,
+                    status="stable",
+                    bottleneck_class="kv_cache",
+                    bottleneck_confidence="low",
+                )
+            return result
+
+    async def run() -> None:
+        runner = LowConfidenceKvRunner(sustainable_rate=10.0)
+        controller = SearchController(
+            runner,
+            request_source=_source(),
+            output_dir=tmp_path / "search-closedloop-kv",
+            analyze_trial=lambda trial_dir: runner.analyses[Path(trial_dir).name],
+            write_analysis=lambda trial_dir, result: Path(trial_dir) / "analysis.json",
+        )
+        result = await controller.search(
+            SearchConfig(
+                search_id="fixture-closedloop-kv",
+                search_mode="closed-loop",
+                model="fake-model",
+                trial_duration_s=1.0,
+                max_closed_loop_concurrency=2,
+            )
+        )
+
+        closed_loop_calls = [call for call in runner.calls if call.mode == "closed-loop"]
+        assert [call.concurrency for call in closed_loop_calls] == [1, 2]
+        assert result.closed_loop is not None
+        assert result.closed_loop.peak_request_throughput == pytest.approx(4.0)
+
+    asyncio.run(run())
+
+
+def test_soft_unstable_open_loop_rate_is_retried_before_rejecting(tmp_path: Path) -> None:
+    class SoftUnstableOnceRunner(FakeRunner):
+        def __init__(self) -> None:
+            super().__init__(sustainable_rate=1.0)
+            self.rate_calls: dict[float, int] = {}
+
+        async def run_trial(self, config: TrialConfig, *, request_source, output_dir: str | Path):
+            result = await super().run_trial(config, request_source=request_source, output_dir=output_dir)
+            if config.mode == "open-loop" and config.request_rate is not None:
+                rate = float(config.request_rate)
+                self.rate_calls[rate] = self.rate_calls.get(rate, 0) + 1
+                if rate == pytest.approx(2.0) and self.rate_calls[rate] == 2:
+                    self.analyses[config.trial_id] = _analysis(config.trial_id, status="stable")
+            return result
+
+    async def run() -> None:
+        runner = SoftUnstableOnceRunner()
+        controller = SearchController(
+            runner,
+            request_source=_source(),
+            output_dir=tmp_path / "search-soft-unstable",
+            analyze_trial=lambda trial_dir: runner.analyses[Path(trial_dir).name],
+            write_analysis=lambda trial_dir, result: Path(trial_dir) / "analysis.json",
+        )
+        await controller.search(
+            SearchConfig(
+                search_id="fixture-soft-unstable",
+                search_mode="open-loop",
+                model="fake-model",
+                trial_duration_s=1.0,
+                uncertain_trial_duration_s=3.0,
+                rate_precision=0.9,
+                initial_request_rate=1.0,
+            )
+        )
+
+        rate_two_calls = [
+            call
+            for call in runner.calls
+            if call.mode == "open-loop" and call.request_rate == pytest.approx(2.0)
+        ]
+        assert [call.duration_s for call in rate_two_calls[:2]] == [1.0, 3.0]
+        trace = json.loads((tmp_path / "search-soft-unstable" / "search_trace.json").read_text(encoding="utf-8"))
+        rate_two_events = [
+            event
+            for event in trace["events"]
+            if event["mode"] == "open-loop" and event["request_rate"] == pytest.approx(2.0)
+        ]
+        assert [event["purpose"] for event in rate_two_events[:2]] == [
+            "open_loop_bracket_high",
+            "open_loop_bracket_high_extend_unstable",
+        ]
+
+    asyncio.run(run())
+
+
 def test_invalid_workload_trial_fails_without_updating_high_bound(tmp_path: Path) -> None:
     class InvalidAtHighRunner(FakeRunner):
         async def run_trial(self, config: TrialConfig, *, request_source, output_dir: str | Path):

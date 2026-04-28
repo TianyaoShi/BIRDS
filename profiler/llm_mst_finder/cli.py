@@ -112,6 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--max-binary-steps", type=int, default=24)
     search.add_argument("--max-bracket-trials", type=int, default=16)
     search.add_argument("--closed-loop-initial-concurrency", type=int, default=1)
+    search.add_argument("--closed-loop-min-trials", type=int, default=2)
     search.add_argument("--max-closed-loop-concurrency", type=int, default=128)
     search.add_argument("--closed-loop-plateau-relative-gain", type=float, default=0.05)
     search.add_argument("--think-time-s", type=float, default=0.0)
@@ -285,6 +286,7 @@ async def _search_command(args: argparse.Namespace) -> int:
         max_binary_steps=args.max_binary_steps,
         max_bracket_trials=args.max_bracket_trials,
         closed_loop_initial_concurrency=args.closed_loop_initial_concurrency,
+        closed_loop_min_trials=args.closed_loop_min_trials,
         max_closed_loop_concurrency=args.max_closed_loop_concurrency,
         closed_loop_plateau_relative_gain=args.closed_loop_plateau_relative_gain,
         think_time_s=args.think_time_s,
