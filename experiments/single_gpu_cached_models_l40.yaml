@@ -47,6 +47,11 @@ search:
   tpot_slo_ms: 150
   ttft_slo_field: ttft_p90_ms
   tpot_slo_field: tpot_p90_ms
+  closed_loop_min_trials: 3
+  max_closed_loop_concurrency: 128
+  closed_loop_plateau_relative_gain: 0.05
+  max_num_seqs: 256
+  max_num_batched_tokens: 2048
 
 overrides:
   - match:
@@ -103,6 +108,7 @@ overrides:
     launch:
       dtype: auto
       gpu_memory_utilization: 0.95
+      max_model_len: 8192 
     search:
       max_request_rate: 6
 
