@@ -180,14 +180,12 @@ results/mst/<model_slug>/<dataset_slug>/<server_slug>/
 The V1 orchestrator intentionally omits:
 
 - Multi-node or cluster scheduling (single host only; Slurm should be a thin submit-loop over expanded jobs).
-- Cross-node tensor parallelism.
+- Cross-node tensor parallelism (not needed).
 - Live GPU memory discovery from `nvidia-smi`; set `hardware.gpu_memory_gb` in the manifest for now.
 - Adaptive backoff, cancellation, or preemption of jobs.
-- Dynamic closed-loop search tuning (no closed-loop concurrency config in the manifest).
 - Report-only or search-only modes (search+report is always run together).
 - Automatic retries with exponential backoff or jitter.
 - Server warmup or model-specific readiness probes beyond `/v1/models`.
-- Metrics export beyond the local run artifacts (no Prometheus integration).
 - External state storage (state is JSON files only).
 
 ## Development notes
