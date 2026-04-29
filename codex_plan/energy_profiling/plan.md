@@ -107,17 +107,17 @@ defaults:
 
 rounding:
   mode: floor_preferred
-  preferred_steps: [0.1, 0.2, 0.25, 0.5, 1.0]
+  preferred_steps: [0.05, 0.1, 0.2, 0.25, 0.5, 1.0]
   minimum_rate: 0.1
 
 jobs:
-  - id: qwen3-8b-sharegpt-r4
+  - id: qwen3-8b-sharegpt-r4_25
     source_experiment_id: single-gpu-model-loop-...
     source_result_dir: results/mst/qwen-qwen3-8b/live-sharegpt-workload-context/server-...
     model: Qwen/Qwen3-8B
     workload: experiments/live_sharegpt_workload_context.yaml
     endpoint: /v1/chat/completions
-    request_rate: 4.0
+    request_rate: 4.25
     mst_rate: 4.4375
     mst_rate_source: max_slo_satisfying_request_rate
     launch:
@@ -130,6 +130,7 @@ jobs:
       source_orchestrator_run_id: single-gpu-model-loop-run-sharegpt-000
       rounded_from_rate: 4.4375
       rounding_policy: floor_preferred
+      rounding_step: 0.25
 ```
 
 The generated plan should be deterministic and should include enough launch/search context that it can be executed later without depending on mutable orchestrator state.
@@ -141,22 +142,24 @@ The selected MST should be rounded down to a human-preferable precision such as 
 Recommended default:
 
 1. Choose a display quantum based on the MST scale.
-   - `< 1 req/s`: use `0.1`
-   - `1-3 req/s`: use `0.25`
-   - `3-10 req/s`: use `0.5`
+   - `< 2 req/s`: use `0.1` or `0.05`
+   - `2-5 req/s`: use `0.25` or `0.2`
+   - `5-10 req/s`: use `0.5`
    - `>= 10 req/s`: use `1.0`
 
 2. Floor to that quantum.
 
 3. Clamp to `minimum_rate` only when the MST is positive but below the smallest useful open-loop rate.
 
+4. Prefer more total sweep points as long as the total step count stays within the configured cap, so that profiling and comparisons keep useful resolution.
+
 Examples:
 
-- `0.083` -> `0.1`, because positive rates below the minimum useful trial rate are clamped
-- `0.61` -> `0.6`
-- `1.84` -> `1.75`
-- `4.37` -> `4.0`
-- `17.4` -> `17`
+- `0.083` -> `0.1`, because positive rates below the minimum useful trial rate are clamped, step = `0.05`
+- `0.61` -> `0.6`, step = `0.05`
+- `1.84` -> `1.8`, step = `0.1`
+- `4.37` -> `4.25`, step = `0.25`
+- `17.4` -> `17`, step = `1.0`
 
 This keeps rates readable while avoiding profiling above the measured MST.
 
@@ -164,22 +167,40 @@ This keeps rates readable while avoiding profiling above the measured MST.
 
 For selected models, generate up to 20 fixed-rate trials from low load to rounded MST.
 
-Recommended defaults:
+The sweep grid should be derived from the same floor-rounding policy used for the single rounded-MST profile. The rounding policy chooses a human-preferable step size for the model's MST scale; sweep mode then enumerates that grid from one step through the floored MST.
 
-- `steps: 10`
-- `max_steps: 20`
-- `spacing: linear`
-- include the rounded MST endpoint
-- start at one rounding quantum, not exactly `0`, because open-loop rate `0` is not meaningful.
-- run rates in ascending order while reusing the same warm vLLM server for a matching model/server signature.
+Recommended algorithm:
 
-Example for rounded MST `4.5` and `steps=10`:
+1. Select the finest preferred step that gives at most `max_steps` nonzero rates up to MST.
+   - Candidate steps come from the rounding policy, e.g. `[0.05, 0.1, 0.2, 0.25, 0.5, 1.0]`.
+   - Prefer the smallest step whose `floor(MST / step)` is `<= max_steps`.
+   - If all fine steps exceed the cap, move to the next coarser step.
+
+2. Compute `rounded_mst = floor(MST / step) * step`.
+
+3. Generate all nonzero multiples of `step` through `rounded_mst`.
+
+4. Deduplicate floating-point artifacts and preserve stable decimal formatting.
+
+5. Run rates in ascending order while reusing the same warm vLLM server for a matching model/server signature.
+
+Examples:
 
 ```text
-0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5
+MST 0.61, step 0.05, rounded MST 0.60:
+0.05, 0.10, 0.15, ..., 0.60
+
+MST 1.84, step 0.10, rounded MST 1.80:
+0.10, 0.20, 0.30, ..., 1.80
+
+MST 4.37, step 0.25, rounded MST 4.25:
+0.25, 0.50, 0.75, ..., 4.25
+
+MST 17.4, step 1.0, rounded MST 17.0:
+1.0, 2.0, 3.0, ..., 17.0
 ```
 
-For very low MST values, use the smallest configured quantum and deduplicate rounded rates.
+For very low MST values below the minimum useful open-loop rate, generate one trial at `minimum_rate` and mark it as a clamped rate in the plan metadata.
 
 Optional future mode:
 
@@ -228,16 +249,27 @@ The run command should:
 
 For sweep jobs, group trials by model/server signature, reuse the same warm vLLM server, and execute rates in ascending order.
 
-## Trial Runner Integration
+## Run-Trial Reuse and External Energy Monitoring
 
 Preferred implementation path:
 
-1. Extend `llm_mst_finder` with an optional power monitor interface.
-   - Add a `PowerMonitor` protocol similar to `MetricsPoller`.
-   - Record power artifacts beside `request_records.jsonl`, `server_metrics.jsonl`, and `windows.csv`.
-   - Add `energy_metrics` to `TrialSummary` or to a sidecar `energy_summary.json`.
+1. Reuse `llm_mst_finder.cli run-trial` unchanged for traffic generation and latency artifacts.
+   - Do not enable GPU energy collection by default during MST search.
+   - Do not require `TrialRunner` to know about power monitoring for the first implementation.
+   - The energy executor should call `run-trial --mode open-loop --request-rate ...` as a subprocess and treat the resulting `summary.json`, `request_records.jsonl`, `server_metrics.jsonl`, and `windows.csv` as normal trial artifacts.
 
-2. Reuse `profiler/gpu_monitor.py`.
+2. Wrap the `run-trial` subprocess with energy monitoring in `energy_profiler.executor`.
+   - Start `GPUMonitor` instances in the executor before launching the fixed-rate trial.
+   - Stop monitors after the trial process exits.
+   - Read the trial `summary.json` to compute energy per request/token.
+   - Write `gpu_power.json` and `energy_summary.json` beside the trial artifacts.
+
+3. Measure idle baseline outside MST finder.
+   - After vLLM readiness and before traffic, start monitors for `idle_monitor_duration_s`.
+   - Store idle power stats separately.
+   - Use idle stats to compute incremental energy above idle for later traffic trials on the same server.
+
+4. Reuse `profiler/gpu_monitor.py`.
    - Current `GPUMonitor` returns:
      - `avg_power_mw`
      - `power_stats`
@@ -245,7 +277,7 @@ Preferred implementation path:
      - optional `clock_trace_mhz`
    - Keep milliwatts internally and expose watts/joules in summary fields with clear names.
 
-3. Avoid using `benchmark_serving.py` as the executor.
+5. Avoid using `benchmark_serving.py` as the executor.
    - It already has useful power-stat logic, but MST finder has the workload compatibility, request client, response parsing, and artifact structure we now depend on.
    - Reuse the concepts, not the benchmark CLI as the new core path.
 
@@ -391,28 +423,26 @@ Focused tests:
 - sweep generation orders rates ascending for server reuse
 - explicit plan validates model selection
 
-### Phase 2: Power Monitor Integration in MST Trial Runner
+### Phase 2: External Power Monitoring Wrapper
 
-- Add optional GPU power monitor support to `llm_mst_finder.cli run-trial`.
-- Add CLI args:
-  - `--gpu-id`, repeatable or comma-separated
-  - `--gpu-monitor-interval-s`
-  - `--gpu-monitor-truncate-s`
-  - `--gpu-monitor-clock`
-  - `--energy-summary-path`, optional
-- Write `gpu_power.json` and `energy_summary.json`.
-- Keep the default behavior unchanged when no GPU monitor args are supplied.
+- Add energy-profiler-owned monitor wrappers around `profiler/gpu_monitor.py`.
+- Add idle baseline collection after vLLM readiness.
+- Run `llm_mst_finder.cli run-trial` as an unchanged subprocess for the fixed-rate traffic trial.
+- Stop monitors after the subprocess exits.
+- Read the trial `summary.json`.
+- Write `gpu_power.json` and `energy_summary.json` in the energy job directory.
+- Keep MST search and ordinary `llm_mst_finder.cli run-trial` behavior unchanged when invoked outside the energy profiler.
 
 Focused tests:
 
-- fake monitor produces deterministic energy summary
-- no monitor preserves existing trial output schema
+- fake monitor produces deterministic idle and traffic energy summaries
+- run-trial command construction remains a plain MST finder command with no energy-specific CLI args
 - zero successful requests avoids division by zero and marks per-request energy as null
 
 ### Phase 3: Energy Executor
 
 - Reuse local orchestrator launch lifecycle to start vLLM.
-- Run fixed-rate `llm_mst_finder.cli run-trial --mode open-loop`.
+- Run fixed-rate `llm_mst_finder.cli run-trial --mode open-loop` under the external power-monitor wrapper.
 - Capture logs and job status.
 - Continue on per-job failure.
 - Write energy run summary.
