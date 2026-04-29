@@ -93,6 +93,17 @@ plan:
   python_executable: /local/scratch/a/shi676/.venv/bin/python
   mode: mst-rounded
 
+selection:
+  models: []
+  workloads: []
+  experiment_ids: []
+  explicit_request_rates: []
+  sweep:
+    enabled: false
+    models: []
+    experiment_ids: []
+    max_steps: 20
+
 defaults:
   duration_s: 180
   warmup_s: 30
@@ -208,17 +219,36 @@ Optional future mode:
 
 ## Explicit Comparison Policy
 
-Allow the user to specify:
+Allow the user to specify comparison selections directly in the plan YAML:
 
 ```yaml
-explicit:
+selection:
   models:
     - Qwen/Qwen3-4B-Instruct-2507
     - Qwen/Qwen3-8B
-  request_rates: [0.5, 1.0, 2.0, 4.0]
+  workloads:
+    - live_sharegpt_workload_context
+  explicit_request_rates: [0.5, 1.0, 2.0, 4.0]
 ```
 
-The planner should validate that selected models exist in the source orchestrator run and have succeeded MST results unless the user passes an explicit override allowing missing MST.
+For sweep selection:
+
+```yaml
+selection:
+  sweep:
+    enabled: true
+    models:
+      - Qwen/Qwen3-4B-Instruct-2507
+      - Qwen/Qwen3-8B
+    max_steps: 20
+```
+
+The CLI should still support quick filters, but YAML selection should be the preferred review/edit path for human users. CLI filters should either:
+
+- seed the generated YAML selection fields, or
+- override them only when explicitly requested.
+
+The planner should validate that selected models/workloads/experiment IDs exist in the source orchestrator run and have succeeded MST results unless the user passes an explicit override allowing missing MST.
 
 ## Execution Model
 
@@ -296,7 +326,6 @@ Recommended energy output fields:
   "p95_power_w": 338.8,
   "max_power_w": 356.4,
   "energy_per_successful_request_j": 12.3,
-  "energy_per_output_token_j": 0.04,
   "energy_per_total_token_j": 0.02,
   "monitor_duration_s": 180.0,
   "idle_monitor_duration_s": 30.0,
@@ -310,7 +339,15 @@ For multi-GPU trials, compute:
 - per-GPU idle baseline stats
 - aggregate energy over all assigned GPUs
 - aggregate incremental energy above idle baseline
-- per-request/per-token metrics from aggregate energy
+- per-request and total-token-normalized metrics from aggregate energy
+
+Do not use output-token-only energy as a primary metric for continuous-batching serving. Prompt prefill and decode work overlap across requests, so attributing total GPU energy only to generated tokens is misleading. Preferred token-normalized metrics:
+
+- `energy_per_total_token_j`
+- `incremental_energy_per_total_token_j`
+- optionally `energy_per_request_j`
+
+Generated-token-only metrics may be emitted only as an explicitly labeled compatibility field for older reports, and should be omitted by default.
 
 ## Result Layout
 
@@ -384,14 +421,27 @@ python -m energy_profiler.cli plan-from-orchestrator \
   --orchestrator-run-root results/orchestrator/<run_id> \
   --output-plan experiments/energy/<plan_id>.yaml \
   --mode sweep \
-  --models Qwen/Qwen3-4B-Instruct-2507 Qwen/Qwen3-8B \
-  --sweep-steps 20
+  --selection-yaml experiments/energy/sharegpt_selection.yaml
 
 python -m energy_profiler.cli plan-explicit \
   --orchestrator-run-root results/orchestrator/<run_id> \
   --output-plan experiments/energy/<plan_id>.yaml \
-  --models Qwen/Qwen3-4B-Instruct-2507 Qwen/Qwen3-8B \
-  --request-rates 0.5 1 2 4
+  --selection-yaml experiments/energy/sharegpt_selection.yaml
+```
+
+Example selection YAML:
+
+```yaml
+selection:
+  models:
+    - Qwen/Qwen3-4B-Instruct-2507
+    - Qwen/Qwen3-8B
+  explicit_request_rates: [0.5, 1.0, 2.0, 4.0]
+  sweep:
+    enabled: true
+    models:
+      - Qwen/Qwen3-8B
+    max_steps: 20
 ```
 
 Execution commands:
@@ -411,6 +461,7 @@ python -m energy_profiler.cli status --run-root results/energy/<plan_id>
 - Parse orchestrator `summary.json` and `state.json`.
 - Filter succeeded jobs.
 - Extract MST rate and source artifacts.
+- Apply YAML-native selection fields for models, workloads, experiment IDs, explicit rates, and sweep subsets.
 - Generate deterministic plan YAML.
 - Add dry-run rendering.
 
@@ -421,7 +472,7 @@ Focused tests:
 - rounding behavior around low and high rates
 - sweep generation deduplicates rates and caps at 20 steps
 - sweep generation orders rates ascending for server reuse
-- explicit plan validates model selection
+- explicit plan validates YAML-native model/workload/experiment selection
 
 ### Phase 2: External Power Monitoring Wrapper
 
@@ -438,6 +489,7 @@ Focused tests:
 - fake monitor produces deterministic idle and traffic energy summaries
 - run-trial command construction remains a plain MST finder command with no energy-specific CLI args
 - zero successful requests avoids division by zero and marks per-request energy as null
+- generated-token-only energy is omitted or explicitly marked as a non-primary compatibility metric
 
 ### Phase 3: Energy Executor
 
@@ -492,6 +544,13 @@ This should wait until the Slurm MST adapter has settled.
    - Report total GPU energy and incremental GPU energy above idle baseline.
    - This makes comparisons more interpretable across models with different static server power.
 
+8. Avoid output-token-only energy as a primary metric.
+   - Continuous batching mixes prompt and decode work across requests.
+   - Use request-normalized and total-token-normalized energy instead.
+
+9. Prefer YAML-native selection for human-edited plans.
+   - CLI filters are useful for quick generation, but selected models/rates/sweeps should be visible and editable in the plan YAML.
+
 ## Open Questions
 
 1. How long should the idle-power baseline run?
@@ -509,5 +568,7 @@ This should wait until the Slurm MST adapter has settled.
    - Summary-only output is smaller but less auditable.
 
 5. For multi-GPU jobs, should energy be reported only as aggregate GPU energy or also normalized per GPU?
+   - Both are useful.
 
 6. Should failed request classes like the gpt-oss Harmony stream parser error be excluded from energy-per-request denominators, treated as failed workload demand, or reported separately?
+   - They should still consume energy so do not exclude them from the denominator, but they should be marked as failed requests in the summary so users can interpret energy-per-successful-request vs energy-per-total-request.
