@@ -24,6 +24,7 @@ def _request_record(
     tpot_s: float | None = None,
     itl_s: list[float] | None = None,
     output_token_timestamps: list[float] | None = None,
+    metadata: dict[str, object] | None = None,
 ) -> RequestRecord:
     return RequestRecord(
         request_id=request_id,
@@ -42,7 +43,7 @@ def _request_record(
         tpot_s=tpot_s,
         itl_s=[] if itl_s is None else itl_s,
         output_token_timestamps=[] if output_token_timestamps is None else output_token_timestamps,
-        metadata={},
+        metadata={} if metadata is None else dict(metadata),
     )
 
 
@@ -264,6 +265,58 @@ def test_fixed_window_aggregator_preserves_empty_windows() -> None:
     assert windows[1].prompt_len_mean is None
     assert windows[1].expected_output_len_mean is None
     assert windows[1].actual_output_len_mean is None
+
+
+def test_fixed_window_aggregator_excludes_non_capacity_failures_from_stability_windows() -> None:
+    aggregator = FixedWindowAggregator(window_s=1.0)
+    requests = [
+        _request_record(
+            request_id="req-ok",
+            actual_send_ts=0.1,
+            first_token_ts=0.2,
+            end_ts=0.4,
+            actual_output_len=2,
+            ttft_s=0.1,
+            e2e_s=0.3,
+            tpot_s=0.2,
+            output_token_timestamps=[0.2, 0.4],
+        ),
+        _request_record(
+            request_id="req-harmony-error",
+            actual_send_ts=0.5,
+            first_token_ts=0.55,
+            end_ts=0.6,
+            success=False,
+            error="stream error: Unexpected token 200002 while expecting start token 200006",
+            ttft_s=0.05,
+            e2e_s=0.1,
+            metadata={"failure_class": "model_server_harmony_stream_error"},
+        ),
+        _request_record(
+            request_id="req-real-error",
+            actual_send_ts=1.1,
+            end_ts=1.4,
+            success=False,
+            error="timeout",
+            e2e_s=0.3,
+        ),
+    ]
+
+    windows = aggregator.summarize(
+        trial_id="trial-window",
+        request_records=requests,
+        server_metrics=[],
+    )
+
+    assert windows[0].arrivals == 1
+    assert windows[0].completions == 1
+    assert windows[0].failures == 0
+    assert windows[0].error_rate == pytest.approx(0.0)
+    assert windows[0].outstanding_end == 0
+    assert windows[1].arrivals == 1
+    assert windows[1].completions == 0
+    assert windows[1].failures == 1
+    assert windows[1].error_rate == pytest.approx(1.0)
 
 
 def test_fixed_window_aggregator_writes_csv(tmp_path: Path) -> None:

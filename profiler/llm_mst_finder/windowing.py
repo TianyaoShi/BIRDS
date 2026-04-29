@@ -20,6 +20,12 @@ _PREEMPTION_COUNTER_NAMES = (
     "vllm_requests_preempted_total",
 )
 
+_NON_CAPACITY_FAILURE_CLASSES = frozenset(
+    {
+        "model_server_harmony_stream_error",
+    }
+)
+
 
 def _percentile(values: Sequence[float], percentile: float) -> float | None:
     if not values:
@@ -148,6 +154,8 @@ class FixedWindowAggregator:
         outstanding_events: dict[float, int] = defaultdict(int)
 
         for record in validated_records:
+            if _is_ignored_for_capacity_stability(record):
+                continue
             assert record.actual_send_ts is not None
             assert record.end_ts is not None
             send_relative_s = record.actual_send_ts - trial_start_ts
@@ -387,6 +395,13 @@ class FixedWindowAggregator:
         if outstanding != 0:
             raise ValueError(f"outstanding request count ended at {outstanding}, expected 0")
         return stats
+
+
+def _is_ignored_for_capacity_stability(record: RequestRecord) -> bool:
+    if record.success:
+        return False
+    failure_class = record.metadata.get("failure_class")
+    return isinstance(failure_class, str) and failure_class in _NON_CAPACITY_FAILURE_CLASSES
 
 
 __all__ = ["FixedWindowAggregator"]

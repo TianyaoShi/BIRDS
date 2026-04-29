@@ -73,11 +73,9 @@ def extract_text_from_chunk(endpoint: str, chunk: dict[str, Any]) -> str | None:
                 return None
             raise KeyError("chat completion chunk missing choices[0]")
         delta = choices[0]["delta"]
-        content = delta.get("content")
-        if content is None:
+        content = _first_text_field(delta, ("content", "reasoning_content", "reasoning"))
+        if content is None or content == "":
             return None
-        if not isinstance(content, str):
-            raise TypeError("chat completion delta content must be a string")
         return content
 
     choices = chunk["choices"]
@@ -91,6 +89,38 @@ def extract_text_from_chunk(endpoint: str, chunk: dict[str, Any]) -> str | None:
     if not isinstance(text, str):
         raise TypeError("completion chunk text must be a string")
     return text or None
+
+
+def _first_text_field(payload: dict[str, Any], field_names: Sequence[str]) -> str | None:
+    for field_name in field_names:
+        value = payload.get(field_name)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise TypeError(f"chat completion delta {field_name} must be a string")
+        return value
+    return None
+
+
+def extract_error_from_chunk(chunk: dict[str, Any]) -> str | None:
+    error = chunk.get("error")
+    if error is None:
+        return None
+    if isinstance(error, dict):
+        message = error.get("message")
+        error_type = error.get("type")
+        code = error.get("code")
+        parts = []
+        if isinstance(message, str) and message:
+            parts.append(message)
+        if isinstance(error_type, str) and error_type:
+            parts.append(f"type={error_type}")
+        if isinstance(code, str) and code:
+            parts.append(f"code={code}")
+        if parts:
+            return "; ".join(parts)
+        return json.dumps(error, sort_keys=True)
+    return str(error)
 
 
 def extract_usage_from_chunk(chunk: dict[str, Any]) -> tuple[int | None, int | None]:

@@ -106,6 +106,42 @@ def test_request_client_parses_streaming_chat_response() -> None:
     asyncio.run(run())
 
 
+def test_request_client_parses_streaming_chat_reasoning_tokens() -> None:
+    async def run() -> None:
+        response = FakeResponse(
+            status=200,
+            chunks=[
+                b'data: {"choices": [{"delta": {"role": "assistant", "content": ""}}]}\n\n',
+                b'data: {"choices": [{"delta": {"reasoning": "think"}}]}\n\n',
+                b'data: {"choices": [{"delta": {"reasoning_content": "ing"}}]}\n\n',
+                (
+                    b'data: {"choices": [], '
+                    b'"usage": {"prompt_tokens": 5, "completion_tokens": 2}}\n\n'
+                ),
+                b"data: [DONE]\n\n",
+            ],
+        )
+        session = FakeSession(response)
+        async with RequestClient(
+            base_url="http://unit-test",
+            endpoint="/v1/chat/completions",
+            model="fake-model",
+            session=session,
+        ) as client:
+            record = await client.send_request(
+                SampleRequest(prompt="hello", prompt_len=5, expected_output_len=4),
+                request_id="req-reasoning",
+                trial_id="trial-001",
+                scheduled_send_ts=0.0,
+            )
+        assert record.success is True
+        assert record.actual_output_len == 2
+        assert len(record.output_token_timestamps) == 2
+        assert record.ttft_s is not None
+
+    asyncio.run(run())
+
+
 def test_request_client_returns_failed_record_for_http_error() -> None:
     async def run() -> None:
         session = FakeSession(FakeResponse(status=503, text="busy"))
@@ -124,6 +160,41 @@ def test_request_client_returns_failed_record_for_http_error() -> None:
         assert record.success is False
         assert record.error is not None
         assert "HTTP 503" in record.error
+
+    asyncio.run(run())
+
+
+def test_request_client_returns_failed_record_for_stream_error() -> None:
+    async def run() -> None:
+        response = FakeResponse(
+            status=200,
+            chunks=[
+                b'data: {"choices": [{"delta": {"reasoning": "one"}}]}\n\n',
+                (
+                    b'data: {"error": {"message": "Harmony parser failed", '
+                    b'"type": "server_error", "code": "bad_stream"}}\n\n'
+                ),
+            ],
+        )
+        session = FakeSession(response)
+        async with RequestClient(
+            base_url="http://unit-test",
+            endpoint="/v1/chat/completions",
+            model="fake-model",
+            session=session,
+        ) as client:
+            record = await client.send_request(
+                SampleRequest(prompt="hello", prompt_len=5, expected_output_len=4),
+                request_id="req-stream-error",
+                trial_id="trial-001",
+                scheduled_send_ts=0.0,
+            )
+        assert record.success is False
+        assert record.error is not None
+        assert "Harmony parser failed" in record.error
+        assert "server_error" in record.error
+        assert record.metadata["failure_class"] == "model_server_harmony_stream_error"
+        assert len(record.output_token_timestamps) == 1
 
     asyncio.run(run())
 

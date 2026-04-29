@@ -13,6 +13,7 @@ from .vllm_compat import (
     build_openai_payload,
     decode_sse_line,
     detect_endpoint_kind,
+    extract_error_from_chunk,
     extract_text_from_chunk,
     extract_usage_from_chunk,
     parse_json_payload,
@@ -165,6 +166,32 @@ class RequestClient:
                         break
 
                     parsed_chunk = parse_json_payload(payload_text)
+                    stream_error = extract_error_from_chunk(parsed_chunk)
+                    if stream_error is not None:
+                        end_ts = self._time_fn()
+                        metadata = dict(sample_request.metadata)
+                        failure_class = _classify_stream_error(stream_error)
+                        if failure_class is not None:
+                            metadata["failure_class"] = failure_class
+                        return RequestRecord(
+                            request_id=request_id,
+                            trial_id=trial_id,
+                            scheduled_send_ts=scheduled_send_ts,
+                            actual_send_ts=actual_send_ts,
+                            first_token_ts=first_token_ts,
+                            end_ts=end_ts,
+                            success=False,
+                            error=f"stream error: {stream_error}",
+                            prompt_len=sample_request.prompt_len,
+                            expected_output_len=sample_request.expected_output_len,
+                            actual_output_len=completion_tokens,
+                            ttft_s=ttft_s,
+                            e2e_s=end_ts - actual_send_ts,
+                            tpot_s=tpot_s,
+                            itl_s=itl_s,
+                            output_token_timestamps=output_token_timestamps,
+                            metadata=metadata,
+                        )
                     _, chunk_completion_tokens = extract_usage_from_chunk(parsed_chunk)
                     if chunk_completion_tokens is not None:
                         completion_tokens = chunk_completion_tokens
@@ -232,3 +259,13 @@ class RequestClient:
             if self._provided_session is None:
                 await self.close()
             raise
+
+
+def _classify_stream_error(error: str) -> str | None:
+    lowered = error.lower()
+    if (
+        "unexpected token 200002 while expecting start token 200006" in lowered
+        or "harmony" in lowered
+    ):
+        return "model_server_harmony_stream_error"
+    return None
