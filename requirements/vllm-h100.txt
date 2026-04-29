@@ -1,0 +1,8 @@
+# H100 vLLM runtime.
+#
+# Installed with:
+#   uv pip install --python .venv-h100/bin/python --torch-backend=cu129 -r requirements/vllm-h100.txt
+#
+# Keep this pinned separately from the L40S debug environment so benchmark
+# results do not silently change when vLLM releases move.
+vllm==0.19.1
