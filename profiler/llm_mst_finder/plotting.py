@@ -4,7 +4,10 @@ import os
 from pathlib import Path
 from typing import Sequence
 
-os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
+if "MPLCONFIGDIR" not in os.environ:
+    default_mpl_config = Path(__file__).resolve().parents[2] / ".mplconfig"
+    default_mpl_config.mkdir(parents=True, exist_ok=True)
+    os.environ["MPLCONFIGDIR"] = str(default_mpl_config)
 
 import matplotlib
 

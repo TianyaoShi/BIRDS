@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *.pyo
 .cache/
+.mplconfig/
 
 # Virtual environments
 .venv/
