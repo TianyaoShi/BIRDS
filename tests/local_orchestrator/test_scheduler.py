@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from io import StringIO
 from pathlib import Path
@@ -269,6 +270,68 @@ def test_scheduler_resume_reconciles_existing_artifacts(tmp_path: Path) -> None:
 
     assert summary["counts"]["succeeded"] == 1
     assert adapter.calls == []
+
+
+def test_scheduler_resume_refreshes_non_succeeded_job_plan(tmp_path: Path) -> None:
+    original_job = _make_job(
+        tmp_path,
+        experiment_id="job-refresh",
+        signature="sig-old",
+        launch=LaunchConfig(max_model_len=32768),
+    )
+    refreshed_job = _make_job(
+        tmp_path,
+        experiment_id="job-refresh",
+        signature="sig-new",
+        launch=LaunchConfig(max_model_len=4096),
+    )
+    refreshed_job = replace(
+        refreshed_job,
+        result_dir=tmp_path / "results" / "job-refresh-new",
+        server_config_slug="server-new",
+        server_signature_key="sig-new",
+    )
+
+    run_config = RunConfig(
+        output_root=tmp_path / "orchestrator-runs",
+        allowed_gpu_ids=(0,),
+        max_active_gpus=1,
+        keep_one_gpu_spare=False,
+        retry=RetryPolicy(startup_attempts=1, search_attempts=1),
+    )
+    lifecycle = StubLifecycle(startup_failures=0)
+    adapter = StubAdapter({"job-refresh": [True]})
+    state_store = RunStateStore(tmp_path / "resume-refresh-run")
+    state = state_store.initialize_new(
+        run_id="run-resume-refresh",
+        manifest_path=tmp_path / "manifest.yaml",
+        jobs=[original_job],
+    )
+    state_job = state_store.find_job(state, "job-refresh")
+    state_job["status"] = "failed"
+    state_job["last_error"] = "old failure"
+    state_job["attempts"] = {"startup": 2, "search": 2}
+    state_store.save(state)
+
+    scheduler = OrchestratorScheduler(
+        run_config=run_config,
+        gpu_manager=GPULeaseManager(allowed_gpu_ids=run_config.allowed_gpu_ids, max_active_gpus=1),
+        port_allocator=PortAllocator(base_port_start=8000, base_port_end=8010, metrics_port_offset=1000),
+        lifecycle=lifecycle,
+        adapter=adapter,
+        state_store=state_store,
+    )
+    summary = scheduler.run(jobs=[refreshed_job], state=state_store.load(), resume=True)
+
+    assert summary["counts"]["succeeded"] == 1
+    assert adapter.calls == ["job-refresh"]
+
+    final_job_state = state_store.find_job(state_store.load(), "job-refresh")
+    assert final_job_state["result_dir"] == str(refreshed_job.result_dir)
+    assert final_job_state["server_signature_key"] == "sig-new"
+    assert final_job_state["max_model_len"] == 4096
+    assert int(final_job_state["attempts"]["startup"]) == 3
+    assert int(final_job_state["attempts"]["search"]) == 3
 
 
 def test_scheduler_parallel_uses_multiple_slots_and_gpu_ids(tmp_path: Path) -> None:

@@ -112,6 +112,14 @@ overrides:
     search:
       max_request_rate: 6
 
+  - match:
+      models:
+        - meta-llama/Llama-2-7b-chat-hf
+        - meta-llama/Llama-2-13b-chat-hf
+    reason: Llama-2 model configs derive a 4096-token maximum context; vLLM rejects the loop default 32768 without an unsafe long-context override.
+    launch:
+      max_model_len: 4096
+
 experiments:
   - id: single-gpu-model-loop
     models:

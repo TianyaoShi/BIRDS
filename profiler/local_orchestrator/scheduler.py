@@ -105,7 +105,7 @@ class OrchestratorScheduler:
         if resume:
             self._with_state_lock(lambda: self._state_store.reconcile_jobs(state))
 
-        pending_jobs = self._collect_pending_jobs(jobs=jobs, state=state, force=force)
+        pending_jobs = self._collect_pending_jobs(jobs=jobs, state=state, resume=resume, force=force)
 
         try:
             if self._should_run_parallel(pending_jobs):
@@ -126,6 +126,7 @@ class OrchestratorScheduler:
         *,
         jobs: list[ExpandedExperimentJob],
         state: dict[str, Any],
+        resume: bool,
         force: bool,
     ) -> list[ExpandedExperimentJob]:
         pending_jobs: list[ExpandedExperimentJob] = []
@@ -143,8 +144,28 @@ class OrchestratorScheduler:
                     continue
                 if job_state.get("status") in {"succeeded", "skipped"}:
                     continue
+                if resume:
+                    self._refresh_job_plan_for_resume(job=job, state=state, prior_status=prior_status)
                 pending_jobs.append(job)
         return pending_jobs
+
+    def _refresh_job_plan_for_resume(
+        self,
+        *,
+        job: ExpandedExperimentJob,
+        state: dict[str, Any],
+        prior_status: str,
+    ) -> None:
+        self._state_store.refresh_job_plan(state, job=job)
+        self._state_store.append_event(
+            state,
+            event_type="job_plan_refreshed_for_resume",
+            experiment_id=job.experiment_id,
+            payload={
+                "prior_status": prior_status,
+                "result_dir": str(job.result_dir),
+            },
+        )
 
     def _prepare_job_for_force_rerun(
         self,
