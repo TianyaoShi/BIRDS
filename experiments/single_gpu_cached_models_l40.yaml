@@ -1,8 +1,8 @@
 run:
-  run_id: todo-single-gpu-model-loop
+  run_id: single-gpu-model-loop-run-sharegpt-000
   output_root: ../results/orchestrator
-  allowed_gpu_ids: [0]  
-  max_active_gpus: 1  # single-GPU jobs only; raise this if you want more local parallelism
+  allowed_gpu_ids: [0, 1]  
+  max_active_gpus: 2  # single-GPU jobs only; raise this if you want more local parallelism
   keep_one_gpu_spare: false
   default_endpoint: /v1/chat/completions
   base_port_start: 8300
@@ -33,9 +33,9 @@ launch:
 
 search:
   search_mode: hybrid
-  trial_min_duration_s: 90
-  trial_max_duration_s: 180
-  final_confirmation_duration_s: 180
+  trial_min_duration_s: 120
+  trial_max_duration_s: 240
+  final_confirmation_duration_s: 240
   rate_precision: 0.10
   initial_request_rate: 1
   max_request_rate: 12
@@ -97,7 +97,7 @@ overrides:
         - openai/gpt-oss-20b
     reason: Larger models keep a lower request-rate ceiling to reduce wasted bracket trials.
     search:
-      initial_request_rate: 1
+      initial_request_rate: 0.5
       max_request_rate: 8
       max_binary_steps: 7
       max_bracket_trials: 12
