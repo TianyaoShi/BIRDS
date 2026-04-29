@@ -9,6 +9,33 @@ from .models import ExpandedExperimentJob, SearchExecutionResult
 from .utils import now_utc_iso
 
 
+def build_job_state_payload(job: ExpandedExperimentJob) -> dict[str, Any]:
+    return {
+        "experiment_id": job.experiment_id,
+        "source_index": job.source_index,
+        "model": job.model,
+        "workload": str(job.workload),
+        "endpoint": job.endpoint,
+        "hardware": job.hardware.name,
+        "gpu_count": job.launch.gpu_count,
+        "tensor_parallel_size": job.launch.tensor_parallel_size,
+        "max_model_len": job.launch.max_model_len,
+        "probe": None if job.probe is None else job.probe.to_payload(),
+        "result_dir": str(job.result_dir),
+        "server_signature_key": job.server_signature_key,
+        "status": "planned",
+        "attempts": {"startup": 0, "search": 0},
+        "last_error": None,
+        "artifacts": {
+            "search_trace": None,
+            "final_report_json": None,
+            "final_report_md": None,
+            "stdout_log": None,
+            "stderr_log": None,
+        },
+    }
+
+
 class RunStateStore:
     def __init__(self, run_root: Path) -> None:
         self.run_root = run_root.resolve()
@@ -395,27 +422,4 @@ class RunStateStore:
 
     @staticmethod
     def _job_payload(job: ExpandedExperimentJob) -> dict[str, Any]:
-        return {
-            "experiment_id": job.experiment_id,
-            "source_index": job.source_index,
-            "model": job.model,
-            "workload": str(job.workload),
-            "endpoint": job.endpoint,
-            "hardware": job.hardware.name,
-            "gpu_count": job.launch.gpu_count,
-            "tensor_parallel_size": job.launch.tensor_parallel_size,
-            "max_model_len": job.launch.max_model_len,
-            "probe": None if job.probe is None else job.probe.to_payload(),
-            "result_dir": str(job.result_dir),
-            "server_signature_key": job.server_signature_key,
-            "status": "planned",
-            "attempts": {"startup": 0, "search": 0},
-            "last_error": None,
-            "artifacts": {
-                "search_trace": None,
-                "final_report_json": None,
-                "final_report_md": None,
-                "stdout_log": None,
-                "stderr_log": None,
-            },
-        }
+        return build_job_state_payload(job)

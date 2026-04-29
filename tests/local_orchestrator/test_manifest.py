@@ -64,6 +64,39 @@ def test_load_manifest_accepts_valid_structured_config(tmp_path: Path) -> None:
     assert manifest.experiments[0].search.closed_loop_min_trials == 3
 
 
+def test_load_manifest_accepts_slurm_config(tmp_path: Path) -> None:
+    workload = _write_workload(tmp_path, "workload.yaml")
+    manifest_path = _write_manifest(
+        tmp_path,
+        {
+            "slurm": {
+                "partition": "ai",
+                "account": "research",
+                "qos": "preemptible",
+                "time": "04:00:00",
+                "cpus_per_task": 32,
+                "mem_per_gpu": "64G",
+                "modules": ["cuda/12.4"],
+                "setup_commands": ["source /venv/bin/activate"],
+                "array_concurrency_limit": 4,
+                "base_port": 8400,
+            },
+            "experiments": [
+                {
+                    "model": "google/gemma-4-E4B-it",
+                    "workload": str(workload),
+                }
+            ],
+        },
+    )
+
+    manifest = load_manifest(manifest_path)
+    assert manifest.slurm.partition == "ai"
+    assert manifest.slurm.account == "research"
+    assert manifest.slurm.array_concurrency_limit == 4
+    assert manifest.slurm.base_port == 8400
+
+
 def test_load_manifest_rejects_missing_workload_path(tmp_path: Path) -> None:
     missing = tmp_path / "missing.yaml"
     manifest_path = _write_manifest(

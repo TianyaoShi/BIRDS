@@ -17,10 +17,11 @@ from .models import (
     RetryPolicy,
     RunConfig,
     SearchConfig,
+    SlurmConfig,
 )
 
 
-_TOP_LEVEL_KEYS = {"run", "hardware", "probe", "launch", "search", "overrides", "experiments"}
+_TOP_LEVEL_KEYS = {"run", "slurm", "hardware", "probe", "launch", "search", "overrides", "experiments"}
 _RUN_KEYS = {
     "run_id",
     "output_root",
@@ -34,6 +35,22 @@ _RUN_KEYS = {
     "base_port_end",
     "metrics_port_offset",
     "python_executable",
+}
+_SLURM_KEYS = {
+    "partition",
+    "account",
+    "qos",
+    "time",
+    "cpus_per_task",
+    "mem",
+    "mem_per_gpu",
+    "constraint",
+    "modules",
+    "setup_commands",
+    "python_executable",
+    "sbatch_extra_args",
+    "array_concurrency_limit",
+    "base_port",
 }
 _EXPERIMENT_KEYS = {
     "id",
@@ -136,6 +153,7 @@ def load_manifest(manifest_path: str | Path) -> OrchestratorManifest:
     _check_allowed_keys(payload, "manifest", _TOP_LEVEL_KEYS)
 
     run = _parse_run_config(payload.get("run"), manifest_path=path)
+    slurm = _parse_slurm_config(payload.get("slurm"))
     default_hardware = _merge_hardware_config(HardwareConfig(), payload.get("hardware"), field_name="hardware")
     default_probe = _merge_probe_config(ProbeConfig(), payload.get("probe"), field_name="probe")
     default_launch = _merge_launch_config(LaunchConfig(), payload.get("launch"), field_name="launch")
@@ -224,6 +242,7 @@ def load_manifest(manifest_path: str | Path) -> OrchestratorManifest:
     return OrchestratorManifest(
         manifest_path=path,
         run=run,
+        slurm=slurm,
         hardware=default_hardware,
         probe=default_probe,
         overrides=default_overrides,
@@ -294,6 +313,48 @@ def _parse_run_config(raw: Any, *, manifest_path: Path) -> RunConfig:
             metrics_port_offset=metrics_port_offset,
             python_executable=python_executable,
         )
+    except ValueError as exc:
+        raise ManifestValidationError(str(exc)) from exc
+
+
+def _parse_slurm_config(raw: Any) -> SlurmConfig:
+    if raw is None:
+        return SlurmConfig()
+    payload = _expect_mapping(raw, "slurm")
+    _check_allowed_keys(payload, "slurm", _SLURM_KEYS)
+
+    updated: dict[str, Any] = {
+        "partition": None,
+        "account": None,
+        "qos": None,
+        "time": None,
+        "cpus_per_task": None,
+        "mem": None,
+        "mem_per_gpu": None,
+        "constraint": None,
+        "modules": (),
+        "setup_commands": (),
+        "python_executable": None,
+        "sbatch_extra_args": (),
+        "array_concurrency_limit": None,
+        "base_port": 8000,
+    }
+    for key, value in payload.items():
+        if key in {"partition", "account", "qos", "time", "mem", "mem_per_gpu", "constraint", "python_executable"}:
+            updated[key] = _expect_non_empty_string(value, f"slurm.{key}")
+            continue
+        if key in {"modules", "setup_commands", "sbatch_extra_args"}:
+            updated[key] = _parse_string_list(value, field_name=f"slurm.{key}")
+            continue
+        if key in {"cpus_per_task", "base_port"}:
+            updated[key] = _expect_int(value, f"slurm.{key}", minimum=1)
+            continue
+        if key == "array_concurrency_limit":
+            updated[key] = _expect_optional_positive_int(value, f"slurm.{key}")
+            continue
+        raise ManifestValidationError(f"unsupported slurm field {key!r}")
+    try:
+        return SlurmConfig(**updated)
     except ValueError as exc:
         raise ManifestValidationError(str(exc)) from exc
 

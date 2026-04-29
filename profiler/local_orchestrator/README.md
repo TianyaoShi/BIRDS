@@ -52,9 +52,10 @@ PYTHONPATH=/path/to/arr26/profiler \
 
 ## Manifest overview
 
-The manifest has these top-level sections: `run`, `hardware`, `probe`, `launch`, `search`, `overrides`, `experiments`.
+The manifest has these top-level sections: `run`, optional `slurm`, `hardware`, `probe`, `launch`, `search`, `overrides`, `experiments`.
 
 - `run`: output location, GPU policy, ports, retry counts, and default endpoint.
+- `slurm`: optional cluster submission settings for the separate `slurm_orchestrator` package; the local CLI ignores it.
 - `hardware`: target accelerator profile used by the resource probe (`name`, `gpu_memory_gb`, `gpu_memory_utilization`).
 - `probe`: conservative memory-estimation settings, including optional `auto_gpu_count`.
 - `launch`: vLLM launch settings (structured flags or a raw template command).

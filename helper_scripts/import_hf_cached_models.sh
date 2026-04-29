@@ -10,7 +10,8 @@ set -euo pipefail
 #   HF_IMPORT_FORCE=1         # pass --force-download to hf download
 #   HF_IMPORT_REVISION=main   # add --revision <value>
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="/scratch/gautschi/shi676/BioLLM"
 VENV_ACTIVATE="$ROOT_DIR/.venv/bin/activate"
 LIST_FILE="${1:-}"
 
