@@ -308,6 +308,7 @@ def render_task_shell(group_plan_path: str | Path, task_index: int) -> str:
 def render_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmConfig) -> str:
     group_key = str(group_payload["group_key"])
     gpu_count = int(group_payload["gpu_count"])
+    cpus_per_task = _cpus_per_task(gpu_count)
     python_executable = str(group_payload["python_executable"])
     repo_root = str(group_payload["repo_root"])
     profiler_root = str(group_payload["profiler_root"])
@@ -320,6 +321,7 @@ def render_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmConfig) -
         "#SBATCH -N 1",
         "#SBATCH -n 1",
         f"#SBATCH --gres=gpu:{gpu_count}",
+        f"#SBATCH --cpus-per-task={cpus_per_task}",
         f"#SBATCH --array={group_payload['array_spec']}",
         f"#SBATCH --output={slurm_stdout_log}",
         f"#SBATCH --error={slurm_stderr_log}",
@@ -332,14 +334,8 @@ def render_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmConfig) -
         lines.append(f"#SBATCH --qos={slurm.qos}")
     if slurm.time is not None:
         lines.append(f"#SBATCH -t {slurm.time}")
-    if slurm.cpus_per_task is not None:
-        lines.append(f"#SBATCH --cpus-per-task={slurm.cpus_per_task}")
     if slurm.mem is not None:
         lines.append(f"#SBATCH --mem={slurm.mem}")
-    if slurm.mem_per_gpu is not None:
-        lines.append(f"#SBATCH --mem-per-gpu={slurm.mem_per_gpu}")
-    if slurm.constraint is not None:
-        lines.append(f"#SBATCH --constraint={slurm.constraint}")
     for extra_arg in slurm.sbatch_extra_args:
         lines.append(f"#SBATCH {extra_arg}")
 
@@ -574,6 +570,12 @@ def _array_spec(*, task_count: int, concurrency_limit: int | None) -> str:
     if concurrency_limit is not None:
         suffix = f"%{concurrency_limit}"
     return f"0-{task_count - 1}{suffix}"
+
+
+def _cpus_per_task(gpu_count: int) -> int:
+    if gpu_count <= 0:
+        raise ValueError("gpu_count must be positive")
+    return 14 * gpu_count
 
 
 def _job_name(run_id: str, group_key: str) -> str:

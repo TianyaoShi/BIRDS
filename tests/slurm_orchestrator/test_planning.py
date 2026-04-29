@@ -73,7 +73,6 @@ def test_rendered_sbatch_script_includes_array_limit_wait_search_report_and_clea
                 "account": "research",
                 "qos": "preemptible",
                 "time": "04:00:00",
-                "cpus_per_task": 32,
                 "array_concurrency_limit": 3,
                 "modules": ["cuda/12.4"],
                 "setup_commands": ["source /venv/bin/activate"],
@@ -89,6 +88,7 @@ def test_rendered_sbatch_script_includes_array_limit_wait_search_report_and_clea
     script = Path(plan["groups"][0]["script_path"]).read_text(encoding="utf-8")
 
     assert "#SBATCH --gres=gpu:1" in script
+    assert "#SBATCH --cpus-per-task=14" in script
     assert "#SBATCH --array=0-1%3" in script
     assert "#SBATCH --output=" in script
     assert "set -euo pipefail" in script
@@ -100,6 +100,30 @@ def test_rendered_sbatch_script_includes_array_limit_wait_search_report_and_clea
     assert '"${SEARCH_CMD[@]}" >>"$MST_STDOUT" 2>>"$MST_STDERR"' in script
     assert '"${REPORT_CMD[@]}" >>"$MST_STDOUT" 2>>"$MST_STDERR"' in script
     assert "trap cleanup EXIT" in script
+
+
+def test_rendered_sbatch_script_scales_cpus_with_gpu_count(tmp_path: Path) -> None:
+    workload = _write_workload(tmp_path, "sharegpt.yaml")
+    manifest_path = _write_manifest(
+        tmp_path,
+        {
+            "run": {"output_root": str(tmp_path / "runs")},
+            "experiments": [
+                {
+                    "id": "exp-b",
+                    "model": "model-b",
+                    "workload": str(workload),
+                    "launch": {"gpu_count": 4, "tensor_parallel_size": 4},
+                },
+            ],
+        },
+    )
+
+    plan = materialize_run_plan(load_manifest(manifest_path), "run-d")
+    script = Path(plan["groups"][0]["script_path"]).read_text(encoding="utf-8")
+
+    assert "#SBATCH --gres=gpu:4" in script
+    assert "#SBATCH --cpus-per-task=56" in script
 
 
 def test_collect_run_aggregates_succeeded_and_failed_jobs(tmp_path: Path) -> None:

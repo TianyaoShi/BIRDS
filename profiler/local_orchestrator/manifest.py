@@ -41,10 +41,7 @@ _SLURM_KEYS = {
     "account",
     "qos",
     "time",
-    "cpus_per_task",
     "mem",
-    "mem_per_gpu",
-    "constraint",
     "modules",
     "setup_commands",
     "python_executable",
@@ -328,10 +325,7 @@ def _parse_slurm_config(raw: Any) -> SlurmConfig:
         "account": None,
         "qos": None,
         "time": None,
-        "cpus_per_task": None,
         "mem": None,
-        "mem_per_gpu": None,
-        "constraint": None,
         "modules": (),
         "setup_commands": (),
         "python_executable": None,
@@ -340,13 +334,13 @@ def _parse_slurm_config(raw: Any) -> SlurmConfig:
         "base_port": 8000,
     }
     for key, value in payload.items():
-        if key in {"partition", "account", "qos", "time", "mem", "mem_per_gpu", "constraint", "python_executable"}:
+        if key in {"partition", "account", "qos", "time", "mem", "python_executable"}:
             updated[key] = _expect_non_empty_string(value, f"slurm.{key}")
             continue
         if key in {"modules", "setup_commands", "sbatch_extra_args"}:
             updated[key] = _parse_string_list(value, field_name=f"slurm.{key}")
             continue
-        if key in {"cpus_per_task", "base_port"}:
+        if key == "base_port":
             updated[key] = _expect_int(value, f"slurm.{key}", minimum=1)
             continue
         if key == "array_concurrency_limit":

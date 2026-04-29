@@ -46,11 +46,10 @@ slurm:
   account: yiding
   qos: preemptible
   time: 04:00:00
-  cpus_per_task: 32
-  mem_per_gpu: 64G
-  constraint: h100
+  mem: 256G
   modules:
-    - cuda/12.4
+    - modetree/gpu
+    - cuda/12.6.0
   setup_commands:
     - source /path/to/venv/bin/activate
   python_executable: /path/to/venv/bin/python
@@ -62,12 +61,15 @@ slurm:
 
 `run.python_executable` is still honored. If both are set, `slurm.python_executable` wins for the Slurm helper commands and MST invocations.
 
+`--cpus-per-task` is derived automatically as `14 * launch.gpu_count`, so the manifest does not expose a CPU override.
+
 ## Submission Model
 
 - Jobs are grouped by `launch.gpu_count`.
 - Each group is submitted as one Slurm array with a generated `#SBATCH --array=...` clause.
 - Every array task loads one expanded job payload, starts one vLLM server on localhost, waits for `/v1/models`, runs MST search and report, then tears the server down.
 - Multi-GPU jobs request `launch.gpu_count` GPUs on one node with `#SBATCH --gres=gpu:<count>`.
+- CPU allocation follows the cluster convention `14 CPUs per GPU`, so a 4-GPU job renders `#SBATCH --cpus-per-task=56`.
 
 ## State And Logs
 

@@ -81,10 +81,7 @@ class SlurmConfig:
     account: str | None = None
     qos: str | None = None
     time: str | None = None
-    cpus_per_task: int | None = None
     mem: str | None = None
-    mem_per_gpu: str | None = None
-    constraint: str | None = None
     modules: tuple[str, ...] = ()
     setup_commands: tuple[str, ...] = ()
     python_executable: str | None = None
@@ -93,19 +90,15 @@ class SlurmConfig:
     base_port: int = 8000
 
     def __post_init__(self) -> None:
-        for field_name in ("partition", "account", "qos", "time", "mem", "mem_per_gpu", "constraint"):
+        for field_name in ("partition", "account", "qos", "time", "mem"):
             value = getattr(self, field_name)
             if value is not None and not value:
                 raise ValueError(f"{field_name} must be non-empty when provided")
-        if self.cpus_per_task is not None:
-            _require_positive_int("cpus_per_task", self.cpus_per_task)
         if self.python_executable is not None and not self.python_executable:
             raise ValueError("slurm python_executable must be non-empty when provided")
         if self.array_concurrency_limit is not None:
             _require_positive_int("array_concurrency_limit", self.array_concurrency_limit)
         _require_positive_int("base_port", self.base_port)
-        if self.mem is not None and self.mem_per_gpu is not None:
-            raise ValueError("slurm mem and mem_per_gpu are mutually exclusive")
         for field_name in ("modules", "setup_commands", "sbatch_extra_args"):
             values = getattr(self, field_name)
             for value in values:
