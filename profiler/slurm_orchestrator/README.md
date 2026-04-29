@@ -46,15 +46,12 @@ slurm:
   account: yiding
   qos: preemptible
   time: 04:00:00
-  mem: 256G
   modules:
     - modetree/gpu
     - cuda/12.6.0
   setup_commands:
     - source /path/to/venv/bin/activate
   python_executable: /path/to/venv/bin/python
-  sbatch_extra_args:
-    - --exclusive
   array_concurrency_limit: 4
   base_port: 8000
 ```
