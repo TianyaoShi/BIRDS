@@ -104,13 +104,9 @@ overrides:
 
   - match:
       model: openai/gpt-oss-20b
-    reason: gpt-oss-20b uses cached mxfp4 quantization; let vLLM pick dtype automatically and give it a slightly higher memory fraction.
+    reason: gpt-oss-20b uses the cached mxfp4 checkpoint; let vLLM pick dtype automatically and treat its memory footprint like the 7B/8B class.
     launch:
       dtype: auto
-      gpu_memory_utilization: 0.95
-      max_model_len: 8192 
-    search:
-      max_request_rate: 6
 
   - match:
       models:
