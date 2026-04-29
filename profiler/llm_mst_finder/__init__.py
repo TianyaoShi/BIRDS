@@ -23,7 +23,6 @@ from .records import (
     TrialSummary,
     WindowSummary,
 )
-from .plotting import plot_result_comparison, plot_search_results, plot_trial_windows
 from .reporting import generate_report
 from .request_client import RequestClient
 from .search import (
@@ -44,6 +43,22 @@ from .workload import (
     load_workload_samples_for_sampling_only,
     prepare_workload_for_trial,
 )
+
+try:
+    from .plotting import plot_result_comparison, plot_search_results, plot_trial_windows
+except ModuleNotFoundError as exc:
+    if exc.name not in {"matplotlib", "matplotlib.pyplot"}:
+        raise
+
+    def _missing_plotting_dependency(*args, **kwargs):
+        del args, kwargs
+        raise RuntimeError(
+            "plotting requires matplotlib, which is not installed in this environment"
+        ) from exc
+
+    plot_result_comparison = _missing_plotting_dependency
+    plot_search_results = _missing_plotting_dependency
+    plot_trial_windows = _missing_plotting_dependency
 
 __all__ = [
     "BenchmarkMetrics",

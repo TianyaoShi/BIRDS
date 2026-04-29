@@ -4,9 +4,24 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from .plotting import plot_result_comparison, plot_search_results, plot_trial_windows
 from .records import BenchmarkMetrics, BottleneckResult, StabilityResult, TrialAnalysisResult, TrialSummary
 from .stability import StabilityConfig, load_window_summaries_csv
+
+try:
+    from .plotting import plot_result_comparison, plot_search_results, plot_trial_windows
+except ModuleNotFoundError as exc:
+    if exc.name not in {"matplotlib", "matplotlib.pyplot"}:
+        raise
+
+    def _missing_plotting_dependency(*args, **kwargs):
+        del args, kwargs
+        raise RuntimeError(
+            "plotting requires matplotlib, which is not installed in this environment"
+        ) from exc
+
+    plot_result_comparison = _missing_plotting_dependency
+    plot_search_results = _missing_plotting_dependency
+    plot_trial_windows = _missing_plotting_dependency
 
 
 def generate_report(
