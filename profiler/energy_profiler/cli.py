@@ -6,7 +6,13 @@ from pathlib import Path
 from typing import Sequence
 
 from .executor import EnergyExecutor, EnergyExecutorConfig
-from .models import EnergyPlanMode, EnergyPlanRounding, EnergyPlanSelection, EnergyPlanSelectionSweep
+from .models import (
+    EnergyPlanExecution,
+    EnergyPlanMode,
+    EnergyPlanRounding,
+    EnergyPlanSelection,
+    EnergyPlanSelectionSweep,
+)
 from .planning import (
     generate_plan_from_orchestrator,
     generate_plan_from_orchestrator_runs,
@@ -126,7 +132,7 @@ def _dry_run_command(args: argparse.Namespace) -> int:
 
 def _run_command(args: argparse.Namespace) -> int:
     plan = load_energy_plan(args.plan)
-    executor = EnergyExecutor(config=_executor_config_from_args(args))
+    executor = EnergyExecutor(config=_executor_config_from_args(args, plan.execution))
     summary = executor.run_plan(args.plan)
     print(
         json.dumps(
@@ -168,7 +174,8 @@ def _run_live_trial_command(args: argparse.Namespace) -> int:
 
 
 def _resume_command(args: argparse.Namespace) -> int:
-    executor = EnergyExecutor(config=_executor_config_from_args(args))
+    plan = load_energy_plan(args.run_root / "plan.yaml")
+    executor = EnergyExecutor(config=_executor_config_from_args(args, plan.execution))
     summary = executor.resume_run(args.run_root, force=bool(args.force))
     print(json.dumps({"run_root": str(args.run_root), "summary": summary}, sort_keys=True))
     return 0
@@ -217,19 +224,30 @@ def _add_plan_generation_args(parser: argparse.ArgumentParser) -> None:
 def _add_executor_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--allowed-gpu-ids", nargs="*", type=int, default=None)
     parser.add_argument("--max-active-gpus", type=int, default=None)
-    parser.add_argument("--base-port-start", type=int, default=8000)
-    parser.add_argument("--base-port-end", type=int, default=8099)
-    parser.add_argument("--metrics-port-offset", type=int, default=1000)
+    parser.add_argument("--base-port-start", type=int, default=None)
+    parser.add_argument("--base-port-end", type=int, default=None)
+    parser.add_argument("--metrics-port-offset", type=int, default=None)
 
 
-def _executor_config_from_args(args: argparse.Namespace) -> EnergyExecutorConfig:
-    allowed_gpu_ids = tuple(args.allowed_gpu_ids) if args.allowed_gpu_ids else (0, 1, 2, 3)
+def _executor_config_from_args(
+    args: argparse.Namespace,
+    plan_execution: EnergyPlanExecution,
+) -> EnergyExecutorConfig:
+    allowed_gpu_ids = tuple(args.allowed_gpu_ids) if args.allowed_gpu_ids is not None else plan_execution.allowed_gpu_ids
+    max_active_gpus = args.max_active_gpus if args.max_active_gpus is not None else plan_execution.max_active_gpus
+    base_port_start = args.base_port_start if args.base_port_start is not None else plan_execution.base_port_start
+    base_port_end = args.base_port_end if args.base_port_end is not None else plan_execution.base_port_end
+    metrics_port_offset = (
+        args.metrics_port_offset
+        if args.metrics_port_offset is not None
+        else plan_execution.metrics_port_offset
+    )
     return EnergyExecutorConfig(
         allowed_gpu_ids=allowed_gpu_ids,
-        max_active_gpus=args.max_active_gpus,
-        base_port_start=args.base_port_start,
-        base_port_end=args.base_port_end,
-        metrics_port_offset=args.metrics_port_offset,
+        max_active_gpus=max_active_gpus,
+        base_port_start=base_port_start,
+        base_port_end=base_port_end,
+        metrics_port_offset=metrics_port_offset,
     )
 
 

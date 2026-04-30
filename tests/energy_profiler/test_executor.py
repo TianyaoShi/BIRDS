@@ -19,6 +19,7 @@ from energy_profiler.models import (
     EnergyLaunchConfig,
     EnergyPlan,
     EnergyPlanDefaults,
+    EnergyPlanExecution,
     EnergyPlanHeader,
     EnergyPlanJob,
 )
@@ -129,6 +130,7 @@ def _make_plan(tmp_path: Path) -> EnergyPlan:
             mode="sweep",
         ),
         defaults=EnergyPlanDefaults(duration_s=15.0, warmup_s=5.0, cooldown_s=0.0),
+        execution=EnergyPlanExecution(allowed_gpu_ids=(2,), max_active_gpus=1),
         jobs=(
             EnergyPlanJob(
                 id="job-a-r1",
@@ -285,3 +287,50 @@ def test_executor_run_plan_reuses_server_and_writes_energy_artifacts(tmp_path: P
     assert energy_payload["energy_per_total_token_j"] is not None
     assert (run_root / "logs" / "job-a-r1.profile.stdout.log").is_file()
     assert (run_root / "logs" / "job-a-r1.vllm.stdout.log").is_file()
+
+
+def test_executor_run_plan_uses_plan_execution_when_config_is_not_overridden(tmp_path: Path) -> None:
+    clock = _FakeClock()
+    lifecycle = _FakeLifecycle()
+    recorded_commands: list[tuple[str, ...]] = []
+    plan = _make_plan(tmp_path)
+    plan_path = write_energy_plan(plan, tmp_path / "experiments" / "energy" / "energy-plan-a.yaml")
+
+    def run_command(command, *, env, cwd, stdout, stderr):
+        del env, cwd
+        recorded_commands.append(command)
+        output_dir = Path(command[command.index("--output-dir") + 1])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        summary_payload = {
+            "summary": {
+                "successful_requests": 1,
+                "started_requests": 1,
+                "benchmark_metrics": {
+                    "total_input_tokens": 10,
+                    "total_output_tokens": 5,
+                },
+            }
+        }
+        (output_dir / "summary.json").write_text(json.dumps(summary_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        (output_dir / "request_records.jsonl").write_text("", encoding="utf-8")
+        (output_dir / "server_metrics.jsonl").write_text("", encoding="utf-8")
+        (output_dir / "windows.csv").write_text("trial_id,window_idx\n", encoding="utf-8")
+        stdout.write("{}\n")
+        stderr.write("")
+        clock.advance(float(command[command.index("--duration-s") + 1]))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    executor = EnergyExecutor(
+        lifecycle_factory=lambda: lifecycle,
+        run_command=run_command,
+        monitor_factory=_FakeMonitor,
+        sleep_fn=clock.sleep,
+        time_fn=clock,
+    )
+    summary = executor.run_plan(plan_path)
+
+    assert summary["counts"]["succeeded"] == 2
+    assert lifecycle.active_server is None
+    run_root = plan.plan.output_root / plan.plan.plan_id
+    energy_payload = json.loads((run_root / "jobs" / "job-a-r1" / "energy_summary.json").read_text(encoding="utf-8"))
+    assert energy_payload["gpu_ids"] == [2]

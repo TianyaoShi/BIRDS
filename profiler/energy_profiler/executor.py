@@ -16,7 +16,7 @@ from local_orchestrator.lifecycle import VLLMLifecycleManager
 from local_orchestrator.resources import GPULeaseManager, PortAllocator
 from local_orchestrator.utils import runtime_server_signature
 
-from .models import EnergyPlan, EnergyPlanJob
+from .models import EnergyPlan, EnergyPlanExecution, EnergyPlanJob
 from .planning import load_energy_plan
 from .reporting import EnergyRunStateStore
 
@@ -57,6 +57,16 @@ class EnergyExecutorConfig:
     @property
     def effective_max_active_gpus(self) -> int:
         return self.max_active_gpus or len(self.allowed_gpu_ids)
+
+    @classmethod
+    def from_plan_execution(cls, execution: EnergyPlanExecution) -> "EnergyExecutorConfig":
+        return cls(
+            allowed_gpu_ids=execution.allowed_gpu_ids,
+            max_active_gpus=execution.max_active_gpus,
+            base_port_start=execution.base_port_start,
+            base_port_end=execution.base_port_end,
+            metrics_port_offset=execution.metrics_port_offset,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +125,7 @@ class EnergyExecutor:
         sleep_fn: Callable[[float], None] = time.sleep,
         time_fn: Callable[[], float] = time.perf_counter,
     ) -> None:
+        self._config_override = config is not None
         self._config = config or EnergyExecutorConfig()
         self._lifecycle = (lifecycle_factory or VLLMLifecycleManager)()
         self._run_command = run_command or _default_run_command
@@ -122,15 +133,9 @@ class EnergyExecutor:
         self._sleep_fn = sleep_fn
         self._time_fn = time_fn
 
-        self._gpu_manager = GPULeaseManager(
-            allowed_gpu_ids=self._config.allowed_gpu_ids,
-            max_active_gpus=self._config.effective_max_active_gpus,
-        )
-        self._port_allocator = PortAllocator(
-            base_port_start=self._config.base_port_start,
-            base_port_end=self._config.base_port_end,
-            metrics_port_offset=self._config.metrics_port_offset,
-        )
+        self._gpu_manager: GPULeaseManager
+        self._port_allocator: PortAllocator
+        self._apply_config(self._config)
         self._active_lease = None
         self._active_ports = None
         self._active_server = None
@@ -140,6 +145,7 @@ class EnergyExecutor:
     def run_plan(self, plan_path: str | Path) -> dict[str, Any]:
         plan_file = Path(plan_path)
         plan = load_energy_plan(plan_file)
+        self._configure_for_plan(plan)
         run_root = plan.plan.output_root / plan.plan.plan_id
         state_store = EnergyRunStateStore(run_root)
         state = state_store.initialize_new(plan_path=plan_file, plan=plan)
@@ -151,11 +157,29 @@ class EnergyExecutor:
         state = state_store.load()
         state_store.reconcile_jobs(state)
         plan = load_energy_plan(state_store.plan_copy_path)
+        self._configure_for_plan(plan)
         return self._execute(plan=plan, state_store=state_store, state=state, force=force)
 
     def status(self, run_root: str | Path) -> dict[str, Any]:
         state_store = EnergyRunStateStore(Path(run_root))
         return state_store.summarize(state_store.load())
+
+    def _configure_for_plan(self, plan: EnergyPlan) -> None:
+        if self._config_override:
+            return
+        self._apply_config(EnergyExecutorConfig.from_plan_execution(plan.execution))
+
+    def _apply_config(self, config: EnergyExecutorConfig) -> None:
+        self._config = config
+        self._gpu_manager = GPULeaseManager(
+            allowed_gpu_ids=config.allowed_gpu_ids,
+            max_active_gpus=config.effective_max_active_gpus,
+        )
+        self._port_allocator = PortAllocator(
+            base_port_start=config.base_port_start,
+            base_port_end=config.base_port_end,
+            metrics_port_offset=config.metrics_port_offset,
+        )
 
     def run_live_trial(
         self,

@@ -23,6 +23,11 @@ def _write_manifest(tmp_path: Path, workload: Path, *, model: str = "Qwen/Qwen3-
             {
                 "run": {
                     "python_executable": "python",
+                    "allowed_gpu_ids": [2, 3],
+                    "max_active_gpus": 1,
+                    "base_port_start": 8100,
+                    "base_port_end": 8199,
+                    "metrics_port_offset": 2000,
                 },
                 "launch": {
                     "executable": "vllm",
@@ -132,6 +137,11 @@ def test_generate_plan_from_orchestrator_rounds_mst_and_preserves_launch(tmp_pat
     )
 
     assert plan.plan.plan_id == "sharegpt_l40_energy_000"
+    assert plan.execution.allowed_gpu_ids == (2, 3)
+    assert plan.execution.max_active_gpus == 1
+    assert plan.execution.base_port_start == 8100
+    assert plan.execution.base_port_end == 8199
+    assert plan.execution.metrics_port_offset == 2000
     assert len(plan.jobs) == 1
     job = plan.jobs[0]
     assert job.request_rate == pytest.approx(4.25)

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Literal, Mapping
 
 from local_orchestrator.models import LaunchConfig
+from local_orchestrator.models import RunConfig
 
 
 EnergyPlanMode = Literal["mst-rounded", "sweep", "explicit"]
@@ -233,6 +234,83 @@ class EnergyPlanDefaults:
             safety_max_outstanding=_expect_optional_int(
                 payload.get("safety_max_outstanding"),
                 "defaults.safety_max_outstanding",
+                minimum=1,
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class EnergyPlanExecution:
+    allowed_gpu_ids: tuple[int, ...] = (0, 1, 2, 3)
+    max_active_gpus: int = 3
+    base_port_start: int = 8000
+    base_port_end: int = 8099
+    metrics_port_offset: int = 1000
+
+    def __post_init__(self) -> None:
+        if not self.allowed_gpu_ids:
+            raise ValueError("execution.allowed_gpu_ids must be non-empty")
+        seen: set[int] = set()
+        for gpu_id in self.allowed_gpu_ids:
+            if gpu_id < 0:
+                raise ValueError("execution.allowed_gpu_ids[] must be non-negative")
+            if gpu_id in seen:
+                raise ValueError(f"duplicate execution.allowed_gpu_ids entry: {gpu_id!r}")
+            seen.add(gpu_id)
+        _require_positive_int("execution.max_active_gpus", self.max_active_gpus)
+        if self.max_active_gpus > len(self.allowed_gpu_ids):
+            raise ValueError("execution.max_active_gpus cannot exceed number of allowed_gpu_ids")
+        _require_positive_int("execution.base_port_start", self.base_port_start)
+        _require_positive_int("execution.base_port_end", self.base_port_end)
+        if self.base_port_end < self.base_port_start:
+            raise ValueError("execution.base_port_end must be >= execution.base_port_start")
+        _require_positive_int("execution.metrics_port_offset", self.metrics_port_offset)
+
+    @classmethod
+    def from_run_config(cls, run: RunConfig) -> "EnergyPlanExecution":
+        return cls(
+            allowed_gpu_ids=tuple(run.allowed_gpu_ids),
+            max_active_gpus=run.max_active_gpus,
+            base_port_start=run.base_port_start,
+            base_port_end=run.base_port_end,
+            metrics_port_offset=run.metrics_port_offset,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "allowed_gpu_ids": list(self.allowed_gpu_ids),
+            "max_active_gpus": self.max_active_gpus,
+            "base_port_start": self.base_port_start,
+            "base_port_end": self.base_port_end,
+            "metrics_port_offset": self.metrics_port_offset,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "EnergyPlanExecution":
+        return cls(
+            allowed_gpu_ids=_expect_int_tuple(
+                payload.get("allowed_gpu_ids", [0, 1, 2, 3]),
+                "execution.allowed_gpu_ids",
+                minimum=0,
+            ),
+            max_active_gpus=_expect_int(
+                payload.get("max_active_gpus", 3),
+                "execution.max_active_gpus",
+                minimum=1,
+            ),
+            base_port_start=_expect_int(
+                payload.get("base_port_start", 8000),
+                "execution.base_port_start",
+                minimum=1,
+            ),
+            base_port_end=_expect_int(
+                payload.get("base_port_end", 8099),
+                "execution.base_port_end",
+                minimum=1,
+            ),
+            metrics_port_offset=_expect_int(
+                payload.get("metrics_port_offset", 1000),
+                "execution.metrics_port_offset",
                 minimum=1,
             ),
         )
@@ -512,6 +590,7 @@ class EnergyPlan:
     plan: EnergyPlanHeader
     selection: EnergyPlanSelection = field(default_factory=EnergyPlanSelection)
     defaults: EnergyPlanDefaults = field(default_factory=EnergyPlanDefaults)
+    execution: EnergyPlanExecution = field(default_factory=EnergyPlanExecution)
     rounding: EnergyPlanRounding = field(default_factory=EnergyPlanRounding)
     jobs: tuple[EnergyPlanJob, ...] = ()
 
@@ -520,6 +599,7 @@ class EnergyPlan:
             "plan": self.plan.to_dict(),
             "selection": self.selection.to_dict(),
             "defaults": self.defaults.to_dict(),
+            "execution": self.execution.to_dict(),
             "rounding": self.rounding.to_dict(),
             "jobs": [job.to_dict() for job in self.jobs],
         }
@@ -530,6 +610,7 @@ class EnergyPlan:
             plan=EnergyPlanHeader.from_dict(_expect_mapping(payload.get("plan"), "plan")),
             selection=EnergyPlanSelection.from_dict(_expect_mapping(payload.get("selection", {}), "selection")),
             defaults=EnergyPlanDefaults.from_dict(_expect_mapping(payload.get("defaults", {}), "defaults")),
+            execution=EnergyPlanExecution.from_dict(_expect_mapping(payload.get("execution", {}), "execution")),
             rounding=EnergyPlanRounding.from_dict(_expect_mapping(payload.get("rounding", {}), "rounding")),
             jobs=tuple(
                 EnergyPlanJob.from_dict(_expect_mapping(item, "jobs[]"))
@@ -635,6 +716,11 @@ def _expect_optional_float(
 def _expect_string_tuple(value: Any, field_name: str) -> tuple[str, ...]:
     items = _expect_list(value, field_name)
     return tuple(_expect_str(item, f"{field_name}[]") for item in items)
+
+
+def _expect_int_tuple(value: Any, field_name: str, *, minimum: int) -> tuple[int, ...]:
+    items = _expect_list(value, field_name)
+    return tuple(_expect_int(item, f"{field_name}[]", minimum=minimum) for item in items)
 
 
 def _expect_float_tuple(value: Any, field_name: str) -> tuple[float, ...]:

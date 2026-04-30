@@ -22,7 +22,7 @@ coverage.xml
 htmlcov/
 experiments/*rerun*
 experiments/*short*
-experiments/energy/
+experiments/energy/synthetic*
 
 # Environment and local overrides
 .env

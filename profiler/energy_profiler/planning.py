@@ -16,6 +16,7 @@ from .models import (
     EnergyLaunchConfig,
     EnergyPlan,
     EnergyPlanDefaults,
+    EnergyPlanExecution,
     EnergyPlanHeader,
     EnergyPlanJob,
     EnergyPlanMode,
@@ -92,6 +93,7 @@ def generate_plan_from_orchestrator_runs(
     resolved_selection = selection or EnergyPlanSelection()
     resolved_rounding = rounding or EnergyPlanRounding()
     resolved_defaults = defaults or EnergyPlanDefaults()
+    execution = _load_execution_from_orchestrator_run(run_roots[-1])
 
     source_jobs = _load_orchestrator_jobs_from_roots(run_roots)
     succeeded_jobs = [job for job in source_jobs if job.status == "succeeded"]
@@ -128,6 +130,7 @@ def generate_plan_from_orchestrator_runs(
         plan=header,
         selection=resolved_selection,
         defaults=resolved_defaults,
+        execution=execution,
         rounding=resolved_rounding,
         jobs=tuple(jobs),
     )
@@ -149,6 +152,7 @@ def render_dry_run(plan: EnergyPlan) -> dict[str, Any]:
         "plan_id": plan.plan.plan_id,
         "mode": plan.plan.mode,
         "job_count": len(plan.jobs),
+        "execution": plan.execution.to_dict(),
         "source_orchestrator_run_ids": sorted(
             {
                 str(job.metadata.get("source_orchestrator_run_id"))
@@ -178,6 +182,13 @@ def _load_orchestrator_jobs_from_roots(run_roots: tuple[Path, ...]) -> list[Orch
             continue
         merged.append(job)
     return merged
+
+
+def _load_execution_from_orchestrator_run(run_root: Path) -> EnergyPlanExecution:
+    state = _load_json_mapping(run_root / "state.json")
+    manifest_path = Path(_expect_str(state.get("manifest_path"), "state.json.manifest_path"))
+    manifest = load_manifest(manifest_path)
+    return EnergyPlanExecution.from_run_config(manifest.run)
 
 
 def _decisive_job_key(job: OrchestratorJobRecord) -> tuple[str, str, str]:

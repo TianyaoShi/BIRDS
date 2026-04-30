@@ -7,6 +7,7 @@ from .executor import (
 )
 from .models import (
     EnergyLaunchConfig,
+    EnergyPlanExecution,
     EnergyPlan,
     EnergyPlanDefaults,
     EnergyPlanHeader,
@@ -32,6 +33,7 @@ __all__ = [
     "EnergyLaunchConfig",
     "EnergyPlan",
     "EnergyPlanDefaults",
+    "EnergyPlanExecution",
     "EnergyPlanHeader",
     "EnergyPlanJob",
     "EnergyPlanMode",

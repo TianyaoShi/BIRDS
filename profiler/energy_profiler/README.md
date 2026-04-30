@@ -103,6 +103,12 @@ servers for matching server signatures, waits for readiness, runs fixed-rate
 open-loop trials, and releases resources at the end. This is the intended path
 for full energy profiling experiments.
 
+Energy plans include an `execution` section with `allowed_gpu_ids`,
+`max_active_gpus`, base port range, and metrics port offset. These values are
+copied from the source orchestrator manifest during plan generation, making the
+plan reviewable and replayable. Runtime `run` and `resume` CLI flags may still
+override these fields explicitly.
+
 ## Live-Server Trial
 
 For a smoke test against an already-running OpenAI-compatible server, use
