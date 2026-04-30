@@ -113,14 +113,15 @@ class RunStateStore:
     def reconcile_jobs(self, state: dict[str, Any]) -> None:
         changed = False
         for job in state.get("jobs", []):
-            if job.get("status") == "running":
+            original_status = str(job.get("status", "planned"))
+            if original_status == "running":
                 job["status"] = "planned"
                 changed = True
             result_dir = Path(str(job["result_dir"]))
             search_trace = result_dir / "search_trace.json"
             final_report_json = result_dir / "final_report.json"
             final_report_md = result_dir / "final_report.md"
-            if search_trace.is_file() and final_report_json.is_file() and job.get("status") != "succeeded":
+            if search_trace.is_file() and final_report_json.is_file() and original_status == "running":
                 job["status"] = "succeeded"
                 job["last_error"] = None
                 job["artifacts"] = {

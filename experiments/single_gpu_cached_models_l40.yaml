@@ -108,8 +108,8 @@ overrides:
       dtype: auto
     search:
       initial_request_rate: 4
-      max_request_rate: 24
-      max_binary_steps: 9
+      max_request_rate: 36
+      max_binary_steps: 11
       max_bracket_trials: 16
 
   - match:

@@ -272,6 +272,47 @@ def test_scheduler_resume_reconciles_existing_artifacts(tmp_path: Path) -> None:
     assert adapter.calls == []
 
 
+def test_scheduler_resume_does_not_reconcile_failed_job_from_existing_artifacts(tmp_path: Path) -> None:
+    job = _make_job(tmp_path, experiment_id="job-failed-existing", signature="sig-a")
+    run_config = RunConfig(
+        output_root=tmp_path / "orchestrator-runs",
+        allowed_gpu_ids=(0,),
+        max_active_gpus=1,
+        keep_one_gpu_spare=False,
+        retry=RetryPolicy(startup_attempts=1, search_attempts=1),
+    )
+    lifecycle = StubLifecycle(startup_failures=0)
+    adapter = StubAdapter({"job-failed-existing": [True]})
+    state_store = RunStateStore(tmp_path / "resume-failed-existing-run")
+    state = state_store.initialize_new(
+        run_id="run-resume-failed-existing",
+        manifest_path=tmp_path / "manifest.yaml",
+        jobs=[job],
+    )
+
+    state_job = state_store.find_job(state, "job-failed-existing")
+    state_job["status"] = "failed"
+    state_job["last_error"] = "old report failure"
+    state_store.save(state)
+
+    job.result_dir.mkdir(parents=True, exist_ok=True)
+    (job.result_dir / "search_trace.json").write_text("{}\n", encoding="utf-8")
+    (job.result_dir / "final_report.json").write_text("{}\n", encoding="utf-8")
+
+    scheduler = OrchestratorScheduler(
+        run_config=run_config,
+        gpu_manager=GPULeaseManager(allowed_gpu_ids=run_config.allowed_gpu_ids, max_active_gpus=1),
+        port_allocator=PortAllocator(base_port_start=8000, base_port_end=8010, metrics_port_offset=1000),
+        lifecycle=lifecycle,
+        adapter=adapter,
+        state_store=state_store,
+    )
+    summary = scheduler.run(jobs=[job], state=state_store.load(), resume=True)
+
+    assert summary["counts"]["succeeded"] == 1
+    assert adapter.calls == ["job-failed-existing"]
+
+
 def test_scheduler_resume_refreshes_non_succeeded_job_plan(tmp_path: Path) -> None:
     original_job = _make_job(
         tmp_path,
