@@ -99,7 +99,9 @@ class AnalyzerSettings:
         OutlierBandConfig(min_rate=0.0, max_rate=2.0, ratio_threshold=2.5, absolute_delta_rps=1.0),
     )
     larger_model_min_size_ratio: float = 1.5
+    larger_model_min_close_relative_rate: float = 0.85
     larger_model_max_relative_rate: float = 1.15
+    larger_model_max_underperform_relative_rate: float = 0.75
     larger_model_min_rate_for_relative_compare: float = 2.0
     larger_model_min_absolute_delta_rps: float = 1.0
     same_family_max_relative_rate: float = 0.8
@@ -139,9 +141,23 @@ class AnalyzerSettings:
                 payload.get("larger_model_min_size_ratio", cls().larger_model_min_size_ratio),
                 "larger_model_min_size_ratio",
             ),
+            larger_model_min_close_relative_rate=_expect_float(
+                payload.get(
+                    "larger_model_min_close_relative_rate",
+                    cls().larger_model_min_close_relative_rate,
+                ),
+                "larger_model_min_close_relative_rate",
+            ),
             larger_model_max_relative_rate=_expect_float(
                 payload.get("larger_model_max_relative_rate", cls().larger_model_max_relative_rate),
                 "larger_model_max_relative_rate",
+            ),
+            larger_model_max_underperform_relative_rate=_expect_float(
+                payload.get(
+                    "larger_model_max_underperform_relative_rate",
+                    cls().larger_model_max_underperform_relative_rate,
+                ),
+                "larger_model_max_underperform_relative_rate",
             ),
             larger_model_min_rate_for_relative_compare=_expect_float(
                 payload.get(

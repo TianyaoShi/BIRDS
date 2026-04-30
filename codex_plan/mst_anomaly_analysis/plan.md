@@ -149,8 +149,11 @@ Flag when a smaller model has MST comparable to or below a larger model under co
 Primary rule:
 
 - model A has lower size than model B by at least `1.5x`
-- `mst_A <= mst_B * 1.15`
+- `0.85 <= mst_A / mst_B <= 1.15` when the smaller model is roughly tied with the larger model, or
+- `mst_A / mst_B <= 0.75` when the smaller model materially underperforms the larger model
 - both `mst_A` and `mst_B` are above `2 rps`, or absolute difference is above `1 rps`
+
+The middle band is intentionally ignored. For example, `25.14` versus `31.94` rps is about `0.79x`; that is a moderate cross-family gap, not enough by itself to rerun a result.
 
 Examples:
 

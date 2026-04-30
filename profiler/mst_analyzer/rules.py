@@ -200,9 +200,16 @@ def _larger_model_inversion(
         return None
 
     absolute_delta = abs(row.mst_rps - comparator.mst_rps)
+    relative_rate = row.mst_rps / comparator.mst_rps if comparator.mst_rps > 0 else 0.0
     if row.model_size_b * settings.larger_model_min_size_ratio > comparator.model_size_b:
         return None
-    if row.mst_rps > comparator.mst_rps * settings.larger_model_max_relative_rate:
+    close_to_larger = (
+        settings.larger_model_min_close_relative_rate
+        <= relative_rate
+        <= settings.larger_model_max_relative_rate
+    )
+    materially_slower_than_larger = relative_rate <= settings.larger_model_max_underperform_relative_rate
+    if not close_to_larger and not materially_slower_than_larger:
         return None
     if not (
         (
@@ -232,6 +239,7 @@ def _larger_model_inversion(
             f"smaller-to-larger size ratio: {comparator.model_size_b / row.model_size_b:.2f}x",
             f"absolute delta: {absolute_delta:.2f} rps",
             f"comparison label: {label}",
+            f"relative rate versus larger model: {relative_rate:.2f}x",
         ],
         comparators=[comparator_evidence],
     )

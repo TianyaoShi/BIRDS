@@ -17,7 +17,9 @@ outlier_bands:
     absolute_delta_rps: 1.0
 
 larger_model_min_size_ratio: 1.5
+larger_model_min_close_relative_rate: 0.85
 larger_model_max_relative_rate: 1.15
+larger_model_max_underperform_relative_rate: 0.75
 larger_model_min_rate_for_relative_compare: 2.0
 larger_model_min_absolute_delta_rps: 1.0
 

@@ -625,6 +625,40 @@ def test_rules_do_not_over_alert_for_sub_one_rps_models(tmp_path: Path) -> None:
     assert anomalies == []
 
 
+def test_rules_do_not_flag_moderate_cross_family_larger_model_gap(tmp_path: Path) -> None:
+    qwen06 = _row(
+        tmp_path,
+        experiment_id="qwen06",
+        model="Qwen/Qwen3-0.6B",
+        family="qwen3",
+        variant=None,
+        size_b=0.6,
+        bucket="tiny",
+        mst_rps=25.14,
+        ttft_slo_ms=250,
+        tpot_slo_ms=50,
+        max_num_seqs=1024,
+        max_num_batched_tokens=8192,
+    )
+    llama1 = _row(
+        tmp_path,
+        experiment_id="llama1",
+        model="meta-llama/Llama-3.2-1B-Instruct",
+        family="llama",
+        variant="instruct",
+        size_b=1.0,
+        bucket="small",
+        mst_rps=31.94,
+        ttft_slo_ms=250,
+        tpot_slo_ms=50,
+        max_num_seqs=1024,
+        max_num_batched_tokens=8192,
+    )
+
+    anomalies, _ = analyze_rows([qwen06, llama1])
+    assert anomalies == []
+
+
 def test_rules_allow_configured_suppressions_and_thresholds(tmp_path: Path) -> None:
     qwen06 = _row(
         tmp_path,
