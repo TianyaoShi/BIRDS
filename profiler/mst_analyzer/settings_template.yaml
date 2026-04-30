@@ -1,0 +1,44 @@
+# MST Analyzer settings template.
+# Copy this file and adjust only the fields you need.
+
+outlier_bands:
+  - min_rate: 10.0
+    max_rate: null
+    ratio_threshold: 1.5
+    absolute_delta_rps: 5.0
+  - min_rate: 2.0
+    max_rate: 10.0
+    ratio_threshold: 1.5
+    absolute_delta_rps: 1.0
+  - min_rate: 0.0
+    max_rate: 2.0
+    ratio_threshold: 2.5
+    absolute_delta_rps: 1.0
+
+larger_model_min_size_ratio: 1.5
+larger_model_max_relative_rate: 1.15
+larger_model_min_rate_for_relative_compare: 2.0
+larger_model_min_absolute_delta_rps: 1.0
+
+same_family_max_relative_rate: 0.8
+same_family_min_rate: 2.0
+
+trace_instability_min_uncertain_retries: 2
+trace_instability_require_low_confidence_uncertain_retries: 1
+
+severity_weight_within_size_outlier: 30
+severity_weight_larger_model_inversion: 25
+severity_weight_same_family_non_monotonicity: 20
+severity_weight_trace_instability_suspect: 15
+severity_weight_low_confidence_result: 10
+
+severity_penalty_all_below_one_rps: 20
+severity_penalty_slo_mismatch: 10
+severity_penalty_variant_mismatch: 10
+
+suppressions:
+  disable_families: []
+  suppress_trace_instability_below_rps: null
+  suppress_contextual_only_findings: false
+  suppress_quantized_bucket_verdicts: true
+  suppress_moe_bucket_verdicts: true
