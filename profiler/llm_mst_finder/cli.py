@@ -442,6 +442,8 @@ def _stability_policy_payload_from_args(args: argparse.Namespace) -> dict[str, o
         "completion_arrival_tolerance": config.completion_arrival_tolerance,
         "max_positive_backlog_slope": config.max_positive_backlog_slope,
         "min_backlog_growth_for_hard_pressure": config.min_backlog_growth_for_hard_pressure,
+        "min_backlog_relative_increase": config.min_backlog_relative_increase,
+        "backlog_trend_alpha": config.backlog_trend_alpha,
         "min_waiting_queue_mean_for_pressure": config.min_waiting_queue_mean_for_pressure,
         "min_waiting_queue_active_fraction": config.min_waiting_queue_active_fraction,
         "token_throughput_plateau_relative_growth": config.token_throughput_plateau_relative_growth,

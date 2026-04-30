@@ -7,6 +7,8 @@ from pathlib import Path
 from statistics import median
 from typing import Literal, Sequence
 
+from scipy import stats
+
 from .records import StabilityResult, WindowSummary
 
 
@@ -32,6 +34,8 @@ class StabilityConfig:
     completion_arrival_tolerance: float = 0.05
     max_positive_backlog_slope: float = 0.10
     min_backlog_growth_for_hard_pressure: float = 2.0
+    min_backlog_relative_increase: float = 0.10
+    backlog_trend_alpha: float = 0.05
     min_waiting_queue_mean_for_pressure: float = 1.0
     min_waiting_queue_active_fraction: float = 0.5
     token_throughput_plateau_relative_growth: float = 0.05
@@ -58,6 +62,13 @@ class StabilityConfig:
             "min_backlog_growth_for_hard_pressure",
             self.min_backlog_growth_for_hard_pressure,
         )
+        _require_non_negative_finite(
+            "min_backlog_relative_increase",
+            self.min_backlog_relative_increase,
+        )
+        _require_non_negative_finite("backlog_trend_alpha", self.backlog_trend_alpha)
+        if self.backlog_trend_alpha <= 0.0 or self.backlog_trend_alpha >= 1.0:
+            raise ValueError("backlog_trend_alpha must be between 0 and 1")
         _require_non_negative_finite(
             "min_waiting_queue_mean_for_pressure",
             self.min_waiting_queue_mean_for_pressure,
@@ -88,6 +99,9 @@ class _Trend:
     slope: float
     relative_increase: float
     delta: float
+    p_value: float
+    slope_ci_low: float
+    slope_ci_high: float
 
 
 def classify_stability(
@@ -163,16 +177,16 @@ def classify_stability(
     confidence_penalties = 0
     direct_unstable_reasons: list[str] = []
     capacity_pressure_reasons: list[str] = []
+    completion_lag_reasons: list[str] = []
     latency_drift_reasons: list[str] = []
     has_capacity_pressure = False
 
     if completion_arrival_ratio < 1.0 - stability_config.completion_arrival_tolerance:
-        capacity_pressure_reasons.append(
+        completion_lag_reasons.append(
             "completion rate lagged arrivals: "
             f"completion/arrival={completion_arrival_ratio:.3f} "
             f"< {1.0 - stability_config.completion_arrival_tolerance:.3f}"
         )
-        has_capacity_pressure = True
 
     if aggregate_error_rate > stability_config.max_error_rate:
         direct_unstable_reasons.append(
@@ -183,25 +197,29 @@ def classify_stability(
     outstanding_trend = _trend_for_required(active_eval_windows, "outstanding_end")
     key_metrics["outstanding_end_slope_per_s"] = outstanding_trend.slope
     key_metrics["outstanding_end_delta"] = outstanding_trend.delta
-    if (
-        outstanding_trend.slope > stability_config.max_positive_backlog_slope
-        and outstanding_trend.delta >= stability_config.min_backlog_growth_for_hard_pressure
-    ):
+    key_metrics["outstanding_end_relative_increase"] = outstanding_trend.relative_increase
+    key_metrics["outstanding_end_mann_kendall_p"] = outstanding_trend.p_value
+    key_metrics["outstanding_end_slope_ci_low"] = outstanding_trend.slope_ci_low
+    key_metrics["outstanding_end_slope_ci_high"] = outstanding_trend.slope_ci_high
+    if _is_clear_positive_backlog_trend(outstanding_trend, stability_config):
         capacity_pressure_reasons.append(
             "outstanding requests drifted upward: "
             f"Theil-Sen slope={outstanding_trend.slope:.3f}/s "
             f"> {stability_config.max_positive_backlog_slope:.3f}/s, "
+            f"Mann-Kendall p={outstanding_trend.p_value:.3g} "
+            f"< {stability_config.backlog_trend_alpha:.3g}, "
+            f"relative increase={outstanding_trend.relative_increase:.3f} "
+            f">= {stability_config.min_backlog_relative_increase:.3f}, "
             f"delta={outstanding_trend.delta:.3f}"
         )
-        has_capacity_pressure = True
-    elif _has_repeated_increase([float(window.outstanding_end) for window in active_eval_windows]):
-        capacity_pressure_reasons.append("outstanding requests grew across consecutive windows")
+        capacity_pressure_reasons.extend(completion_lag_reasons)
         has_capacity_pressure = True
 
     num_waiting_trend = _trend_for_optional(active_eval_windows, "num_waiting_mean")
     if num_waiting_trend is not None:
         key_metrics["num_waiting_mean_slope_per_s"] = num_waiting_trend.slope
         key_metrics["num_waiting_mean_delta"] = num_waiting_trend.delta
+        key_metrics["num_waiting_mean_mann_kendall_p"] = num_waiting_trend.p_value
         waiting_values = _present_values(active_eval_windows, "num_waiting_mean")
         if waiting_values:
             waiting_max = max(waiting_values)
@@ -282,6 +300,7 @@ def classify_stability(
             continue
         key_metrics[f"{field_name}_slope_per_s"] = trend.slope
         key_metrics[f"{field_name}_relative_increase"] = trend.relative_increase
+        key_metrics[f"{field_name}_mann_kendall_p"] = trend.p_value
         if _is_positive_latency_drift(trend, stability_config):
             latency_drift_reasons.append(
                 f"{display_name} drifted upward: relative increase="
@@ -535,19 +554,38 @@ def _theil_sen_trend(x_values: Sequence[float], y_values: Sequence[float]) -> _T
         raise ValueError("x_values and y_values must have the same length")
     if len(x_values) < 2:
         raise ValueError("Theil-Sen trend requires at least two points")
-    slopes: list[float] = []
-    for left_idx in range(len(x_values) - 1):
-        for right_idx in range(left_idx + 1, len(x_values)):
-            dx = x_values[right_idx] - x_values[left_idx]
-            if dx <= 0.0:
-                raise ValueError("trend x_values must be strictly increasing")
-            slopes.append((y_values[right_idx] - y_values[left_idx]) / dx)
-    slope = median(slopes)
+    for left, right in zip(x_values, x_values[1:]):
+        if right <= left:
+            raise ValueError("trend x_values must be strictly increasing")
+
+    slope_result = stats.theilslopes(y_values, x_values, alpha=0.95)
+    slope = float(slope_result.slope)
+    slope_ci_low = float(slope_result.low_slope)
+    slope_ci_high = float(slope_result.high_slope)
+    kendall_result = stats.kendalltau(x_values, y_values, nan_policy="raise")
+    p_value = float(kendall_result.pvalue)
+
     delta = slope * (x_values[-1] - x_values[0])
     first_half = y_values[: max(1, len(y_values) // 2)]
     baseline = max(abs(median(first_half)), 1e-9)
     relative_increase = delta / baseline
-    return _Trend(slope=slope, relative_increase=relative_increase, delta=delta)
+    return _Trend(
+        slope=slope,
+        relative_increase=relative_increase,
+        delta=delta,
+        p_value=p_value,
+        slope_ci_low=slope_ci_low,
+        slope_ci_high=slope_ci_high,
+    )
+
+
+def _is_clear_positive_backlog_trend(trend: _Trend, config: StabilityConfig) -> bool:
+    return (
+        trend.slope > config.max_positive_backlog_slope
+        and trend.p_value < config.backlog_trend_alpha
+        and trend.relative_increase >= config.min_backlog_relative_increase
+        and trend.delta >= config.min_backlog_growth_for_hard_pressure
+    )
 
 
 def _is_positive_latency_drift(trend: _Trend, config: StabilityConfig) -> bool:
@@ -593,20 +631,6 @@ def _workload_phase_reason(
     if not phase_reasons:
         return None
     return "workload-phase evidence weakens backlog extrapolation: " + "; ".join(phase_reasons)
-
-
-def _has_repeated_increase(values: Sequence[float]) -> bool:
-    increases = 0
-    longest_run = 0
-    current_run = 0
-    for left, right in zip(values, values[1:]):
-        if right > left:
-            increases += 1
-            current_run += 1
-            longest_run = max(longest_run, current_run)
-        else:
-            current_run = 0
-    return increases >= 2 and longest_run >= 1 and values[-1] > values[0]
 
 
 def _present_values(windows: Sequence[WindowSummary], field_name: str) -> list[float]:

@@ -269,6 +269,8 @@ def _stability_config_from_metadata(config_payload: Mapping[str, Any]) -> Stabil
         "completion_arrival_tolerance",
         "max_positive_backlog_slope",
         "min_backlog_growth_for_hard_pressure",
+        "min_backlog_relative_increase",
+        "backlog_trend_alpha",
         "min_waiting_queue_mean_for_pressure",
         "min_waiting_queue_active_fraction",
         "token_throughput_plateau_relative_growth",

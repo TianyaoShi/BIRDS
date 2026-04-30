@@ -148,8 +148,8 @@ def test_latency_drift_without_server_pressure_is_stable_with_lower_confidence()
 def test_classifies_completion_lag_and_backlog_as_unstable() -> None:
     windows = [_window(0), _window(1)]
     windows.extend(
-        _window(idx, completions=8, outstanding_end=idx - 1, num_waiting_mean=float(idx - 1))
-        for idx in range(2, 6)
+        _window(idx, completions=8, outstanding_end=(idx - 1) * 3, generation_tok_s=300.0)
+        for idx in range(2, 8)
     )
 
     result = classify_stability(windows)
@@ -167,15 +167,17 @@ def test_drain_windows_do_not_rescue_active_backlog_growth() -> None:
             _window(3, outstanding_end=20),
             _window(4, outstanding_end=30),
             _window(5, outstanding_end=40),
-            _window(6, arrivals=0, completions=20, outstanding_end=0),
-            _window(7, arrivals=0, completions=20, outstanding_end=0),
+            _window(6, outstanding_end=50),
+            _window(7, outstanding_end=60),
+            _window(8, arrivals=0, completions=20, outstanding_end=0),
+            _window(9, arrivals=0, completions=20, outstanding_end=0),
         ]
     )
 
     result = classify_stability(windows)
 
     assert result.status == "unstable"
-    assert result.key_metrics["active_eval_windows"] == 4
+    assert result.key_metrics["active_eval_windows"] == 6
     assert result.key_metrics["drain_eval_windows"] == 2
     assert result.key_metrics["outstanding_end_slope_per_s"] > 0.0
     assert any("outstanding requests drifted upward" in reason for reason in result.reasons)
@@ -202,8 +204,8 @@ def test_drain_windows_do_not_count_toward_minimum_active_evidence() -> None:
 
 def test_workload_phase_backlog_pressure_is_uncertain_without_capacity_confirmation() -> None:
     windows = [_window(0), _window(1)]
-    output_lengths = [100.0, 130.0, 170.0, 230.0]
-    generation_tok_s = [300.0, 330.0, 375.0, 430.0]
+    output_lengths = [100.0, 130.0, 170.0, 230.0, 300.0, 390.0]
+    generation_tok_s = [300.0, 330.0, 375.0, 430.0, 510.0, 610.0]
     windows.extend(
         _window(
             idx,
@@ -213,7 +215,7 @@ def test_workload_phase_backlog_pressure_is_uncertain_without_capacity_confirmat
             expected_output_len_mean=output_lengths[idx - 2],
             actual_output_len_mean=output_lengths[idx - 2],
         )
-        for idx in range(2, 6)
+        for idx in range(2, 8)
     )
 
     result = classify_stability(windows)
@@ -236,13 +238,28 @@ def test_backlog_pressure_with_generation_token_plateau_is_unstable() -> None:
             expected_output_len_mean=100.0,
             actual_output_len_mean=100.0,
         )
-        for idx in range(2, 6)
+        for idx in range(2, 8)
     )
 
     result = classify_stability(windows)
 
     assert result.status == "unstable"
     assert any("generation token throughput plateaued" in reason for reason in result.reasons)
+
+
+def test_oscillating_outstanding_requests_are_not_backlog_pressure() -> None:
+    outstanding_values = [0, 0, 29, 32, 24, 38, 37, 27, 28, 34, 33, 38]
+    windows = [
+        _window(idx, outstanding_end=outstanding_values[idx], generation_tok_s=300.0)
+        for idx in range(len(outstanding_values))
+    ]
+
+    result = classify_stability(windows)
+
+    assert result.status == "stable"
+    assert result.key_metrics["outstanding_end_mann_kendall_p"] >= 0.05
+    assert not any("outstanding requests grew across consecutive windows" in reason for reason in result.reasons)
+    assert not any("outstanding requests drifted upward" in reason for reason in result.reasons)
 
 
 def test_classifies_preemptions_as_unstable() -> None:
