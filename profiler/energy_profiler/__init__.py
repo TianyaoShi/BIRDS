@@ -1,4 +1,10 @@
-from .executor import EnergyExecutor, EnergyExecutorConfig, build_run_trial_command, compute_energy_summary
+from .executor import (
+    EnergyExecutor,
+    EnergyExecutorConfig,
+    build_live_run_trial_command,
+    build_run_trial_command,
+    compute_energy_summary,
+)
 from .models import (
     EnergyLaunchConfig,
     EnergyPlan,
@@ -34,6 +40,7 @@ __all__ = [
     "EnergyPlanSelectionSweep",
     "EnergyRateSource",
     "PlanningError",
+    "build_live_run_trial_command",
     "build_run_trial_command",
     "compute_energy_summary",
     "generate_plan_from_orchestrator",

@@ -181,12 +181,19 @@ class WindowSummary:
     outstanding_slope: float
     ttft_p50_ms: float | None
     ttft_p90_ms: float | None
+    ttft_p95_ms: float | None
     ttft_p99_ms: float | None
     tpot_p50_ms: float | None
     tpot_p90_ms: float | None
+    tpot_p95_ms: float | None
     tpot_p99_ms: float | None
+    itl_p50_ms: float | None
     itl_p90_ms: float | None
+    itl_p95_ms: float | None
+    itl_p99_ms: float | None
+    e2e_p50_ms: float | None
     e2e_p90_ms: float | None
+    e2e_p95_ms: float | None
     e2e_p99_ms: float | None
     prompt_tok_s: float | None
     generation_tok_s: float | None

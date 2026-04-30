@@ -157,6 +157,108 @@ class EnergyExecutor:
         state_store = EnergyRunStateStore(Path(run_root))
         return state_store.summarize(state_store.load())
 
+    def run_live_trial(
+        self,
+        *,
+        trial_id: str,
+        output_dir: str | Path,
+        workload: str | Path,
+        model: str,
+        base_url: str,
+        endpoint: str,
+        metrics_url: str | None,
+        gpu_ids: Sequence[int],
+        duration_s: float,
+        request_rate: float,
+        request_timeout_s: float,
+        metrics_interval_s: float,
+        window_s: float,
+        idle_monitor_duration_s: float,
+        gpu_monitor_interval_s: float,
+        gpu_monitor_truncate_s: float,
+        monitor_clock: bool,
+        safety_max_outstanding: int | None = None,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        resolved_output_dir = Path(output_dir)
+        if resolved_output_dir.exists() and any(resolved_output_dir.iterdir()):
+            if not force:
+                raise RuntimeError(f"refusing to overwrite existing artifacts in {resolved_output_dir}")
+            shutil.rmtree(resolved_output_dir)
+        resolved_output_dir.mkdir(parents=True, exist_ok=True)
+        logs_dir = resolved_output_dir / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+
+        resolved_gpu_ids = tuple(int(gpu_id) for gpu_id in gpu_ids)
+        if not resolved_gpu_ids:
+            raise ValueError("gpu_ids must be non-empty")
+        resolved_metrics_url = metrics_url or f"{base_url.rstrip('/')}/metrics"
+
+        idle_snapshot = self._collect_idle_baseline(
+            gpu_ids=resolved_gpu_ids,
+            duration_s=idle_monitor_duration_s,
+            interval_s=gpu_monitor_interval_s,
+            truncate_s=0.0,
+            monitor_clock=monitor_clock,
+        )
+        traffic_snapshot = self._run_live_monitored_trial(
+            trial_id=trial_id,
+            output_dir=resolved_output_dir,
+            workload=Path(workload),
+            model=model,
+            base_url=base_url,
+            endpoint=endpoint,
+            metrics_url=resolved_metrics_url,
+            gpu_ids=resolved_gpu_ids,
+            duration_s=duration_s,
+            request_rate=request_rate,
+            request_timeout_s=request_timeout_s,
+            metrics_interval_s=metrics_interval_s,
+            window_s=window_s,
+            gpu_monitor_interval_s=gpu_monitor_interval_s,
+            gpu_monitor_truncate_s=gpu_monitor_truncate_s,
+            monitor_clock=monitor_clock,
+            safety_max_outstanding=safety_max_outstanding,
+            logs_dir=logs_dir,
+        )
+        trial_summary_payload = _load_json_mapping(resolved_output_dir / "summary.json")
+        energy_summary = compute_energy_summary(
+            trial_summary_payload=trial_summary_payload,
+            idle_snapshot=idle_snapshot,
+            traffic_snapshot=traffic_snapshot,
+        )
+        gpu_power_payload = {
+            "idle": idle_snapshot.to_dict(),
+            "traffic": traffic_snapshot.to_dict(),
+        }
+        _write_json(resolved_output_dir / "gpu_power.json", gpu_power_payload)
+        _write_json(resolved_output_dir / "energy_summary.json", energy_summary)
+        _write_json(
+            resolved_output_dir / "live_trial.json",
+            {
+                "trial_id": trial_id,
+                "workload": str(workload),
+                "model": model,
+                "base_url": base_url,
+                "endpoint": endpoint,
+                "metrics_url": resolved_metrics_url,
+                "gpu_ids": list(resolved_gpu_ids),
+                "duration_s": duration_s,
+                "request_rate": request_rate,
+            },
+        )
+        return {
+            "trial_id": trial_id,
+            "output_dir": str(resolved_output_dir),
+            "summary_json": str(resolved_output_dir / "summary.json"),
+            "request_records_jsonl": str(resolved_output_dir / "request_records.jsonl"),
+            "server_metrics_jsonl": str(resolved_output_dir / "server_metrics.jsonl"),
+            "windows_csv": str(resolved_output_dir / "windows.csv"),
+            "gpu_power_json": str(resolved_output_dir / "gpu_power.json"),
+            "energy_summary_json": str(resolved_output_dir / "energy_summary.json"),
+            "energy_summary": energy_summary,
+        }
+
     def _execute(
         self,
         *,
@@ -325,6 +427,77 @@ class EnergyExecutor:
             "w",
             encoding="utf-8",
         ) as stderr_handle:
+            for monitor in monitors:
+                monitor.start()
+            try:
+                result = self._run_command(
+                    command,
+                    env=env,
+                    cwd=str(Path(__file__).resolve().parents[2]),
+                    stdout=stdout_handle,
+                    stderr=stderr_handle,
+                )
+            finally:
+                end_ts = self._time_fn()
+                for monitor in monitors:
+                    monitor.stop()
+        if result.returncode != 0:
+            raise RuntimeError(f"run-trial failed with exit code {result.returncode}")
+        return _collect_monitor_result(monitors=monitors, duration_s=end_ts - start_ts)
+
+    def _run_live_monitored_trial(
+        self,
+        *,
+        trial_id: str,
+        output_dir: Path,
+        workload: Path,
+        model: str,
+        base_url: str,
+        endpoint: str,
+        metrics_url: str,
+        gpu_ids: tuple[int, ...],
+        duration_s: float,
+        request_rate: float,
+        request_timeout_s: float,
+        metrics_interval_s: float,
+        window_s: float,
+        gpu_monitor_interval_s: float,
+        gpu_monitor_truncate_s: float,
+        monitor_clock: bool,
+        safety_max_outstanding: int | None,
+        logs_dir: Path,
+    ) -> MonitorRunResult:
+        stdout_log = logs_dir / f"{trial_id}.profile.stdout.log"
+        stderr_log = logs_dir / f"{trial_id}.profile.stderr.log"
+        command = build_live_run_trial_command(
+            trial_id=trial_id,
+            output_dir=output_dir,
+            workload=workload,
+            model=model,
+            base_url=base_url,
+            endpoint=endpoint,
+            metrics_url=metrics_url,
+            duration_s=duration_s,
+            request_rate=request_rate,
+            request_timeout_s=request_timeout_s,
+            metrics_interval_s=metrics_interval_s,
+            window_s=window_s,
+            safety_max_outstanding=safety_max_outstanding,
+        )
+
+        env = os.environ.copy()
+        profiler_root = str(Path(__file__).resolve().parents[1])
+        existing_pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = profiler_root if not existing_pythonpath else f"{profiler_root}{os.pathsep}{existing_pythonpath}"
+
+        monitors = self._build_monitors(
+            gpu_ids=gpu_ids,
+            interval_s=gpu_monitor_interval_s,
+            truncate_s=gpu_monitor_truncate_s,
+            monitor_clock=monitor_clock,
+        )
+        start_ts = self._time_fn()
+        with stdout_log.open("w", encoding="utf-8") as stdout_handle, stderr_log.open("w", encoding="utf-8") as stderr_handle:
             for monitor in monitors:
                 monitor.start()
             try:
@@ -522,6 +695,59 @@ def build_run_trial_command(
     return tuple(command)
 
 
+def build_live_run_trial_command(
+    *,
+    trial_id: str,
+    output_dir: Path,
+    workload: Path,
+    model: str,
+    base_url: str,
+    endpoint: str,
+    metrics_url: str,
+    duration_s: float,
+    request_rate: float,
+    request_timeout_s: float,
+    metrics_interval_s: float,
+    window_s: float,
+    safety_max_outstanding: int | None = None,
+) -> tuple[str, ...]:
+    command: list[str] = [
+        sys.executable,
+        "-m",
+        "llm_mst_finder.cli",
+        "run-trial",
+        "--trial-id",
+        trial_id,
+        "--output-dir",
+        str(output_dir),
+        "--workload",
+        str(workload),
+        "--mode",
+        "open-loop",
+        "--duration-s",
+        str(duration_s),
+        "--base-url",
+        base_url,
+        "--endpoint",
+        endpoint,
+        "--model",
+        model,
+        "--request-rate",
+        str(request_rate),
+        "--request-timeout-s",
+        str(request_timeout_s),
+        "--metrics-url",
+        metrics_url,
+        "--metrics-interval-s",
+        str(metrics_interval_s),
+        "--window-s",
+        str(window_s),
+    ]
+    if safety_max_outstanding is not None:
+        command.extend(["--safety-max-outstanding", str(safety_max_outstanding)])
+    return tuple(command)
+
+
 def compute_energy_summary(
     *,
     trial_summary_payload: Mapping[str, Any],
@@ -573,7 +799,9 @@ def compute_energy_summary(
         "incremental_avg_power_w": incremental_avg_power_w,
         "min_power_w": aggregate_stats["min_power_w"],
         "p50_power_w": aggregate_stats["p50_power_w"],
+        "p90_power_w": aggregate_stats["p90_power_w"],
         "p95_power_w": aggregate_stats["p95_power_w"],
+        "p99_power_w": aggregate_stats["p99_power_w"],
         "max_power_w": aggregate_stats["max_power_w"],
         "energy_per_successful_request_j": _safe_divide(energy_joules, successful_requests),
         "incremental_energy_per_successful_request_j": _safe_divide(incremental_energy_joules, successful_requests),
@@ -640,14 +868,18 @@ def _trace_stats_w(trace_mw: Sequence[float]) -> dict[str, float | None]:
         return {
             "min_power_w": None,
             "p50_power_w": None,
+            "p90_power_w": None,
             "p95_power_w": None,
+            "p99_power_w": None,
             "max_power_w": None,
         }
     ordered = sorted(float(value) / 1000.0 for value in trace_mw)
     return {
         "min_power_w": ordered[0],
         "p50_power_w": _percentile(ordered, 50.0),
+        "p90_power_w": _percentile(ordered, 90.0),
         "p95_power_w": _percentile(ordered, 95.0),
+        "p99_power_w": _percentile(ordered, 99.0),
         "max_power_w": ordered[-1],
     }
 

@@ -186,6 +186,7 @@ def _length_summary(lengths: Sequence[int]) -> dict[str, float]:
         "mean": mean_value if mean_value is not None else 0.0,
         "median": median_value if median_value is not None else 0.0,
         "p90": _percentile(float_lengths, 90.0),
+        "p95": _percentile(float_lengths, 95.0),
         "p99": _percentile(float_lengths, 99.0),
     }
 
@@ -200,7 +201,7 @@ def calculate_benchmark_metrics(
     request_records: Sequence[RequestRecord],
     duration_s: float,
     *,
-    percentiles: Sequence[float] = (50.0, 90.0, 99.0),
+    percentiles: Sequence[float] = (50.0, 90.0, 95.0, 99.0),
 ) -> BenchmarkMetrics:
     if duration_s <= 0:
         raise ValueError(f"duration_s must be positive, got {duration_s!r}")

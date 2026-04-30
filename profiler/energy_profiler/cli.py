@@ -42,6 +42,28 @@ def build_parser() -> argparse.ArgumentParser:
     _add_executor_args(run)
     run.set_defaults(handler=_run_command)
 
+    live_trial = subparsers.add_parser("run-live-trial")
+    live_trial.add_argument("--trial-id", required=True)
+    live_trial.add_argument("--output-dir", type=Path, required=True)
+    live_trial.add_argument("--workload", type=Path, required=True)
+    live_trial.add_argument("--model", required=True)
+    live_trial.add_argument("--base-url", required=True)
+    live_trial.add_argument("--endpoint", default="/v1/chat/completions")
+    live_trial.add_argument("--metrics-url", default=None)
+    live_trial.add_argument("--gpu-ids", nargs="+", type=int, default=(0,))
+    live_trial.add_argument("--duration-s", type=float, default=90.0)
+    live_trial.add_argument("--request-rate", type=float, default=1.0)
+    live_trial.add_argument("--request-timeout-s", type=float, default=300.0)
+    live_trial.add_argument("--metrics-interval-s", type=float, default=1.0)
+    live_trial.add_argument("--window-s", type=float, default=10.0)
+    live_trial.add_argument("--idle-monitor-duration-s", type=float, default=10.0)
+    live_trial.add_argument("--gpu-monitor-interval-s", type=float, default=1.0)
+    live_trial.add_argument("--gpu-monitor-truncate-s", type=float, default=0.0)
+    live_trial.add_argument("--monitor-clock", action="store_true")
+    live_trial.add_argument("--safety-max-outstanding", type=int, default=None)
+    live_trial.add_argument("--force", action="store_true")
+    live_trial.set_defaults(handler=_run_live_trial_command)
+
     resume = subparsers.add_parser("resume")
     resume.add_argument("--run-root", type=Path, required=True)
     resume.add_argument("--force", action="store_true")
@@ -115,6 +137,33 @@ def _run_command(args: argparse.Namespace) -> int:
             sort_keys=True,
         )
     )
+    return 0
+
+
+def _run_live_trial_command(args: argparse.Namespace) -> int:
+    executor = EnergyExecutor()
+    summary = executor.run_live_trial(
+        trial_id=args.trial_id,
+        output_dir=args.output_dir,
+        workload=args.workload,
+        model=args.model,
+        base_url=args.base_url,
+        endpoint=args.endpoint,
+        metrics_url=args.metrics_url,
+        gpu_ids=tuple(args.gpu_ids),
+        duration_s=args.duration_s,
+        request_rate=args.request_rate,
+        request_timeout_s=args.request_timeout_s,
+        metrics_interval_s=args.metrics_interval_s,
+        window_s=args.window_s,
+        idle_monitor_duration_s=args.idle_monitor_duration_s,
+        gpu_monitor_interval_s=args.gpu_monitor_interval_s,
+        gpu_monitor_truncate_s=args.gpu_monitor_truncate_s,
+        monitor_clock=bool(args.monitor_clock),
+        safety_max_outstanding=args.safety_max_outstanding,
+        force=bool(args.force),
+    )
+    print(json.dumps(summary, sort_keys=True))
     return 0
 
 

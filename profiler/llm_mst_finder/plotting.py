@@ -25,9 +25,11 @@ def plot_trial_windows(
     outstanding: Sequence[float],
     ttft_p50_ms: Sequence[float | None],
     ttft_p90_ms: Sequence[float | None],
+    ttft_p95_ms: Sequence[float | None],
     ttft_p99_ms: Sequence[float | None],
     tpot_p50_ms: Sequence[float | None],
     tpot_p90_ms: Sequence[float | None],
+    tpot_p95_ms: Sequence[float | None],
     tpot_p99_ms: Sequence[float | None],
     output_tok_s: Sequence[float | None],
     kv_cache_usage: Sequence[float | None],
@@ -67,6 +69,7 @@ def plot_trial_windows(
             series=(
                 ("p50", ttft_p50_ms, "#16a34a"),
                 ("p90", ttft_p90_ms, "#d97706"),
+                ("p95", ttft_p95_ms, "#ea580c"),
                 ("p99", ttft_p99_ms, "#dc2626"),
             ),
         ),
@@ -79,6 +82,7 @@ def plot_trial_windows(
             series=(
                 ("p50", tpot_p50_ms, "#16a34a"),
                 ("p90", tpot_p90_ms, "#d97706"),
+                ("p95", tpot_p95_ms, "#ea580c"),
                 ("p99", tpot_p99_ms, "#dc2626"),
             ),
         ),

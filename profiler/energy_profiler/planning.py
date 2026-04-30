@@ -215,8 +215,8 @@ def _load_orchestrator_jobs(run_root: Path) -> list[OrchestratorJobRecord]:
         elif str(item.get("status")) == "succeeded":
             raise PlanningError(f"succeeded orchestrator job is missing search_trace.json: {search_trace_path}")
 
-        search_config = _require_mapping(search_trace.get("config"), "search_trace.json.config") if search_trace else {}
-        search_result = _require_mapping(search_trace.get("result"), "search_trace.json.result") if search_trace else {}
+        search_config = _optional_mapping(search_trace.get("config")) if search_trace else {}
+        search_result = _optional_mapping(search_trace.get("result")) if search_trace else {}
         records.append(
             OrchestratorJobRecord(
                 source_run_id=run_root.name,
@@ -602,6 +602,12 @@ def _require_mapping(value: Any, field_name: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise PlanningError(f"{field_name} must be a mapping")
     return value
+
+
+def _optional_mapping(value: Any) -> Mapping[str, Any]:
+    if isinstance(value, Mapping):
+        return value
+    return {}
 
 
 def _expect_str(value: Any, field_name: str) -> str:

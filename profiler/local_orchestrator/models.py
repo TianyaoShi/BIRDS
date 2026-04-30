@@ -167,7 +167,7 @@ class LaunchConfig:
     max_num_batched_tokens: float | None = None
     host: str = "127.0.0.1"
     readiness_path: str = "/v1/models"
-    readiness_timeout_s: float = 180.0
+    readiness_timeout_s: float = 300.0
     readiness_interval_s: float = 2.0
 
     def __post_init__(self) -> None:
