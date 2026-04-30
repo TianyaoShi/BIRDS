@@ -21,6 +21,8 @@ These rules override individual agent plans when they conflict.
 uv pip install --python /local/scratch/a/shi676/.venv/bin/python PACKAGE
 ```
 
+- `scipy` is required for MST stability trend statistics. The stability classifier should fail immediately if `scipy.stats` is unavailable; do not add a local statistical fallback.
+
 - Default unit tests must be offline and synthetic. They must not require a live vLLM server, GPU, NVML, Hugging Face download, or external network access.
 - Use `tmp_path` or another test-local directory for generated artifacts. Do not write persistent results during unit tests.
 - Before handing off a code slice, run the narrow tests for that slice and then:

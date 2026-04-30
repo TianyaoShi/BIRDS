@@ -21,12 +21,16 @@ stability.py
 stability:
   warmup_windows: 2
   min_eval_windows: 4
-  completion_arrival_tolerance: 0.03
-  max_positive_backlog_slope: 0.05
-  max_error_rate: 0.01
+  completion_arrival_tolerance: 0.05
+  max_positive_backlog_slope: 0.10
+  min_backlog_growth_for_hard_pressure: 2.0
+  min_backlog_relative_increase: 0.10
+  backlog_trend_alpha: 0.05
+  min_waiting_queue_mean_for_pressure: 1.0
+  min_waiting_queue_active_fraction: 0.5
+  max_error_rate: 0.03
   ttft_slo_ms: 2000
   tpot_slo_ms: 80
-  e2e_slo_ms: null
   drift_test:
     method: theil_sen
     min_relative_increase: 0.20
@@ -37,24 +41,25 @@ stability:
 
 Classify as stable if, after warmup:
 ```
-completion_rate / arrival_rate >= 1 - tolerance
-outstanding slope <= threshold
+no robust outstanding backlog trend
 TTFT p90/p99 has no positive drift
 TPOT p90/p99 has no positive drift
 error rate <= threshold
 preemption rate acceptable
 SLOs satisfied
 ```
+
+`completion_rate / arrival_rate < 1 - tolerance` is supporting evidence only. Do not make it an independent unstable decision criterion.
+
 ### Unsustainable
 
 Classify as unstable if any of these hold:
 
 ```
-completion_rate persistently < arrival_rate
-outstanding_end grows over consecutive windows
-num_waiting grows over consecutive windows
-TTFT p90 or queue time has positive drift
-TPOT p90 has positive drift
+robust outstanding backlog trend plus throughput/capacity confirmation
+material sustained waiting queue pressure
+TTFT p90 or queue time has positive drift with server/backlog pressure
+TPOT p90 has positive drift with server/backlog pressure
 preemptions increase repeatedly
 safety outstanding cap is reached
 ```
@@ -70,10 +75,22 @@ This matters because the system may be stable but not acceptable for interactive
 
 Use robust slopes rather than ordinary least squares:
 ```
-Theil-Sen slope for TTFT, TPOT, outstanding, num_waiting
-Mann-Kendall trend test optional
+SciPy Theil-Sen slope for TTFT, TPOT, outstanding, num_waiting
+Mann-Kendall trend test for outstanding backlog pressure
 ```
-Do not overfit the first version. A robust monotonic trend rule is enough.
+
+For outstanding backlog pressure, require all of:
+
+```
+Theil-Sen slope > max_positive_backlog_slope
+Mann-Kendall p < backlog_trend_alpha
+fitted end-to-end relative increase >= min_backlog_relative_increase
+fitted end-to-end delta >= min_backlog_growth_for_hard_pressure
+```
+
+Do not use `outstanding requests grew across consecutive windows` or any equivalent consecutive-increase shortcut. It is not robust under stochastic open-loop arrivals.
+
+`scipy` is a required dependency. Use `scipy.stats.theilslopes` and `scipy.stats.kendalltau`; do not add a local statistical fallback.
 
 If required request/window fields are missing or internally inconsistent, raise. If optional server-side evidence is missing, classify from available evidence, lower confidence, and include that limitation in `reasons`.
 

@@ -333,7 +333,11 @@ Key `result` fields:
 - `uncertain`: rerun same rate once with extended duration.
 - still `uncertain`: conservative high bound if a stable low bound exists; otherwise convergence error.
 
-Raw outstanding-request slope alone is not decisive instability. It needs stronger agreement such as non-empty waiting queue, completion deficit plus generation-token throughput plateau, preemptions, KV pressure, or TTFT/TPOT SLO violation.
+Raw outstanding-request movement alone is not decisive instability. Backlog pressure requires the stability classifier's robust trend gate: SciPy Theil-Sen slope above threshold, Mann-Kendall `p < backlog_trend_alpha`, fitted relative increase above threshold, and fitted absolute delta above threshold. The removed `outstanding requests grew across consecutive windows` reason must not be used by orchestrators as overload evidence.
+
+Completion/arrival lag is supporting evidence only. It should not by itself cause an orchestrator to conclude the server is overloaded, because short open-loop trials can end after stochastic arrival bursts or long-output sample segments.
+
+TTFT/TPOT SLO violations remain top-priority decision evidence. A trial can be queue-stationary and still fail as `slo_violation`.
 
 `termination_reason=scheduler_config_limited` means the orchestrator should consider rerunning with different server scheduler settings, then launch a new MST search for that new serving configuration.
 
