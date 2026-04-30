@@ -833,10 +833,33 @@ def _build_search_decision_context(
         if isinstance(high_trial_id, str):
             decision_trial = _trial_by_id(trials, high_trial_id)
             subject = "high_bound"
+    if decision_trial is None and result_payload.get("termination_reason") == "max_request_rate_limited":
+        low_trial_id = bounds_payload.get("low_trial_id")
+        if isinstance(low_trial_id, str):
+            decision_trial = _trial_by_id(trials, low_trial_id)
+            subject = "max_request_rate_cap"
     if decision_trial is None:
         raise ValueError("report generation requires a high-bound or failed confirmation trial to explain")
     analysis = decision_trial["analysis"]
     status = None if analysis.stability is None else analysis.stability.status
+    if subject == "max_request_rate_cap":
+        cap = bounds_payload.get("max_request_rate_cap")
+        attempted_rate = bounds_payload.get("max_request_rate_cap_attempted_rate")
+        reasons = list(result_payload.get("reasons", []))
+        return {
+            "subject": subject,
+            "trial_id": decision_trial["summary"].trial_id,
+            "request_rate": decision_trial["summary"].requested_request_rate,
+            "stability_status": status,
+            "decision_reasoning": "capped_by_max_request_rate",
+            "reason_summary": (
+                f"next bracketing rate {attempted_rate} exceeded max_request_rate={cap}; "
+                "reported MST is the highest measured stable low bound"
+            ),
+            "reasons": reasons,
+            "max_request_rate_cap": cap,
+            "max_request_rate_cap_attempted_rate": attempted_rate,
+        }
     return {
         "subject": subject,
         "trial_id": decision_trial["summary"].trial_id,

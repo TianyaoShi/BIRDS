@@ -403,6 +403,37 @@ def test_generate_report_marks_loose_precision_bracket(tmp_path: Path) -> None:
     assert "- convergence_assessment: precision-limited" in markdown
 
 
+def test_generate_report_handles_max_request_rate_limited_result(tmp_path: Path) -> None:
+    result_dir = tmp_path / "run_capped"
+    _write_result_dir(result_dir)
+    trace_path = result_dir / "search_trace.json"
+    trace_payload = json.loads(trace_path.read_text(encoding="utf-8"))
+    trace_payload["bounds"] = {
+        "low_rate": 8.0,
+        "low_trial_id": "trial_001_openloop_r8_0",
+        "high_rate": None,
+        "high_trial_id": None,
+        "max_request_rate_cap": 12.0,
+        "max_request_rate_cap_attempted_rate": 16.0,
+    }
+    trace_payload["result"]["termination_reason"] = "max_request_rate_limited"
+    trace_payload["result"]["confirmation_trial_id"] = None
+    trace_payload["result"]["reasons"] = [
+        "open-loop bracketing stopped because the next required high-bound rate 16.000 req/s exceeds max_request_rate=12",
+        "highest observed stable open-loop rate before the cap was 8.000 req/s",
+    ]
+    trace_path.write_text(json.dumps(trace_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    generate_report(result_dir, plots_enabled=False)
+
+    payload = json.loads((result_dir / "final_report.json").read_text(encoding="utf-8"))
+    assert payload["decision_context"]["subject"] == "max_request_rate_cap"
+    assert payload["decision_context"]["trial_id"] == "trial_001_openloop_r8_0"
+    assert payload["decision_context"]["decision_reasoning"] == "capped_by_max_request_rate"
+    assert payload["decision_context"]["max_request_rate_cap"] == 12.0
+    assert payload["decision_context"]["max_request_rate_cap_attempted_rate"] == 16.0
+
+
 def test_generate_report_shows_slo_defaults_and_non_slo_instability(tmp_path: Path) -> None:
     result_dir = tmp_path / "run_non_slo_instability"
     _write_result_dir(

@@ -378,6 +378,17 @@ class SearchController:
         rate = start_rate
         for _ in range(config.max_bracket_trials):
             if self._rate_exceeds_max_rate(config, rate):
+                assert config.max_request_rate is not None
+                if bounds.low_rate is not None and bounds.low_rate < config.max_request_rate:
+                    bounds.max_request_rate_cap_attempted_rate = rate
+                    await self._test_open_loop_rate(
+                        config,
+                        bounds,
+                        config.max_request_rate,
+                        purpose="open_loop_bracket_high_cap",
+                    )
+                    if bounds.high_rate is not None:
+                        return
                 bounds.max_request_rate_cap = config.max_request_rate
                 bounds.max_request_rate_cap_attempted_rate = rate
                 self._record_bounds(bounds)
