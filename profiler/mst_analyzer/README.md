@@ -13,6 +13,7 @@ It is intended to sit after `local_orchestrator` / `llm_mst_finder` and before a
 - assigns severity scores
 - reports trace-only instability as diagnostics by default
 - writes JSON and Markdown reports
+- can emit a reusable size-vs-MST scatter plot with point annotations
 - optionally emits a small rerun manifest for flagged models and controls
 
 ## Package layout
@@ -21,6 +22,7 @@ It is intended to sit after `local_orchestrator` / `llm_mst_finder` and before a
 - `extract.py` - orchestrator/result artifact loading and row normalization
 - `rules.py` - anomaly families, comparability logic, severity scoring
 - `reporting.py` - JSON/Markdown report generation and rerun manifest output
+- `plotting.py` - reusable model-size scatter plotting helpers
 - `cli.py` - command-line entrypoint
 
 ## CLI
@@ -43,6 +45,15 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
   --output-dir results/analysis/single-gpu-model-loop-run-sharegpt-000-tuned \
   --emit-rerun-manifest \
   --settings-yaml profiler/mst_analyzer/settings_template.yaml
+```
+
+Plot the model-size vs MST scatter from either the analyzer rows JSON or a completed orchestrator run:
+
+```bash
+PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
+/local/scratch/a/shi676/.venv/bin/python -m mst_analyzer.cli plot \
+  --mst-rows-json results/analysis/single-gpu-model-loop-run-sharegpt-000/mst_rows.json \
+  --output-path results/analysis/single-gpu-model-loop-run-sharegpt-000/model_size_vs_mst.png
 ```
 
 ## Outputs
