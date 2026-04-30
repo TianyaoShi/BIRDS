@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from statistics import median
 from typing import Sequence
 
+from .config import AnalyzerSettings
 from .models import AnomalyCandidate, BucketSummary, ComparatorEvidence, MSTRow
 
 
@@ -16,33 +17,43 @@ class _FindingHit:
     comparators: list[ComparatorEvidence]
 
 
-def analyze_rows(rows: Sequence[MSTRow]) -> tuple[list[AnomalyCandidate], list[BucketSummary]]:
-    buckets = build_bucket_summaries(rows)
+def analyze_rows(
+    rows: Sequence[MSTRow],
+    *,
+    settings: AnalyzerSettings | None = None,
+) -> tuple[list[AnomalyCandidate], list[BucketSummary]]:
+    resolved_settings = settings or AnalyzerSettings()
+    buckets = build_bucket_summaries(rows, settings=resolved_settings)
     anomalies: list[AnomalyCandidate] = []
     for row in sorted(rows, key=lambda item: (item.model, item.experiment_id)):
         hits: list[_FindingHit] = []
 
-        within_size_hit = _within_size_outlier(row=row, rows=rows)
+        within_size_hit = _within_size_outlier(row=row, rows=rows, settings=resolved_settings)
         if within_size_hit is not None:
             hits.append(within_size_hit)
 
-        inversion_hit = _larger_model_inversion(row=row, rows=rows)
+        inversion_hit = _larger_model_inversion(row=row, rows=rows, settings=resolved_settings)
         if inversion_hit is not None:
             hits.append(inversion_hit)
 
-        same_family_hit = _same_family_non_monotonicity(row=row, rows=rows)
+        same_family_hit = _same_family_non_monotonicity(row=row, rows=rows, settings=resolved_settings)
         if same_family_hit is not None:
             hits.append(same_family_hit)
 
-        trace_hit = _trace_instability_hit(row)
+        trace_hit = _trace_instability_hit(row, settings=resolved_settings)
         if trace_hit is not None:
             hits.append(trace_hit)
 
-        slo_hit = _slo_driven_disagreement(row=row, rows=rows, existing_hits=hits)
+        slo_hit = _slo_driven_disagreement(
+            row=row,
+            rows=rows,
+            existing_hits=hits,
+            settings=resolved_settings,
+        )
         if slo_hit is not None:
             hits.append(slo_hit)
 
-        anomaly = _build_anomaly(row=row, hits=hits)
+        anomaly = _build_anomaly(row=row, hits=hits, settings=resolved_settings)
         if anomaly is not None:
             anomalies.append(anomaly)
 
@@ -50,10 +61,19 @@ def analyze_rows(rows: Sequence[MSTRow]) -> tuple[list[AnomalyCandidate], list[B
     return anomalies, buckets
 
 
-def build_bucket_summaries(rows: Sequence[MSTRow]) -> list[BucketSummary]:
+def build_bucket_summaries(
+    rows: Sequence[MSTRow],
+    *,
+    settings: AnalyzerSettings | None = None,
+) -> list[BucketSummary]:
+    resolved_settings = settings or AnalyzerSettings()
     grouped: dict[tuple[str, str], list[MSTRow]] = {}
     for row in rows:
-        if row.size_bucket is None or row.mst_rps is None or row.is_quantized or row.is_moe:
+        if row.size_bucket is None or row.mst_rps is None:
+            continue
+        if resolved_settings.suppressions.suppress_quantized_bucket_verdicts and row.is_quantized:
+            continue
+        if resolved_settings.suppressions.suppress_moe_bucket_verdicts and row.is_moe:
             continue
         grouped.setdefault((row.size_bucket, _scope_label(row)), []).append(row)
 
@@ -82,15 +102,22 @@ def build_bucket_summaries(rows: Sequence[MSTRow]) -> list[BucketSummary]:
     return summaries
 
 
-def _within_size_outlier(*, row: MSTRow, rows: Sequence[MSTRow]) -> _FindingHit | None:
-    if not _eligible_for_primary_comparisons(row) or row.size_bucket is None or row.mst_rps is None:
+def _within_size_outlier(
+    *,
+    row: MSTRow,
+    rows: Sequence[MSTRow],
+    settings: AnalyzerSettings,
+) -> _FindingHit | None:
+    if _family_disabled("within_size_outlier", settings=settings):
+        return None
+    if not _eligible_for_primary_comparisons(row, settings=settings) or row.size_bucket is None or row.mst_rps is None:
         return None
 
-    peer_group, label = _peer_group_for_bucket(row=row, rows=rows)
+    peer_group, label = _peer_group_for_bucket(row=row, rows=rows, settings=settings)
     if len(peer_group) < 2:
         return None
     bucket_median = float(median(member.mst_rps for member in peer_group if member.mst_rps is not None))
-    ratio_threshold, abs_threshold = _outlier_thresholds(row.mst_rps)
+    ratio_threshold, abs_threshold = _outlier_thresholds(row.mst_rps, settings=settings)
     ratio = bucket_median / row.mst_rps if row.mst_rps > 0 else float("inf")
     absolute_delta = bucket_median - row.mst_rps
     if ratio < ratio_threshold or absolute_delta < abs_threshold:
@@ -118,7 +145,7 @@ def _within_size_outlier(*, row: MSTRow, rows: Sequence[MSTRow]) -> _FindingHit 
     ]
     return _FindingHit(
         family="within_size_outlier",
-        weight=30,
+        weight=settings.severity_weight_within_size_outlier,
         summary=(
             f"{row.model} MST {row.mst_rps:.2f} rps is below the {row.size_bucket} bucket median "
             f"{bucket_median:.2f} rps by {absolute_delta:.2f} rps ({ratio:.2f}x lower)."
@@ -133,20 +160,38 @@ def _within_size_outlier(*, row: MSTRow, rows: Sequence[MSTRow]) -> _FindingHit 
     )
 
 
-def _larger_model_inversion(*, row: MSTRow, rows: Sequence[MSTRow]) -> _FindingHit | None:
-    if not _eligible_for_primary_comparisons(row) or row.model_size_b is None or row.mst_rps is None:
+def _larger_model_inversion(
+    *,
+    row: MSTRow,
+    rows: Sequence[MSTRow],
+    settings: AnalyzerSettings,
+) -> _FindingHit | None:
+    if _family_disabled("larger_model_inversion", settings=settings):
+        return None
+    if not _eligible_for_primary_comparisons(row, settings=settings) or row.model_size_b is None or row.mst_rps is None:
         return None
 
-    comparator, label = _pick_nearest_larger_comparator(row=row, rows=rows, same_family_only=False)
+    comparator, label = _pick_nearest_larger_comparator(
+        row=row,
+        rows=rows,
+        same_family_only=False,
+        settings=settings,
+    )
     if comparator is None or comparator.mst_rps is None or comparator.model_size_b is None:
         return None
 
     absolute_delta = abs(row.mst_rps - comparator.mst_rps)
-    if row.model_size_b * 1.5 > comparator.model_size_b:
+    if row.model_size_b * settings.larger_model_min_size_ratio > comparator.model_size_b:
         return None
-    if row.mst_rps > comparator.mst_rps * 1.15:
+    if row.mst_rps > comparator.mst_rps * settings.larger_model_max_relative_rate:
         return None
-    if not ((row.mst_rps > 2.0 and comparator.mst_rps > 2.0) or absolute_delta > 1.0):
+    if not (
+        (
+            row.mst_rps > settings.larger_model_min_rate_for_relative_compare
+            and comparator.mst_rps > settings.larger_model_min_rate_for_relative_compare
+        )
+        or absolute_delta > settings.larger_model_min_absolute_delta_rps
+    ):
         return None
 
     comparator_evidence = _comparator_from_rows(
@@ -159,7 +204,7 @@ def _larger_model_inversion(*, row: MSTRow, rows: Sequence[MSTRow]) -> _FindingH
     relation_text = "close to" if row.mst_rps >= comparator.mst_rps else "below"
     return _FindingHit(
         family="larger_model_inversion",
-        weight=25,
+        weight=settings.severity_weight_larger_model_inversion,
         summary=(
             f"{row.model} MST {row.mst_rps:.2f} rps is {relation_text} larger-model "
             f"{comparator.model} at {comparator.mst_rps:.2f} rps."
@@ -173,14 +218,30 @@ def _larger_model_inversion(*, row: MSTRow, rows: Sequence[MSTRow]) -> _FindingH
     )
 
 
-def _same_family_non_monotonicity(*, row: MSTRow, rows: Sequence[MSTRow]) -> _FindingHit | None:
-    if not _eligible_for_primary_comparisons(row) or row.model_size_b is None or row.mst_rps is None:
+def _same_family_non_monotonicity(
+    *,
+    row: MSTRow,
+    rows: Sequence[MSTRow],
+    settings: AnalyzerSettings,
+) -> _FindingHit | None:
+    if _family_disabled("same_family_non_monotonicity", settings=settings):
+        return None
+    if not _eligible_for_primary_comparisons(row, settings=settings) or row.model_size_b is None or row.mst_rps is None:
         return None
 
-    comparator, label = _pick_nearest_larger_comparator(row=row, rows=rows, same_family_only=True)
+    comparator, label = _pick_nearest_larger_comparator(
+        row=row,
+        rows=rows,
+        same_family_only=True,
+        settings=settings,
+    )
     if comparator is None or comparator.mst_rps is None:
         return None
-    if row.mst_rps > 2.0 and comparator.mst_rps > 2.0 and row.mst_rps <= comparator.mst_rps * 0.8:
+    if (
+        row.mst_rps > settings.same_family_min_rate
+        and comparator.mst_rps > settings.same_family_min_rate
+        and row.mst_rps <= comparator.mst_rps * settings.same_family_max_relative_rate
+    ):
         comparator_evidence = _comparator_from_rows(
             relation="same_family_larger",
             row=row,
@@ -190,7 +251,7 @@ def _same_family_non_monotonicity(*, row: MSTRow, rows: Sequence[MSTRow]) -> _Fi
         )
         return _FindingHit(
             family="same_family_non_monotonicity",
-            weight=20,
+            weight=settings.severity_weight_same_family_non_monotonicity,
             summary=(
                 f"{row.model} underperforms larger same-family {comparator.model}: "
                 f"{row.mst_rps:.2f} rps vs {comparator.mst_rps:.2f} rps."
@@ -205,16 +266,26 @@ def _same_family_non_monotonicity(*, row: MSTRow, rows: Sequence[MSTRow]) -> _Fi
     return None
 
 
-def _trace_instability_hit(row: MSTRow) -> _FindingHit | None:
+def _trace_instability_hit(row: MSTRow, *, settings: AnalyzerSettings) -> _FindingHit | None:
+    if _family_disabled("trace_instability_suspect", settings=settings):
+        return None
+    if (
+        settings.suppressions.suppress_trace_instability_below_rps is not None
+        and row.mst_rps is not None
+        and row.mst_rps < settings.suppressions.suppress_trace_instability_below_rps
+    ):
+        return None
     instability = row.trace_instability
     strong_signal = (
         bool(instability.conflicting_rate_labels)
         or instability.majority_confirmation_used
-        or instability.uncertain_retry_count >= 2
+        or instability.uncertain_retry_count >= settings.trace_instability_min_uncertain_retries
         or instability.suspect_termination_reason
     )
     if not strong_signal and not (
-        instability.low_confidence and instability.uncertain_retry_count >= 1
+        instability.low_confidence
+        and instability.uncertain_retry_count
+        >= settings.trace_instability_require_low_confidence_uncertain_retries
     ):
         return None
 
@@ -236,7 +307,7 @@ def _trace_instability_hit(row: MSTRow) -> _FindingHit | None:
 
     return _FindingHit(
         family="trace_instability_suspect",
-        weight=15,
+        weight=settings.severity_weight_trace_instability_suspect,
         summary=f"{row.model} shows conflicting or low-confidence trace evidence near the selected MST.",
         reasons=reasons,
         comparators=[],
@@ -248,7 +319,10 @@ def _slo_driven_disagreement(
     row: MSTRow,
     rows: Sequence[MSTRow],
     existing_hits: Sequence[_FindingHit],
+    settings: AnalyzerSettings,
 ) -> _FindingHit | None:
+    if _family_disabled("slo_driven_disagreement", settings=settings):
+        return None
     if existing_hits or row.mst_rps is None or row.model_size_b is None:
         return None
     contextual_candidates = [
@@ -303,13 +377,18 @@ def _slo_driven_disagreement(
     )
 
 
-def _build_anomaly(*, row: MSTRow, hits: Sequence[_FindingHit]) -> AnomalyCandidate | None:
+def _build_anomaly(
+    *,
+    row: MSTRow,
+    hits: Sequence[_FindingHit],
+    settings: AnalyzerSettings,
+) -> AnomalyCandidate | None:
     if not hits:
         return None
 
     total_score = sum(hit.weight for hit in hits)
     if row.confidence == "low":
-        total_score += 10
+        total_score += settings.severity_weight_low_confidence_result
 
     all_rates = [row.mst_rps]
     variant_mismatch = False
@@ -343,11 +422,18 @@ def _build_anomaly(*, row: MSTRow, hits: Sequence[_FindingHit]) -> AnomalyCandid
         evidence_paths.append(row.high_bound_trial.summary_json)
 
     if all(rate is not None and rate < 1.0 for rate in all_rates):
-        total_score -= 20
+        total_score -= settings.severity_penalty_all_below_one_rps
     if slo_mismatch:
-        total_score -= 10
+        total_score -= settings.severity_penalty_slo_mismatch
     if variant_mismatch:
-        total_score -= 10
+        total_score -= settings.severity_penalty_variant_mismatch
+
+    if (
+        settings.suppressions.suppress_contextual_only_findings
+        and comparators
+        and all(comparator.comparison_label == "contextual" for comparator in comparators)
+    ):
+        return None
 
     total_score = max(0, min(100, int(round(total_score))))
     severity = "high" if total_score >= 60 else "medium" if total_score >= 35 else "low"
@@ -388,12 +474,17 @@ def _build_anomaly(*, row: MSTRow, hits: Sequence[_FindingHit]) -> AnomalyCandid
     )
 
 
-def _peer_group_for_bucket(*, row: MSTRow, rows: Sequence[MSTRow]) -> tuple[list[MSTRow], str]:
+def _peer_group_for_bucket(
+    *,
+    row: MSTRow,
+    rows: Sequence[MSTRow],
+    settings: AnalyzerSettings,
+) -> tuple[list[MSTRow], str]:
     direct = [
         candidate
         for candidate in rows
         if candidate.size_bucket == row.size_bucket
-        and _eligible_for_primary_comparisons(candidate)
+        and _eligible_for_primary_comparisons(candidate, settings=settings)
         and _same_scope(row, candidate)
         and _same_slo(row, candidate)
     ]
@@ -403,7 +494,7 @@ def _peer_group_for_bucket(*, row: MSTRow, rows: Sequence[MSTRow]) -> tuple[list
         candidate
         for candidate in rows
         if candidate.size_bucket == row.size_bucket
-        and _eligible_for_primary_comparisons(candidate)
+        and _eligible_for_primary_comparisons(candidate, settings=settings)
         and _same_scope(row, candidate)
     ]
     return contextual, "contextual"
@@ -414,11 +505,12 @@ def _pick_nearest_larger_comparator(
     row: MSTRow,
     rows: Sequence[MSTRow],
     same_family_only: bool,
+    settings: AnalyzerSettings,
 ) -> tuple[MSTRow | None, str]:
     direct = [
         candidate
         for candidate in rows
-        if _eligible_for_primary_comparisons(candidate)
+        if _eligible_for_primary_comparisons(candidate, settings=settings)
         and candidate.experiment_id != row.experiment_id
         and candidate.model_size_b is not None
         and row.model_size_b is not None
@@ -436,7 +528,7 @@ def _pick_nearest_larger_comparator(
     contextual = [
         candidate
         for candidate in rows
-        if _eligible_for_primary_comparisons(candidate)
+        if _eligible_for_primary_comparisons(candidate, settings=settings)
         and candidate.experiment_id != row.experiment_id
         and candidate.model_size_b is not None
         and row.model_size_b is not None
@@ -488,8 +580,14 @@ def _comparator_from_rows(
     )
 
 
-def _eligible_for_primary_comparisons(row: MSTRow) -> bool:
-    return row.mst_rps is not None and row.model_size_b is not None and not row.is_quantized and not row.is_moe
+def _eligible_for_primary_comparisons(row: MSTRow, *, settings: AnalyzerSettings) -> bool:
+    if row.mst_rps is None or row.model_size_b is None:
+        return False
+    if settings.suppressions.suppress_quantized_bucket_verdicts and row.is_quantized:
+        return False
+    if settings.suppressions.suppress_moe_bucket_verdicts and row.is_moe:
+        return False
+    return True
 
 
 def _same_scope(left: MSTRow, right: MSTRow) -> bool:
@@ -537,9 +635,15 @@ def _variant_mismatch(left: MSTRow, right: MSTRow) -> bool:
     return "thinking" in variants and len({variant for variant in variants if variant is not None}) > 1
 
 
-def _outlier_thresholds(rate: float) -> tuple[float, float]:
-    if rate >= 10.0:
-        return 1.5, 5.0
-    if rate >= 2.0:
-        return 1.5, 1.0
-    return 2.5, 1.0
+def _outlier_thresholds(rate: float, *, settings: AnalyzerSettings) -> tuple[float, float]:
+    for band in settings.outlier_bands:
+        if rate < band.min_rate:
+            continue
+        if band.max_rate is not None and rate >= band.max_rate:
+            continue
+        return band.ratio_threshold, band.absolute_delta_rps
+    raise RuntimeError(f"no outlier threshold band matched rate={rate}")
+
+
+def _family_disabled(family: str, *, settings: AnalyzerSettings) -> bool:
+    return family in settings.suppressions.disable_families

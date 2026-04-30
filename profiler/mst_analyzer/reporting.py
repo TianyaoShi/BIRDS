@@ -7,6 +7,7 @@ from typing import Any, Mapping, Sequence
 
 import yaml
 
+from .config import AnalyzerSettings
 from .extract import ExtractedRun, extract_run
 from .models import AnalysisArtifacts, AnomalyCandidate, BucketSummary, SuggestedRerunPlan
 from .rules import analyze_rows
@@ -17,9 +18,11 @@ def analyze_orchestrator_run(
     orchestrator_run_root: str | Path,
     output_dir: str | Path,
     max_rerun_models: int = 7,
+    settings: AnalyzerSettings | None = None,
 ) -> AnalysisArtifacts:
     extracted = extract_run(orchestrator_run_root)
-    anomalies, buckets = analyze_rows(extracted.rows)
+    resolved_settings = settings or AnalyzerSettings()
+    anomalies, buckets = analyze_rows(extracted.rows, settings=resolved_settings)
     resolved_output_dir = Path(output_dir)
     resolved_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -42,6 +45,7 @@ def analyze_orchestrator_run(
         buckets=buckets,
         rows_json_path=rows_json_path,
         rerun_plan=rerun_plan,
+        settings=resolved_settings,
     )
     report_json_path = resolved_output_dir / "mst_anomaly_report.json"
     report_md_path = resolved_output_dir / "mst_anomaly_report.md"
@@ -64,6 +68,7 @@ def _build_report_payload(
     buckets: Sequence[BucketSummary],
     rows_json_path: Path,
     rerun_plan: SuggestedRerunPlan | None,
+    settings: AnalyzerSettings,
 ) -> dict[str, Any]:
     severity_counts = {"high": 0, "medium": 0, "low": 0}
     for anomaly in anomalies:
@@ -80,6 +85,7 @@ def _build_report_payload(
             "severity_counts": severity_counts,
             "rows_json_path": str(rows_json_path),
         },
+        "analysis_config": settings.to_dict(),
         "buckets": [bucket.to_dict() for bucket in buckets],
         "anomalies": [anomaly.to_dict() for anomaly in anomalies],
         "suggested_rerun": None if rerun_plan is None else rerun_plan.to_dict(),
@@ -89,6 +95,7 @@ def _build_report_payload(
 def _render_markdown(report_payload: Mapping[str, Any]) -> str:
     run = _require_mapping(report_payload.get("run"), "report.run")
     summary = _require_mapping(report_payload.get("summary"), "report.summary")
+    analysis_config = _require_mapping(report_payload.get("analysis_config"), "report.analysis_config")
     anomalies = _require_list(report_payload.get("anomalies"), "report.anomalies")
     buckets = _require_list(report_payload.get("buckets"), "report.buckets")
     rerun = report_payload.get("suggested_rerun")
@@ -101,6 +108,7 @@ def _render_markdown(report_payload: Mapping[str, Any]) -> str:
         f"- Rows analyzed: {summary['row_count']}",
         f"- Anomaly candidates: {summary['anomaly_count']}",
         f"- Rows JSON: `{summary['rows_json_path']}`",
+        f"- Disabled families: {', '.join(analysis_config['suppressions']['disable_families']) or '-'}",
         "",
         "## Summary",
         "",

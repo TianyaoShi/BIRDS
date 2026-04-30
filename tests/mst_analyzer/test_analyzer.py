@@ -8,6 +8,7 @@ import yaml
 
 from local_orchestrator.manifest import load_manifest
 from local_orchestrator.matrix import expand_manifest
+from mst_analyzer.config import AnalyzerSettings, load_settings
 from mst_analyzer.extract import extract_run
 from mst_analyzer.models import MSTRow, TraceInstabilityEvidence, TrialArtifactRef
 from mst_analyzer.reporting import analyze_orchestrator_run
@@ -622,6 +623,213 @@ def test_rules_do_not_over_alert_for_sub_one_rps_models(tmp_path: Path) -> None:
 
     anomalies, _ = analyze_rows([llama13, qwen14])
     assert anomalies == []
+
+
+def test_rules_allow_configured_suppressions_and_thresholds(tmp_path: Path) -> None:
+    qwen06 = _row(
+        tmp_path,
+        experiment_id="qwen06",
+        model="Qwen/Qwen3-0.6B",
+        family="qwen3",
+        variant=None,
+        size_b=0.6,
+        bucket="tiny",
+        mst_rps=0.9,
+        ttft_slo_ms=250,
+        tpot_slo_ms=50,
+        max_num_seqs=1024,
+        max_num_batched_tokens=8192,
+        confidence="low",
+        trace_instability=TraceInstabilityEvidence(
+            conflicting_rate_labels=("0.9",),
+            majority_confirmation_used=True,
+            low_confidence=True,
+        ),
+    )
+    llama1 = _row(
+        tmp_path,
+        experiment_id="llama1",
+        model="meta-llama/Llama-3.2-1B-Instruct",
+        family="llama",
+        variant="instruct",
+        size_b=1.0,
+        bucket="small",
+        mst_rps=1.1,
+        ttft_slo_ms=250,
+        tpot_slo_ms=50,
+        max_num_seqs=1024,
+        max_num_batched_tokens=8192,
+    )
+
+    default_anomalies, _ = analyze_rows([qwen06, llama1])
+    assert default_anomalies
+
+    settings = AnalyzerSettings.from_dict(
+        {
+            "suppressions": {
+                "disable_families": ["larger_model_inversion"],
+                "suppress_trace_instability_below_rps": 1.0,
+            }
+        }
+    )
+    suppressed_anomalies, _ = analyze_rows([qwen06, llama1], settings=settings)
+    assert suppressed_anomalies == []
+
+
+def test_rules_allow_configured_outlier_bands(tmp_path: Path) -> None:
+    gemma4 = _row(
+        tmp_path,
+        experiment_id="gemma4",
+        model="google/gemma-4-E4B-it",
+        family="gemma",
+        variant="instruct",
+        size_b=4.0,
+        bucket="mid",
+        mst_rps=5.64,
+        ttft_slo_ms=500,
+        tpot_slo_ms=100,
+        max_num_seqs=256,
+        max_num_batched_tokens=2048,
+    )
+    qwen4i = _row(
+        tmp_path,
+        experiment_id="qwen4i",
+        model="Qwen/Qwen3-4B-Instruct-2507",
+        family="qwen3",
+        variant="instruct",
+        size_b=4.0,
+        bucket="mid",
+        mst_rps=7.92,
+        ttft_slo_ms=500,
+        tpot_slo_ms=100,
+        max_num_seqs=256,
+        max_num_batched_tokens=2048,
+    )
+    llama3 = _row(
+        tmp_path,
+        experiment_id="llama3",
+        model="meta-llama/Llama-3.2-3B-Instruct",
+        family="llama",
+        variant="instruct",
+        size_b=3.0,
+        bucket="mid",
+        mst_rps=8.6,
+        ttft_slo_ms=500,
+        tpot_slo_ms=100,
+        max_num_seqs=256,
+        max_num_batched_tokens=2048,
+    )
+
+    default_anomalies, _ = analyze_rows([gemma4, qwen4i, llama3])
+    assert default_anomalies == []
+
+    qwen4t = _row(
+        tmp_path,
+        experiment_id="qwen4t",
+        model="Qwen/Qwen3-4B-Thinking-2507",
+        family="qwen3",
+        variant="thinking",
+        size_b=4.0,
+        bucket="mid",
+        mst_rps=4.27,
+        ttft_slo_ms=500,
+        tpot_slo_ms=100,
+        max_num_seqs=256,
+        max_num_batched_tokens=2048,
+    )
+    anomalies, _ = analyze_rows([gemma4, qwen4i, llama3, qwen4t])
+    assert any(anomaly.model == "Qwen/Qwen3-4B-Thinking-2507" for anomaly in anomalies)
+
+    custom_settings = AnalyzerSettings.from_dict(
+        {
+            "outlier_bands": [
+                {
+                    "min_rate": 2.0,
+                    "max_rate": 10.0,
+                    "ratio_threshold": 2.0,
+                    "absolute_delta_rps": 3.0,
+                },
+                {
+                    "min_rate": 10.0,
+                    "max_rate": None,
+                    "ratio_threshold": 1.5,
+                    "absolute_delta_rps": 5.0,
+                },
+                {
+                    "min_rate": 0.0,
+                    "max_rate": 2.0,
+                    "ratio_threshold": 2.5,
+                    "absolute_delta_rps": 1.0,
+                },
+            ],
+            "suppressions": {
+                "disable_families": ["larger_model_inversion", "same_family_non_monotonicity"],
+            },
+        }
+    )
+    custom_anomalies, _ = analyze_rows([gemma4, qwen4i, llama3, qwen4t], settings=custom_settings)
+    assert custom_anomalies == []
+
+
+def test_load_settings_and_report_include_analysis_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    models = [
+        "Qwen/Qwen3-0.6B",
+        "meta-llama/Llama-3.2-1B-Instruct",
+    ]
+    run_root = _write_orchestrator_run(
+        tmp_path,
+        models=models,
+        bundle_specs={
+            "Qwen/Qwen3-0.6B": {
+                "mst_rps": 0.9,
+                "high_bound_rate": 1.0,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+                "confidence": "low",
+                "include_majority_conflict": True,
+            },
+            "meta-llama/Llama-3.2-1B-Instruct": {
+                "mst_rps": 1.1,
+                "high_bound_rate": 1.2,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+                "confidence": "high",
+            },
+        },
+    )
+    settings_path = tmp_path / "analyzer_settings.yaml"
+    settings_path.write_text(
+        yaml.safe_dump(
+            {
+                "suppressions": {
+                    "disable_families": ["larger_model_inversion"],
+                    "suppress_trace_instability_below_rps": 1.0,
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    settings = load_settings(settings_path)
+
+    output_dir = tmp_path / "results" / "analysis" / "fixture-run"
+    artifacts = analyze_orchestrator_run(
+        orchestrator_run_root=run_root,
+        output_dir=output_dir,
+        settings=settings,
+    )
+    payload = json.loads(artifacts.report_json_path.read_text(encoding="utf-8"))
+    assert payload["analysis_config"]["suppressions"]["disable_families"] == ["larger_model_inversion"]
+    assert payload["analysis_config"]["suppressions"]["suppress_trace_instability_below_rps"] == pytest.approx(1.0)
+    assert payload["summary"]["anomaly_count"] == 0
 
 
 def test_report_includes_evidence_paths_and_rerun_manifest_uses_distinct_workload_name(
