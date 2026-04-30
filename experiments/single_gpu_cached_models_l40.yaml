@@ -94,7 +94,6 @@ overrides:
         - meta-llama/Llama-2-7b-chat-hf
         - meta-llama/Llama-2-13b-chat-hf
         - meta-llama/Llama-3.1-8B-Instruct
-        - openai/gpt-oss-20b
     reason: Larger models keep a lower request-rate ceiling to reduce wasted bracket trials.
     search:
       initial_request_rate: 0.5
@@ -104,9 +103,14 @@ overrides:
 
   - match:
       model: openai/gpt-oss-20b
-    reason: gpt-oss-20b uses the cached mxfp4 checkpoint; let vLLM pick dtype automatically and treat its memory footprint like the 7B/8B class.
+    reason: gpt-oss-20b uses the cached mxfp4 checkpoint; let vLLM pick dtype automatically and treat its memory footprint like the 7B/8B class; also give it a bit more search room due to the mxfp4 quantization
     launch:
       dtype: auto
+    search:
+      initial_request_rate: 4
+      max_request_rate: 24
+      max_binary_steps: 9
+      max_bracket_trials: 16
 
   - match:
       models:
