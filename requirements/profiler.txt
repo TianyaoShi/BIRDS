@@ -1,0 +1,27 @@
+# Core profiler runtime dependencies.
+#
+# This file covers the active profiler packages exported through their
+# __init__.py files plus the shared monitor and benchmark helpers under
+# profiler/. Keep vLLM itself pinned separately in requirements/vllm-h100.txt.
+
+# Async OpenAI-compatible request clients and metrics polling.
+aiohttp
+
+# YAML manifests, workloads, analyzer settings, and energy plans.
+PyYAML
+
+# Stability tests and plotting/report generation.
+scipy
+matplotlib
+
+# GPU and CPU monitoring helpers.
+numpy
+nvidia-ml-py
+psutil
+
+# Dataset/tokenizer-backed workloads and baseline benchmark helpers.
+datasets
+transformers
+tqdm
+pandas
+pillow

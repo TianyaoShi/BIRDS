@@ -47,7 +47,7 @@ slurm:
   qos: preemptible
   time: 04:00:00
   modules:
-    - modetree/gpu
+    - modtree/gpu
     - cuda/12.6.0
   setup_commands:
     - source /path/to/venv/bin/activate
