@@ -12,7 +12,7 @@ from mst_analyzer.config import AnalyzerSettings, load_settings
 from mst_analyzer.extract import extract_run
 from mst_analyzer.models import MSTRow, TraceInstabilityEvidence, TrialArtifactRef
 from mst_analyzer.reporting import analyze_orchestrator_run
-from mst_analyzer.rules import analyze_rows
+from mst_analyzer.rules import analyze_rows, analyze_rows_with_diagnostics
 
 
 def _write_workload(tmp_path: Path, *, name: str = "live_sharegpt_workload_context") -> Path:
@@ -661,8 +661,13 @@ def test_rules_allow_configured_suppressions_and_thresholds(tmp_path: Path) -> N
         max_num_batched_tokens=8192,
     )
 
-    default_anomalies, _ = analyze_rows([qwen06, llama1])
-    assert default_anomalies
+    default_anomalies, _, default_diagnostics = analyze_rows_with_diagnostics([qwen06, llama1])
+    assert default_anomalies == []
+    assert [diagnostic.model for diagnostic in default_diagnostics] == ["Qwen/Qwen3-0.6B"]
+
+    trace_as_anomaly_settings = AnalyzerSettings.from_dict({"include_trace_only_findings": True})
+    trace_as_anomaly, _ = analyze_rows([qwen06, llama1], settings=trace_as_anomaly_settings)
+    assert trace_as_anomaly
 
     settings = AnalyzerSettings.from_dict(
         {
@@ -871,6 +876,7 @@ def test_report_includes_evidence_paths_and_rerun_manifest_uses_distinct_workloa
     artifacts = analyze_orchestrator_run(
         orchestrator_run_root=run_root,
         output_dir=output_dir,
+        emit_rerun_manifest=True,
     )
 
     assert artifacts.report_json_path.is_file()
@@ -893,3 +899,51 @@ def test_report_includes_evidence_paths_and_rerun_manifest_uses_distinct_workloa
     assert rerun_workload_path.stem.endswith("_mst_anomaly_rerun")
     rerun_workload_payload = yaml.safe_load(rerun_workload_path.read_text(encoding="utf-8"))
     assert rerun_workload_payload["name"].endswith("_mst_anomaly_rerun")
+
+
+def test_report_keeps_trace_only_findings_as_diagnostics_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    models = [
+        "Qwen/Qwen3-0.6B",
+        "meta-llama/Llama-3.2-1B-Instruct",
+    ]
+    run_root = _write_orchestrator_run(
+        tmp_path,
+        models=models,
+        bundle_specs={
+            "Qwen/Qwen3-0.6B": {
+                "mst_rps": 0.9,
+                "high_bound_rate": 1.0,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+                "confidence": "low",
+                "include_majority_conflict": True,
+            },
+            "meta-llama/Llama-3.2-1B-Instruct": {
+                "mst_rps": 1.1,
+                "high_bound_rate": 1.2,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+                "confidence": "high",
+            },
+        },
+    )
+
+    output_dir = tmp_path / "results" / "analysis" / "fixture-run"
+    artifacts = analyze_orchestrator_run(
+        orchestrator_run_root=run_root,
+        output_dir=output_dir,
+    )
+    payload = json.loads(artifacts.report_json_path.read_text(encoding="utf-8"))
+
+    assert payload["summary"]["anomaly_count"] == 0
+    assert payload["summary"]["trace_diagnostic_count"] == 1
+    assert payload["trace_diagnostics"][0]["model"] == "Qwen/Qwen3-0.6B"
+    assert artifacts.rerun_manifest_path is None

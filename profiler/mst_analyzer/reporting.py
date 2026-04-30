@@ -9,8 +9,8 @@ import yaml
 
 from .config import AnalyzerSettings
 from .extract import ExtractedRun, extract_run
-from .models import AnalysisArtifacts, AnomalyCandidate, BucketSummary, SuggestedRerunPlan
-from .rules import analyze_rows
+from .models import AnalysisArtifacts, AnomalyCandidate, BucketSummary, SuggestedRerunPlan, TraceDiagnostic
+from .rules import analyze_rows_with_diagnostics
 
 
 def analyze_orchestrator_run(
@@ -18,11 +18,15 @@ def analyze_orchestrator_run(
     orchestrator_run_root: str | Path,
     output_dir: str | Path,
     max_rerun_models: int = 7,
+    emit_rerun_manifest: bool = False,
     settings: AnalyzerSettings | None = None,
 ) -> AnalysisArtifacts:
     extracted = extract_run(orchestrator_run_root)
     resolved_settings = settings or AnalyzerSettings()
-    anomalies, buckets = analyze_rows(extracted.rows, settings=resolved_settings)
+    anomalies, buckets, trace_diagnostics = analyze_rows_with_diagnostics(
+        extracted.rows,
+        settings=resolved_settings,
+    )
     resolved_output_dir = Path(output_dir)
     resolved_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -32,17 +36,20 @@ def analyze_orchestrator_run(
         encoding="utf-8",
     )
 
-    rerun_plan = _write_suggested_rerun_manifest(
-        extracted=extracted,
-        anomalies=anomalies,
-        output_dir=resolved_output_dir,
-        max_rerun_models=max_rerun_models,
-    )
+    rerun_plan = None
+    if emit_rerun_manifest:
+        rerun_plan = _write_suggested_rerun_manifest(
+            extracted=extracted,
+            anomalies=anomalies,
+            output_dir=resolved_output_dir,
+            max_rerun_models=max_rerun_models,
+        )
 
     report_payload = _build_report_payload(
         extracted=extracted,
         anomalies=anomalies,
         buckets=buckets,
+        trace_diagnostics=trace_diagnostics,
         rows_json_path=rows_json_path,
         rerun_plan=rerun_plan,
         settings=resolved_settings,
@@ -58,6 +65,7 @@ def analyze_orchestrator_run(
         rerun_manifest_path=(None if rerun_plan is None else rerun_plan.manifest_path),
         row_count=len(extracted.rows),
         anomaly_count=len(anomalies),
+        trace_diagnostic_count=len(trace_diagnostics),
     )
 
 
@@ -66,6 +74,7 @@ def _build_report_payload(
     extracted: ExtractedRun,
     anomalies: Sequence[AnomalyCandidate],
     buckets: Sequence[BucketSummary],
+    trace_diagnostics: Sequence[TraceDiagnostic],
     rows_json_path: Path,
     rerun_plan: SuggestedRerunPlan | None,
     settings: AnalyzerSettings,
@@ -82,12 +91,14 @@ def _build_report_payload(
         "summary": {
             "row_count": len(extracted.rows),
             "anomaly_count": len(anomalies),
+            "trace_diagnostic_count": len(trace_diagnostics),
             "severity_counts": severity_counts,
             "rows_json_path": str(rows_json_path),
         },
         "analysis_config": settings.to_dict(),
         "buckets": [bucket.to_dict() for bucket in buckets],
         "anomalies": [anomaly.to_dict() for anomaly in anomalies],
+        "trace_diagnostics": [diagnostic.to_dict() for diagnostic in trace_diagnostics],
         "suggested_rerun": None if rerun_plan is None else rerun_plan.to_dict(),
     }
 
@@ -97,6 +108,7 @@ def _render_markdown(report_payload: Mapping[str, Any]) -> str:
     summary = _require_mapping(report_payload.get("summary"), "report.summary")
     analysis_config = _require_mapping(report_payload.get("analysis_config"), "report.analysis_config")
     anomalies = _require_list(report_payload.get("anomalies"), "report.anomalies")
+    trace_diagnostics = _require_list(report_payload.get("trace_diagnostics"), "report.trace_diagnostics")
     buckets = _require_list(report_payload.get("buckets"), "report.buckets")
     rerun = report_payload.get("suggested_rerun")
 
@@ -107,6 +119,7 @@ def _render_markdown(report_payload: Mapping[str, Any]) -> str:
         f"- Manifest: `{run['manifest_path']}`",
         f"- Rows analyzed: {summary['row_count']}",
         f"- Anomaly candidates: {summary['anomaly_count']}",
+        f"- Trace diagnostics: {summary['trace_diagnostic_count']}",
         f"- Rows JSON: `{summary['rows_json_path']}`",
         f"- Disabled families: {', '.join(analysis_config['suppressions']['disable_families']) or '-'}",
         "",
@@ -182,7 +195,7 @@ def _render_markdown(report_payload: Mapping[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "## Trace Instability",
+            "## Trace Instability On Anomalies",
             "",
             "| Model | MST (rps) | Confidence | Confirmation | High Bound | Reason |",
             "| --- | --- | --- | --- | --- | --- |",
@@ -193,7 +206,15 @@ def _render_markdown(report_payload: Mapping[str, Any]) -> str:
         families = set(anomaly_mapping["families"])
         if "trace_instability_suspect" not in families:
             continue
-        reason = "; ".join(anomaly_mapping["reasons"][:2])
+        family_reasons = _require_mapping(
+            anomaly_mapping.get("family_reasons"),
+            "report.anomalies[].family_reasons",
+        )
+        trace_reasons = _require_list(
+            family_reasons.get("trace_instability_suspect", []),
+            "report.anomalies[].family_reasons.trace_instability_suspect",
+        )
+        reason = "; ".join(trace_reasons[:2])
         lines.append(
             "| "
             f"{anomaly_mapping['model']} | "
@@ -202,6 +223,28 @@ def _render_markdown(report_payload: Mapping[str, Any]) -> str:
             f"{anomaly_mapping.get('confirmation_trial_id') or '-'} | "
             f"{anomaly_mapping.get('high_bound_trial_id') or '-'} | "
             f"{reason} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Trace-Only Diagnostics",
+            "",
+            "| Model | MST (rps) | Confidence | Confirmation | High Bound | Reason |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    for diagnostic in trace_diagnostics:
+        diagnostic_mapping = _require_mapping(diagnostic, "report.trace_diagnostics[]")
+        reason_list = _require_list(diagnostic_mapping.get("reasons"), "report.trace_diagnostics[].reasons")
+        lines.append(
+            "| "
+            f"{diagnostic_mapping['model']} | "
+            f"{_format_optional_float(diagnostic_mapping.get('mst_rps'))} | "
+            f"{diagnostic_mapping.get('confidence') or '-'} | "
+            f"{diagnostic_mapping.get('confirmation_trial_id') or '-'} | "
+            f"{diagnostic_mapping.get('high_bound_trial_id') or '-'} | "
+            f"{'; '.join(reason_list[:2]) or '-'} |"
         )
 
     lines.extend(["", "## Findings", ""])

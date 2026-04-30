@@ -55,7 +55,7 @@ class AnalyzerSuppressions:
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "AnalyzerSuppressions":
         raw_disable = payload.get("disable_families", ())
-        if not isinstance(raw_disable, list):
+        if not isinstance(raw_disable, (list, tuple)):
             raise ValueError("suppressions.disable_families must be a list when provided")
         disable_families = []
         for family in raw_disable:
@@ -106,6 +106,7 @@ class AnalyzerSettings:
     same_family_min_rate: float = 2.0
     trace_instability_min_uncertain_retries: int = 2
     trace_instability_require_low_confidence_uncertain_retries: int = 1
+    include_trace_only_findings: bool = False
     severity_weight_within_size_outlier: int = 30
     severity_weight_larger_model_inversion: int = 25
     severity_weight_same_family_non_monotonicity: int = 20
@@ -177,6 +178,10 @@ class AnalyzerSettings:
                     cls().trace_instability_require_low_confidence_uncertain_retries,
                 ),
                 "trace_instability_require_low_confidence_uncertain_retries",
+            ),
+            include_trace_only_findings=_expect_bool(
+                payload.get("include_trace_only_findings", cls().include_trace_only_findings),
+                "include_trace_only_findings",
             ),
             severity_weight_within_size_outlier=_expect_int(
                 payload.get(

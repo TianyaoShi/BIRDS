@@ -1,5 +1,6 @@
 # MST Analyzer settings template.
-# Copy this file and adjust only the fields you need.
+# Prefer the defaults unless you are intentionally calibrating analyzer behavior.
+# Trace-only findings are reported as diagnostics by default, not anomalies.
 
 outlier_bands:
   - min_rate: 10.0
@@ -25,16 +26,7 @@ same_family_min_rate: 2.0
 
 trace_instability_min_uncertain_retries: 2
 trace_instability_require_low_confidence_uncertain_retries: 1
-
-severity_weight_within_size_outlier: 30
-severity_weight_larger_model_inversion: 25
-severity_weight_same_family_non_monotonicity: 20
-severity_weight_trace_instability_suspect: 15
-severity_weight_low_confidence_result: 10
-
-severity_penalty_all_below_one_rps: 20
-severity_penalty_slo_mismatch: 10
-severity_penalty_variant_mismatch: 10
+include_trace_only_findings: false
 
 suppressions:
   disable_families: []

@@ -5,7 +5,7 @@ from statistics import median
 from typing import Sequence
 
 from .config import AnalyzerSettings
-from .models import AnomalyCandidate, BucketSummary, ComparatorEvidence, MSTRow
+from .models import AnomalyCandidate, BucketSummary, ComparatorEvidence, MSTRow, TraceDiagnostic
 
 
 @dataclass(slots=True)
@@ -22,9 +22,19 @@ def analyze_rows(
     *,
     settings: AnalyzerSettings | None = None,
 ) -> tuple[list[AnomalyCandidate], list[BucketSummary]]:
+    anomalies, buckets, _ = analyze_rows_with_diagnostics(rows, settings=settings)
+    return anomalies, buckets
+
+
+def analyze_rows_with_diagnostics(
+    rows: Sequence[MSTRow],
+    *,
+    settings: AnalyzerSettings | None = None,
+) -> tuple[list[AnomalyCandidate], list[BucketSummary], list[TraceDiagnostic]]:
     resolved_settings = settings or AnalyzerSettings()
     buckets = build_bucket_summaries(rows, settings=resolved_settings)
     anomalies: list[AnomalyCandidate] = []
+    trace_diagnostics: list[TraceDiagnostic] = []
     for row in sorted(rows, key=lambda item: (item.model, item.experiment_id)):
         hits: list[_FindingHit] = []
 
@@ -53,12 +63,21 @@ def analyze_rows(
         if slo_hit is not None:
             hits.append(slo_hit)
 
+        if (
+            hits
+            and not resolved_settings.include_trace_only_findings
+            and all(hit.family == "trace_instability_suspect" for hit in hits)
+        ):
+            trace_diagnostics.append(_build_trace_diagnostic(row=row, hit=hits[0]))
+            continue
+
         anomaly = _build_anomaly(row=row, hits=hits, settings=resolved_settings)
         if anomaly is not None:
             anomalies.append(anomaly)
 
     anomalies.sort(key=lambda item: (-item.severity_score, item.model, item.experiment_id))
-    return anomalies, buckets
+    trace_diagnostics.sort(key=lambda item: (-(item.mst_rps or 0.0), item.model, item.experiment_id))
+    return anomalies, buckets, trace_diagnostics
 
 
 def build_bucket_summaries(
@@ -396,12 +415,14 @@ def _build_anomaly(
     comparators: list[ComparatorEvidence] = []
     seen_keys: set[tuple[str, str]] = set()
     reasons: list[str] = []
+    family_reasons: dict[str, tuple[str, ...]] = {}
     evidence_paths = [row.search_trace_path]
     if row.final_report_json_path is not None:
         evidence_paths.append(row.final_report_json_path)
 
     for hit in hits:
         reasons.extend(hit.reasons)
+        family_reasons[hit.family] = tuple(hit.reasons)
         for comparator in hit.comparators:
             key = (comparator.experiment_id, "")
             if key not in seen_keys:
@@ -464,6 +485,7 @@ def _build_anomaly(
         families=tuple(hit.family for hit in hits),
         summary=primary_summary,
         reasons=tuple(reasons),
+        family_reasons=family_reasons,
         comparators=tuple(comparators),
         confirmation_trial_id=(None if row.confirmation_trial is None else row.confirmation_trial.trial_id),
         high_bound_trial_id=(None if row.high_bound_trial is None else row.high_bound_trial.trial_id),
@@ -471,6 +493,27 @@ def _build_anomaly(
         search_trace_path=row.search_trace_path,
         final_report_json_path=row.final_report_json_path,
         evidence_paths=unique_paths,
+    )
+
+
+def _build_trace_diagnostic(*, row: MSTRow, hit: _FindingHit) -> TraceDiagnostic:
+    evidence_paths = [row.search_trace_path]
+    if row.final_report_json_path is not None:
+        evidence_paths.append(row.final_report_json_path)
+    if row.confirmation_trial is not None and row.confirmation_trial.summary_json is not None:
+        evidence_paths.append(row.confirmation_trial.summary_json)
+    if row.high_bound_trial is not None and row.high_bound_trial.summary_json is not None:
+        evidence_paths.append(row.high_bound_trial.summary_json)
+    return TraceDiagnostic(
+        experiment_id=row.experiment_id,
+        model=row.model,
+        mst_rps=row.mst_rps,
+        confidence=row.confidence,
+        reasons=tuple(hit.reasons),
+        confirmation_trial_id=(None if row.confirmation_trial is None else row.confirmation_trial.trial_id),
+        high_bound_trial_id=(None if row.high_bound_trial is None else row.high_bound_trial.trial_id),
+        search_trace_path=row.search_trace_path,
+        evidence_paths=tuple(dict.fromkeys(evidence_paths)),
     )
 
 
@@ -582,10 +625,6 @@ def _comparator_from_rows(
 
 def _eligible_for_primary_comparisons(row: MSTRow, *, settings: AnalyzerSettings) -> bool:
     if row.mst_rps is None or row.model_size_b is None:
-        return False
-    if settings.suppressions.suppress_quantized_bucket_verdicts and row.is_quantized:
-        return False
-    if settings.suppressions.suppress_moe_bucket_verdicts and row.is_moe:
         return False
     return True
 

@@ -138,12 +138,29 @@ class AnomalyCandidate:
     families: tuple[AnomalyFamily, ...]
     summary: str
     reasons: tuple[str, ...]
+    family_reasons: dict[str, tuple[str, ...]]
     comparators: tuple[ComparatorEvidence, ...]
     confirmation_trial_id: str | None
     high_bound_trial_id: str | None
     suggested_action: str
     search_trace_path: Path
     final_report_json_path: Path | None
+    evidence_paths: tuple[Path, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return _serialize(asdict(self))
+
+
+@dataclass(frozen=True, slots=True)
+class TraceDiagnostic:
+    experiment_id: str
+    model: str
+    mst_rps: float | None
+    confidence: Confidence | None
+    reasons: tuple[str, ...]
+    confirmation_trial_id: str | None
+    high_bound_trial_id: str | None
+    search_trace_path: Path
     evidence_paths: tuple[Path, ...]
 
     def to_dict(self) -> dict[str, Any]:
@@ -184,6 +201,7 @@ class AnalysisArtifacts:
     rerun_manifest_path: Path | None
     row_count: int
     anomaly_count: int
+    trace_diagnostic_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return _serialize(asdict(self))

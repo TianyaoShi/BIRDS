@@ -11,8 +11,9 @@ It is intended to sit after `local_orchestrator` / `llm_mst_finder` and before a
 - extracts normalized MST result rows
 - applies anomaly rules across comparable models
 - assigns severity scores
+- reports trace-only instability as diagnostics by default
 - writes JSON and Markdown reports
-- emits a small rerun manifest for flagged models and controls
+- optionally emits a small rerun manifest for flagged models and controls
 
 ## Package layout
 
@@ -33,13 +34,14 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
   --output-dir results/analysis/single-gpu-model-loop-run-sharegpt-000
 ```
 
-With custom settings:
+With custom settings and explicit rerun-manifest generation:
 
 ```bash
 PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 /local/scratch/a/shi676/.venv/bin/python -m mst_analyzer.cli analyze \
   --orchestrator-run-root results/orchestrator/single-gpu-model-loop-run-sharegpt-000 \
   --output-dir results/analysis/single-gpu-model-loop-run-sharegpt-000-tuned \
+  --emit-rerun-manifest \
   --settings-yaml profiler/mst_analyzer/settings_template.yaml
 ```
 
@@ -52,15 +54,15 @@ Each analysis run writes:
   mst_rows.json
   mst_anomaly_report.json
   mst_anomaly_report.md
-  suggested_rerun_manifest.yaml
-  <workload>_mst_anomaly_rerun.yaml
+  suggested_rerun_manifest.yaml        # only with --emit-rerun-manifest
+  <workload>_mst_anomaly_rerun.yaml    # only with --emit-rerun-manifest
 ```
 
 `suggested_rerun_manifest.yaml` is only written when there are selected rerun targets.
 
 ## Settings
 
-The analyzer now supports threshold and suppression overrides from YAML.
+The analyzer supports threshold and suppression overrides from YAML, but the defaults should be treated as the calibrated interface for normal use. Avoid changing scoring internals to make a specific run agree with expectations.
 
 The template file is:
 
@@ -72,8 +74,7 @@ Main settings groups:
 - `larger_model_*`
 - `same_family_*`
 - `trace_instability_*`
-- `severity_weight_*`
-- `severity_penalty_*`
+- `include_trace_only_findings`
 - `suppressions`
 
 Supported suppressions:
@@ -107,7 +108,9 @@ Primary comparisons require matching:
 
 SLO mismatches are still allowed for contextual comparisons, but they are penalized in severity and labeled accordingly.
 
-Quantized and MoE models are suppressed from bucket verdicts by default unless you relax those suppressions in settings.
+Quantized and MoE models are suppressed from bucket summaries by default unless you relax those suppressions in settings. They are not globally removed from all comparison rules; if a comparison is otherwise compatible, the report can still use it with quantization/MoE metadata visible in the extracted rows.
+
+Trace-only instability is reported under `trace_diagnostics` and in the Markdown diagnostics section by default. Set `include_trace_only_findings: true` only when you intentionally want noisy or low-confidence searches to count as anomaly candidates.
 
 ## Development notes
 

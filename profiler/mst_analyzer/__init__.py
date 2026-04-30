@@ -1,8 +1,8 @@
 from .config import AnalyzerSettings, AnalyzerSuppressions, OutlierBandConfig, load_settings
 from .extract import ExtractedRun, extract_run
-from .models import AnalysisArtifacts, AnomalyCandidate, BucketSummary, MSTRow, SuggestedRerunPlan
+from .models import AnalysisArtifacts, AnomalyCandidate, BucketSummary, MSTRow, SuggestedRerunPlan, TraceDiagnostic
 from .reporting import analyze_orchestrator_run
-from .rules import analyze_rows, build_bucket_summaries
+from .rules import analyze_rows, analyze_rows_with_diagnostics, build_bucket_summaries
 
 __all__ = [
     "AnalysisArtifacts",
@@ -14,8 +14,10 @@ __all__ = [
     "MSTRow",
     "OutlierBandConfig",
     "SuggestedRerunPlan",
+    "TraceDiagnostic",
     "analyze_orchestrator_run",
     "analyze_rows",
+    "analyze_rows_with_diagnostics",
     "build_bucket_summaries",
     "extract_run",
     "load_settings",

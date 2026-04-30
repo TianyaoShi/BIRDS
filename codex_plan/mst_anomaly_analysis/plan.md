@@ -10,7 +10,7 @@ Add a post-run analysis layer that reads an orchestrator MST run and flags suspi
 - Gemma E4B and Qwen3-4B-Thinking looked unexpectedly low compared with Qwen3-4B-Instruct and similar to 8B models.
 - Llama-2-13B and Qwen3-14B differed by about 2x, but both were below 1 req/s, so the practical significance was lower and should not be treated as the same severity.
 
-The analyzer should not automatically declare a model wrong. It should produce ranked anomaly candidates with evidence, confidence, and suggested rerun plans.
+The analyzer should not automatically declare a model wrong. It should produce ranked anomaly candidates with evidence and confidence, plus trace diagnostics for noisy searches. Rerun manifests should be opt-in because a noisy analyzer can otherwise create misleading follow-up work.
 
 ## Proposed Package
 
@@ -47,7 +47,7 @@ Outputs:
 results/analysis/<run_id>/
   mst_anomaly_report.json
   mst_anomaly_report.md
-  suggested_rerun_manifest.yaml
+  suggested_rerun_manifest.yaml  # only when explicitly requested
 ```
 
 ## Extracted Row Schema
@@ -174,7 +174,7 @@ Examples:
 
 ### 4. Trace-Instability Suspect
 
-Flag results where the final rate was selected after conflicting evidence:
+Annotate results where the final rate was selected after conflicting evidence:
 
 - same rate was classified stable and unstable in different trials
 - confirmation required majority pass
@@ -186,6 +186,12 @@ Examples:
 
 - Qwen3-0.6B at `17.4 rps` had one unstable and one stable confirmation; that should increase rerun priority.
 - Gemma E4B backed down from `8.46` after failed confirmation and had many uncertain trials between `5.99` and `7.05`; that should increase rerun priority.
+
+Default policy:
+
+- If trace instability is the only signal, report it as a diagnostic, not an anomaly.
+- If structural anomaly evidence is already present, trace instability can raise severity and explain why a rerun is useful.
+- A settings override can include trace-only findings as anomalies for calibration work, but this should not be the default.
 
 ### 5. SLO-Driven Disagreement
 
@@ -251,7 +257,7 @@ Suggested action: rerun Gemma E4B with Qwen3-4B-Instruct and Qwen3-8B controls u
 
 ## Suggested Rerun Manifest
 
-The analyzer should optionally emit a small manifest with only flagged models and comparator controls.
+The analyzer should optionally emit a small manifest with only flagged models and comparator controls. This must require an explicit CLI flag, because manifest generation is an action recommendation, not just analysis output.
 
 Selection rules:
 
@@ -304,7 +310,7 @@ Focused tests:
 ### Phase 3: Reporting and Rerun Manifest
 
 - Write JSON and Markdown reports.
-- Generate optional rerun manifest.
+- Generate optional rerun manifest only when explicitly requested.
 - Include trace/trial paths for manual inspection.
 
 Focused tests:
@@ -326,4 +332,3 @@ Focused tests:
 
 4. Should sub-1-rps results be suppressed entirely or merely downgraded?
    - Recommendation: downgrade, because they can still matter for very expensive models/workloads.
-
