@@ -5,7 +5,7 @@ import json
 import re
 from fnmatch import fnmatchcase
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from llm_mst_finder.workload import LengthSpec, load_workload_config
 
@@ -24,12 +24,12 @@ def estimate_resource_probe(
     probe: ProbeConfig,
 ) -> ResourceProbeResult:
     warnings: list[str] = []
-    model_params_b = _model_size_billions(model, probe=probe)
+    model_params_b = infer_model_size_billions(model, model_size_overrides_b=probe.model_size_overrides_b)
     if model_params_b is None:
         warnings.append(f"could not infer model parameter count from {model!r}")
 
     context_tokens = _workload_context_tokens(workload, probe=probe, warnings=warnings)
-    model_config = _load_cached_hf_config(model)
+    model_config = load_cached_hf_config(model)
     dtype_bytes = _dtype_bytes(launch=launch, model_config=model_config)
     weight_gb = None if model_params_b is None else model_params_b * dtype_bytes * 0.9313225746
     kv_cache_gb = None
@@ -74,8 +74,12 @@ def estimate_resource_probe(
     )
 
 
-def _model_size_billions(model: str, *, probe: ProbeConfig) -> float | None:
-    for pattern, size_b in probe.model_size_overrides_b.items():
+def infer_model_size_billions(
+    model: str,
+    *,
+    model_size_overrides_b: Mapping[str, float] | None = None,
+) -> float | None:
+    for pattern, size_b in (model_size_overrides_b or {}).items():
         if fnmatchcase(model.lower(), pattern.lower()):
             return float(size_b)
     matches = _SIZE_PATTERN.findall(model.replace("-", " ").replace("_", " "))
@@ -145,7 +149,7 @@ def _dtype_bytes(*, launch: LaunchConfig, model_config: dict[str, Any] | None = 
     return 2.0
 
 
-def _load_cached_hf_config(model: str) -> dict[str, Any] | None:
+def load_cached_hf_config(model: str) -> dict[str, Any] | None:
     if "/" not in model:
         return None
     cache_root = Path.home() / ".cache" / "huggingface" / "hub"
@@ -172,3 +176,11 @@ def _load_cached_hf_config(model: str) -> dict[str, Any] | None:
         if isinstance(payload, dict):
             return payload
     return None
+
+
+def _model_size_billions(model: str, *, probe: ProbeConfig) -> float | None:
+    return infer_model_size_billions(model, model_size_overrides_b=probe.model_size_overrides_b)
+
+
+def _load_cached_hf_config(model: str) -> dict[str, Any] | None:
+    return load_cached_hf_config(model)
