@@ -187,6 +187,52 @@ def test_hybrid_search_converges_and_writes_trace(tmp_path: Path) -> None:
     asyncio.run(run())
 
 
+def test_hybrid_search_reports_max_request_rate_limited_result(tmp_path: Path) -> None:
+    async def run() -> None:
+        runner = FakeRunner(sustainable_rate=20.0, closed_loop_peak=12.0)
+        controller = SearchController(
+            runner,
+            request_source=_source(),
+            output_dir=tmp_path / "search-max-rate-limited",
+            analyze_trial=lambda trial_dir: runner.analyses[Path(trial_dir).name],
+            write_analysis=lambda trial_dir, result: Path(trial_dir) / "analysis.json",
+        )
+        result = await controller.search(
+            SearchConfig(
+                search_id="fixture-max-rate-limited",
+                search_mode="hybrid",
+                model="fake-model",
+                trial_duration_s=1.0,
+                rate_precision=0.05,
+                initial_request_rate=1.0,
+                max_closed_loop_concurrency=8,
+                closed_loop_min_trials=2,
+                max_request_rate=8.0,
+            )
+        )
+
+        assert result.termination_reason == "max_request_rate_limited"
+        assert result.max_no_drift_request_rate == pytest.approx(7.2)
+        assert result.max_slo_satisfying_request_rate == pytest.approx(7.2)
+        assert result.confirmation_trial_id is None
+        assert any("max_request_rate=8" in reason for reason in result.reasons)
+
+        open_loop_calls = [call for call in runner.calls if call.mode == "open-loop"]
+        assert [call.request_rate for call in open_loop_calls] == [pytest.approx(7.2)]
+        trace = json.loads(
+            (tmp_path / "search-max-rate-limited" / "search_trace.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert trace["result"]["termination_reason"] == "max_request_rate_limited"
+        assert trace["bounds"]["low_rate"] == pytest.approx(7.2)
+        assert trace["bounds"]["high_rate"] is None
+        assert trace["bounds"]["max_request_rate_cap"] == 8.0
+        assert trace["bounds"]["max_request_rate_cap_attempted_rate"] == pytest.approx(14.4)
+
+    asyncio.run(run())
+
+
 def test_closed_loop_does_not_stop_on_low_confidence_stable_kv_label(tmp_path: Path) -> None:
     class LowConfidenceKvRunner(FakeRunner):
         async def run_trial(self, config: TrialConfig, *, request_source, output_dir: str | Path):

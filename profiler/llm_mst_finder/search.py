@@ -178,6 +178,8 @@ class _SearchBounds:
     low_trial_id: str | None = None
     high_rate: float | None = None
     high_trial_id: str | None = None
+    max_request_rate_cap: float | None = None
+    max_request_rate_cap_attempted_rate: float | None = None
 
     def has_closed_relative_width(self, precision: float) -> bool:
         if self.low_rate is None or self.high_rate is None:
@@ -234,6 +236,14 @@ class SearchController:
             return result
 
         bounds = await self._find_open_loop_bracket(config, closed_loop_result)
+        if self._is_max_request_rate_limited(bounds):
+            result = self._build_max_request_rate_limited_result(
+                config=config,
+                bounds=bounds,
+                closed_loop_result=closed_loop_result,
+            )
+            self._finish_trace(result)
+            return result
         if self._is_scheduler_config_limited(bounds):
             result = self._build_scheduler_config_limited_result(
                 config=config,
@@ -353,6 +363,8 @@ class SearchController:
             await self._grow_high_bound(config, bounds, second_rate)
         elif bounds.high_rate is not None and bounds.low_rate is None:
             await self._shrink_low_bound(config, bounds)
+        if self._is_max_request_rate_limited(bounds):
+            return bounds
         if bounds.low_rate is None or bounds.high_rate is None:
             raise SearchConvergenceError("open-loop search failed to establish both low and high bounds")
         return bounds
@@ -365,6 +377,11 @@ class SearchController:
     ) -> None:
         rate = start_rate
         for _ in range(config.max_bracket_trials):
+            if self._rate_exceeds_max_rate(config, rate):
+                bounds.max_request_rate_cap = config.max_request_rate
+                bounds.max_request_rate_cap_attempted_rate = rate
+                self._record_bounds(bounds)
+                return
             self._check_max_rate(config, rate)
             await self._test_open_loop_rate(config, bounds, rate, purpose="open_loop_bracket_high")
             if bounds.high_rate is not None:
@@ -615,6 +632,47 @@ class SearchController:
             reasons=reasons,
         )
 
+    def _build_max_request_rate_limited_result(
+        self,
+        *,
+        config: SearchConfig,
+        bounds: _SearchBounds,
+        closed_loop_result: ClosedLoopScoutResult | None,
+    ) -> SearchResult:
+        if bounds.low_rate is None:
+            raise SearchConvergenceError("max-request-rate-limited result requires a stable low bound")
+        if bounds.max_request_rate_cap is None or bounds.max_request_rate_cap_attempted_rate is None:
+            raise SearchConvergenceError("max-request-rate-limited result requires cap metadata")
+
+        bottleneck_class = "unknown"
+        confidence: Confidence = "low"
+        reasons = [
+            "open-loop bracketing stopped because the next required high-bound "
+            f"rate {bounds.max_request_rate_cap_attempted_rate:.6g} req/s exceeds "
+            f"max_request_rate={bounds.max_request_rate_cap:.6g}",
+            f"highest observed stable open-loop rate before the cap was {bounds.low_rate:.6g} req/s",
+            "the true unstable high bound was not measured; increase max_request_rate to refine MST",
+        ]
+        low_bottleneck = self._trace_bottleneck(bounds.low_trial_id)
+        if low_bottleneck is not None:
+            bottleneck_class = str(low_bottleneck["bottleneck_class"])
+            confidence = _as_confidence(low_bottleneck["confidence"])
+            reasons.extend(f"low-bound evidence: {item}" for item in low_bottleneck["evidence"])
+
+        return SearchResult(
+            search_id=config.search_id,
+            search_mode=config.search_mode,
+            max_no_drift_request_rate=bounds.low_rate,
+            max_slo_satisfying_request_rate=bounds.low_rate,
+            rate_precision=config.rate_precision,
+            confirmation_trial_id=None,
+            termination_reason="max_request_rate_limited",
+            closed_loop=closed_loop_result,
+            bottleneck_class=bottleneck_class,
+            confidence=confidence,
+            reasons=reasons,
+        )
+
     def _closed_loop_only_result(
         self,
         config: SearchConfig,
@@ -778,6 +836,8 @@ class SearchController:
             "low_trial_id": bounds.low_trial_id,
             "high_rate": bounds.high_rate,
             "high_trial_id": bounds.high_trial_id,
+            "max_request_rate_cap": bounds.max_request_rate_cap,
+            "max_request_rate_cap_attempted_rate": bounds.max_request_rate_cap_attempted_rate,
         }
         self._write_trace()
 
@@ -822,6 +882,15 @@ class SearchController:
         return (
             high_bottleneck.get("bottleneck_class") == "scheduler_cap"
             and high_bottleneck.get("confidence") == "high"
+        )
+
+    @staticmethod
+    def _is_max_request_rate_limited(bounds: _SearchBounds) -> bool:
+        return (
+            bounds.low_rate is not None
+            and bounds.high_rate is None
+            and bounds.max_request_rate_cap is not None
+            and bounds.max_request_rate_cap_attempted_rate is not None
         )
 
     def _stable_open_loop_point_below(self, rate: float) -> _StableOpenLoopPoint | None:
@@ -926,11 +995,15 @@ class SearchController:
     @staticmethod
     def _check_max_rate(config: SearchConfig, rate: float) -> None:
         _require_positive("request_rate", rate)
-        if config.max_request_rate is not None and rate > config.max_request_rate:
+        if SearchController._rate_exceeds_max_rate(config, rate):
             raise SearchConvergenceError(
                 f"required bracketing rate {rate:.6g} req/s exceeds max_request_rate="
                 f"{config.max_request_rate:.6g}"
             )
+
+    @staticmethod
+    def _rate_exceeds_max_rate(config: SearchConfig, rate: float) -> bool:
+        return config.max_request_rate is not None and rate > config.max_request_rate
 
 
 def _summary_trace(run_result: TrialRunResult) -> dict[str, object]:
