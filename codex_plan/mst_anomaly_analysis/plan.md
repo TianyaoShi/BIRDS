@@ -316,8 +316,10 @@ Focused tests:
 ## Open Questions
 
 1. Should the analyzer treat "Thinking" variants as a separate family by default?
+   - No if the output length is controled e.g. `from_dataset` or is simlar based on the search trace; yes if the generation behavior is very different and the report should explicitly note that they are not directly comparable to "Instruct" variants.
 
 2. Should MoE or quantized models be excluded from size-bucket comparisons unless explicit model metadata is present?
+  - Yes they should be treated separately. The analyzer can mention them in the report / analysis but should not give a verdict on whether they are anomalous without more detailed metadata.
 
 3. Should the analyzer compare request-rate MST or token-throughput MST first?
    - Recommendation: flag on request-rate MST, but use token throughput as explanatory evidence.
