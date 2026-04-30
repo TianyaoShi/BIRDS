@@ -26,6 +26,9 @@ def test_load_manifest_accepts_valid_structured_config(tmp_path: Path) -> None:
         tmp_path,
         {
             "run": {
+                "run_id": "fixture-run",
+                "output_root": "orchestrator-output",
+                "mst_output_root": "mst-output",
                 "allowed_gpu_ids": [0, 1, 2, 3],
                 "max_active_gpus": 3,
                 "default_endpoint": "/v1/chat/completions",
@@ -57,6 +60,9 @@ def test_load_manifest_accepts_valid_structured_config(tmp_path: Path) -> None:
 
     manifest = load_manifest(manifest_path)
     assert manifest.manifest_path == manifest_path.resolve()
+    assert manifest.run.run_id == "fixture-run"
+    assert manifest.run.output_root == (tmp_path / "orchestrator-output").resolve()
+    assert manifest.run.mst_output_root == (tmp_path / "mst-output").resolve()
     assert manifest.run.max_active_gpus == 3
     assert len(manifest.experiments) == 1
     assert manifest.experiments[0].experiment_id == "exp-chat"

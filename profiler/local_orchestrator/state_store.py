@@ -51,6 +51,7 @@ class RunStateStore:
         run_id: str,
         manifest_path: Path,
         jobs: list[ExpandedExperimentJob],
+        mst_output_root: Path | None = None,
     ) -> dict[str, Any]:
         if self.state_path.exists():
             raise FileExistsError(f"run state already exists: {self.state_path}")
@@ -60,6 +61,7 @@ class RunStateStore:
         state = {
             "run_id": run_id,
             "manifest_path": str(manifest_path),
+            "mst_output_root": None if mst_output_root is None else str(mst_output_root),
             "status": "running",
             "created_at": ts,
             "updated_at": ts,

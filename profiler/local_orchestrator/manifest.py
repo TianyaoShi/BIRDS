@@ -25,6 +25,7 @@ _TOP_LEVEL_KEYS = {"run", "slurm", "hardware", "probe", "launch", "search", "ove
 _RUN_KEYS = {
     "run_id",
     "output_root",
+    "mst_output_root",
     "allowed_gpu_ids",
     "max_active_gpus",
     "keep_one_gpu_spare",
@@ -262,6 +263,14 @@ def _parse_run_config(raw: Any, *, manifest_path: Path) -> RunConfig:
             _expect_non_empty_string(output_root_raw, "run.output_root"),
             base_dir=manifest_path.parent,
         )
+    mst_output_root_raw = payload.get("mst_output_root")
+    if mst_output_root_raw is None:
+        mst_output_root = None
+    else:
+        mst_output_root = _resolve_path(
+            _expect_non_empty_string(mst_output_root_raw, "run.mst_output_root"),
+            base_dir=manifest_path.parent,
+        )
     keep_one_gpu_spare = _expect_bool(payload.get("keep_one_gpu_spare", True), "run.keep_one_gpu_spare")
 
     allowed_gpu_ids_raw = payload.get("allowed_gpu_ids", [0, 1, 2, 3])
@@ -300,6 +309,7 @@ def _parse_run_config(raw: Any, *, manifest_path: Path) -> RunConfig:
         return RunConfig(
             run_id=run_id,
             output_root=output_root,
+            mst_output_root=mst_output_root,
             allowed_gpu_ids=allowed_gpu_ids,
             max_active_gpus=max_active_gpus,
             keep_one_gpu_spare=keep_one_gpu_spare,

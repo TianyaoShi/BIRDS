@@ -33,9 +33,9 @@ launch:
 
 search:
   search_mode: hybrid
-  trial_min_duration_s: 120
-  trial_max_duration_s: 240
-  final_confirmation_duration_s: 240
+  trial_min_duration_s: 150
+  trial_max_duration_s: 270
+  final_confirmation_duration_s: 270
   rate_precision: 0.10
   initial_request_rate: 1
   max_request_rate: 12

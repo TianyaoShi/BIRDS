@@ -54,7 +54,7 @@ PYTHONPATH=/path/to/arr26/profiler \
 
 The manifest has these top-level sections: `run`, optional `slurm`, `hardware`, `probe`, `launch`, `search`, `overrides`, `experiments`.
 
-- `run`: output location, GPU policy, ports, retry counts, and default endpoint.
+- `run`: orchestrator output location, optional MST output root, GPU policy, ports, retry counts, and default endpoint.
 - `slurm`: optional cluster submission settings for the separate `slurm_orchestrator` package; the local CLI ignores it.
 - `hardware`: target accelerator profile used by the resource probe (`name`, `gpu_memory_gb`, `gpu_memory_utilization`).
 - `probe`: conservative memory-estimation settings, including optional `auto_gpu_count`.
@@ -162,8 +162,20 @@ Key files:
 Each experiment writes MST artifacts under:
 
 ```
-results/mst/<model_slug>/<dataset_slug>/<server_slug>/
+<mst_output_root>/<model_slug>/<dataset_slug>/<server_slug>/
 ```
+
+For local orchestrator runs, the default MST output root is run-scoped:
+
+```
+<output_root_parent>/mst/<run_id>/
+```
+
+For example, `output_root: ../results/orchestrator` and `run_id: sharegpt-001`
+will write MST artifacts under `../results/mst/sharegpt-001/`. This keeps
+workload names semantic and avoids overwriting prior MST traces when the same
+model/workload/server configuration is rerun. Set `run.mst_output_root` when a
+manifest needs an explicit artifact root.
 
 ## Module layout
 

@@ -72,6 +72,30 @@ def test_expand_manifest_is_deterministic_and_uses_expected_layout(tmp_path: Pat
         assert job.server_config_slug.startswith("server-")
 
 
+def test_expand_manifest_can_namespace_mst_results_by_run(tmp_path: Path) -> None:
+    workload = _write_workload(tmp_path, "sharegpt.yaml")
+    manifest_path = _write_manifest(
+        tmp_path,
+        {
+            "experiments": [
+                {
+                    "id": "matrix",
+                    "model": "model-a",
+                    "workload": str(workload),
+                    "endpoint": "/v1/chat/completions",
+                }
+            ],
+        },
+    )
+
+    manifest = load_manifest(manifest_path)
+    jobs = expand_manifest(manifest, mst_output_root=tmp_path / "results" / "mst" / "run-1")
+
+    assert len(jobs) == 1
+    assert jobs[0].result_dir.parts[-6:-4] == ("results", "mst")
+    assert jobs[0].result_dir.parts[-4] == "run-1"
+
+
 def test_expand_manifest_applies_selector_overrides_and_probe_auto_gpu_count(tmp_path: Path) -> None:
     workload = _write_workload(tmp_path, "synthetic_512_128.yaml")
     workload.write_text(

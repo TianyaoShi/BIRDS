@@ -19,7 +19,11 @@ from .planning import estimate_resource_probe
 from .utils import slugify, stable_hash
 
 
-def expand_manifest(manifest: OrchestratorManifest) -> list[ExpandedExperimentJob]:
+def expand_manifest(
+    manifest: OrchestratorManifest,
+    *,
+    mst_output_root: Path | None = None,
+) -> list[ExpandedExperimentJob]:
     jobs: list[ExpandedExperimentJob] = []
     seen_ids: set[str] = set()
     for template in manifest.experiments:
@@ -88,7 +92,8 @@ def expand_manifest(manifest: OrchestratorManifest) -> list[ExpandedExperimentJo
                 launch=launch,
                 search=search,
             )
-            result_dir = Path("results") / "mst" / model_slug / dataset_slug / server_config_slug
+            result_root = Path("results") / "mst" if mst_output_root is None else mst_output_root
+            result_dir = result_root / model_slug / dataset_slug / server_config_slug
             jobs.append(
                 ExpandedExperimentJob(
                     experiment_id=experiment_id,

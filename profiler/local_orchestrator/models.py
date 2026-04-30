@@ -38,6 +38,7 @@ class RetryPolicy:
 class RunConfig:
     run_id: str | None = None
     output_root: Path = Path("results/orchestrator")
+    mst_output_root: Path | None = None
     allowed_gpu_ids: tuple[int, ...] = (0, 1, 2, 3)
     max_active_gpus: int = 3
     keep_one_gpu_spare: bool = True

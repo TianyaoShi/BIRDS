@@ -21,6 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     dry_run = subparsers.add_parser("dry-run")
     dry_run.add_argument("--manifest", type=Path, required=True)
+    dry_run.add_argument("--run-id", default=None)
     dry_run.set_defaults(handler=_dry_run_command)
 
     run = subparsers.add_parser("run")
@@ -51,9 +52,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _dry_run_command(args: argparse.Namespace) -> int:
     manifest = load_manifest(args.manifest)
-    jobs = expand_manifest(manifest)
+    run_id = args.run_id or manifest.run.run_id or "dry-run"
+    mst_output_root = _resolve_mst_output_root(manifest=manifest, run_id=run_id)
+    jobs = expand_manifest(manifest, mst_output_root=mst_output_root)
     payload = {
         "manifest": str(manifest.manifest_path),
+        "run_id": run_id,
+        "mst_output_root": str(mst_output_root),
         "job_count": len(jobs),
         "max_active_gpus": manifest.run.max_active_gpus,
         "allowed_gpu_ids": list(manifest.run.allowed_gpu_ids),
@@ -85,15 +90,17 @@ def _dry_run_command(args: argparse.Namespace) -> int:
 
 def _run_command(args: argparse.Namespace) -> int:
     manifest = load_manifest(args.manifest)
-    jobs = expand_manifest(manifest)
     run_id = args.run_id or manifest.run.run_id or _default_run_id()
     run_root = (manifest.run.output_root / run_id).resolve()
+    mst_output_root = _resolve_mst_output_root(manifest=manifest, run_id=run_id)
+    jobs = expand_manifest(manifest, mst_output_root=mst_output_root)
 
     state_store = RunStateStore(run_root)
     state = state_store.initialize_new(
         run_id=run_id,
         manifest_path=manifest.manifest_path,
         jobs=jobs,
+        mst_output_root=mst_output_root,
     )
     scheduler = _build_scheduler(state_store=state_store, manifest=manifest)
     summary = scheduler.run(jobs=jobs, state=state, resume=False, force=False)
@@ -109,7 +116,8 @@ def _resume_command(args: argparse.Namespace) -> int:
 
     manifest_path = Path(str(state["manifest_path"]))
     manifest = load_manifest(manifest_path)
-    jobs = expand_manifest(manifest)
+    mst_output_root = _mst_output_root_from_state(state)
+    jobs = expand_manifest(manifest, mst_output_root=mst_output_root)
 
     state_job_ids = {str(job["experiment_id"]) for job in state.get("jobs", [])}
     manifest_job_ids = {job.experiment_id for job in jobs}
@@ -164,6 +172,19 @@ def _build_scheduler(*, state_store: RunStateStore, manifest) -> OrchestratorSch
 def _default_run_id() -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"orchestrator-{ts}"
+
+
+def _resolve_mst_output_root(*, manifest, run_id: str) -> Path:
+    if manifest.run.mst_output_root is not None:
+        return manifest.run.mst_output_root.resolve()
+    return (manifest.run.output_root.parent / "mst" / run_id).resolve()
+
+
+def _mst_output_root_from_state(state: dict[str, Any]) -> Path | None:
+    raw = state.get("mst_output_root")
+    if isinstance(raw, str) and raw:
+        return Path(raw).resolve()
+    return None
 
 
 if __name__ == "__main__":  # pragma: no cover
