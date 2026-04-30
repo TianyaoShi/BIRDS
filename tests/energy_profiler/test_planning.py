@@ -7,7 +7,11 @@ import pytest
 import yaml
 
 from energy_profiler.models import EnergyPlanSelection, EnergyPlanSelectionSweep
-from energy_profiler.planning import PlanningError, generate_plan_from_orchestrator
+from energy_profiler.planning import (
+    PlanningError,
+    generate_plan_from_orchestrator,
+    generate_plan_from_orchestrator_runs,
+)
 from local_orchestrator.manifest import load_manifest
 from local_orchestrator.matrix import expand_manifest
 
@@ -49,14 +53,25 @@ def _write_manifest(tmp_path: Path, workload: Path, *, model: str = "Qwen/Qwen3-
     return manifest_path
 
 
-def _write_orchestrator_run(tmp_path: Path, *, mst_rate: float) -> tuple[Path, Path]:
+def _write_orchestrator_run(
+    tmp_path: Path,
+    *,
+    mst_rate: float,
+    run_id: str = "run-a",
+    model: str = "Qwen/Qwen3-8B",
+    manifest_name: str = "manifest.yaml",
+) -> tuple[Path, Path]:
     workload = tmp_path / "sharegpt.yaml"
     workload.write_text("name: sharegpt\n", encoding="utf-8")
-    manifest_path = _write_manifest(tmp_path, workload)
+    manifest_path = _write_manifest(tmp_path, workload, model=model)
+    if manifest_path.name != manifest_name:
+        renamed = tmp_path / manifest_name
+        manifest_path.rename(renamed)
+        manifest_path = renamed
     manifest = load_manifest(manifest_path)
     expanded_job = expand_manifest(manifest)[0]
 
-    run_root = tmp_path / "results" / "orchestrator" / "run-a"
+    run_root = tmp_path / "results" / "orchestrator" / run_id
     run_root.mkdir(parents=True, exist_ok=True)
     (run_root / "state.json").write_text(
         json.dumps({"manifest_path": str(manifest_path)}, indent=2, sort_keys=True) + "\n",
@@ -160,3 +175,69 @@ def test_generate_explicit_plan_validates_requested_filters(tmp_path: Path, monk
                 explicit_request_rates=(0.5, 1.0),
             ),
         )
+
+
+def test_generate_plan_from_multiple_orchestrator_roots_uses_later_rerun_for_duplicate_model(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    main_run, _ = _write_orchestrator_run(
+        tmp_path,
+        mst_rate=4.37,
+        run_id="main-loop",
+        model="Qwen/Qwen3-4B-Instruct-2507",
+        manifest_name="main.yaml",
+    )
+    rerun, _ = _write_orchestrator_run(
+        tmp_path,
+        mst_rate=5.12,
+        run_id="targeted-rerun",
+        model="Qwen/Qwen3-4B-Instruct-2507",
+        manifest_name="rerun.yaml",
+    )
+
+    plan = generate_plan_from_orchestrator_runs(
+        orchestrator_run_roots=(main_run, rerun),
+        output_plan=tmp_path / "experiments" / "energy" / "merged.yaml",
+    )
+
+    assert len(plan.jobs) == 1
+    assert plan.jobs[0].mst_rate == pytest.approx(5.12)
+    assert plan.jobs[0].metadata["source_orchestrator_run_id"] == "targeted-rerun"
+    assert plan.jobs[0].metadata["source_orchestrator_run_root"] == str(rerun)
+
+
+def test_generate_plan_from_multiple_orchestrator_roots_includes_followup_only_model(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    main_run, _ = _write_orchestrator_run(
+        tmp_path,
+        mst_rate=4.37,
+        run_id="main-loop",
+        model="Qwen/Qwen3-4B-Instruct-2507",
+        manifest_name="main.yaml",
+    )
+    rerun, _ = _write_orchestrator_run(
+        tmp_path,
+        mst_rate=3.21,
+        run_id="thinking-rerun",
+        model="Qwen/Qwen3-4B-Thinking-2507",
+        manifest_name="thinking.yaml",
+    )
+
+    plan = generate_plan_from_orchestrator_runs(
+        orchestrator_run_roots=(main_run, rerun),
+        output_plan=tmp_path / "experiments" / "energy" / "merged.yaml",
+    )
+
+    assert [job.model for job in plan.jobs] == [
+        "Qwen/Qwen3-4B-Instruct-2507",
+        "Qwen/Qwen3-4B-Thinking-2507",
+    ]
+    assert {job.metadata["source_orchestrator_run_id"] for job in plan.jobs} == {
+        "main-loop",
+        "thinking-rerun",
+    }

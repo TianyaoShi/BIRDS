@@ -14,6 +14,7 @@ from .models import (
 from .planning import (
     PlanningError,
     generate_plan_from_orchestrator,
+    generate_plan_from_orchestrator_runs,
     load_energy_plan,
     load_selection_overrides,
     write_energy_plan,
@@ -36,6 +37,7 @@ __all__ = [
     "build_run_trial_command",
     "compute_energy_summary",
     "generate_plan_from_orchestrator",
+    "generate_plan_from_orchestrator_runs",
     "load_energy_plan",
     "load_selection_overrides",
     "write_energy_plan",

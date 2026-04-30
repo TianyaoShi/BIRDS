@@ -9,6 +9,7 @@ from .executor import EnergyExecutor, EnergyExecutorConfig
 from .models import EnergyPlanMode, EnergyPlanRounding, EnergyPlanSelection, EnergyPlanSelectionSweep
 from .planning import (
     generate_plan_from_orchestrator,
+    generate_plan_from_orchestrator_runs,
     load_energy_plan,
     load_selection_overrides,
     render_dry_run,
@@ -64,7 +65,14 @@ def _plan_command(args: argparse.Namespace) -> int:
     selection = _load_and_merge_selection(args)
     rounding = _parse_rounding_policy(args.rounding_policy)
     plan = generate_plan_from_orchestrator(
-        orchestrator_run_root=args.orchestrator_run_root,
+        orchestrator_run_root=args.orchestrator_run_root[0],
+        output_plan=args.output_plan,
+        rate_source=args.rate_source,
+        mode=mode,
+        selection=selection,
+        rounding=rounding,
+    ) if len(args.orchestrator_run_root) == 1 else generate_plan_from_orchestrator_runs(
+        orchestrator_run_roots=tuple(args.orchestrator_run_root),
         output_plan=args.output_plan,
         rate_source=args.rate_source,
         mode=mode,
@@ -125,7 +133,16 @@ def _status_command(args: argparse.Namespace) -> int:
 
 
 def _add_plan_generation_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--orchestrator-run-root", type=Path, required=True)
+    parser.add_argument(
+        "--orchestrator-run-root",
+        type=Path,
+        action="append",
+        required=True,
+        help=(
+            "orchestrator run root to consume; repeat to merge a main run with reruns. "
+            "Later roots override earlier roots for the same model/workload/endpoint."
+        ),
+    )
     parser.add_argument("--output-plan", type=Path, required=True)
     parser.add_argument(
         "--mode",

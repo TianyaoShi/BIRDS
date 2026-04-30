@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import sys
-from dataclasses import replace
 from decimal import Decimal, ROUND_FLOOR
 from pathlib import Path
 from typing import Any, Mapping
@@ -65,16 +64,42 @@ def generate_plan_from_orchestrator(
     rounding: EnergyPlanRounding | None = None,
     defaults: EnergyPlanDefaults | None = None,
 ) -> EnergyPlan:
-    run_root = Path(orchestrator_run_root)
+    return generate_plan_from_orchestrator_runs(
+        orchestrator_run_roots=(orchestrator_run_root,),
+        output_plan=output_plan,
+        rate_source=rate_source,
+        mode=mode,
+        selection=selection,
+        rounding=rounding,
+        defaults=defaults,
+    )
+
+
+def generate_plan_from_orchestrator_runs(
+    *,
+    orchestrator_run_roots: tuple[str | Path, ...] | list[str | Path],
+    output_plan: str | Path,
+    rate_source: EnergyRateSource = "max_slo",
+    mode: EnergyPlanMode = "mst-rounded",
+    selection: EnergyPlanSelection | None = None,
+    rounding: EnergyPlanRounding | None = None,
+    defaults: EnergyPlanDefaults | None = None,
+) -> EnergyPlan:
+    run_roots = tuple(Path(root) for root in orchestrator_run_roots)
+    if not run_roots:
+        raise PlanningError("at least one orchestrator run root is required")
     output_plan_path = Path(output_plan)
     resolved_selection = selection or EnergyPlanSelection()
     resolved_rounding = rounding or EnergyPlanRounding()
     resolved_defaults = defaults or EnergyPlanDefaults()
 
-    source_jobs = _load_orchestrator_jobs(run_root)
+    source_jobs = _load_orchestrator_jobs_from_roots(run_roots)
     succeeded_jobs = [job for job in source_jobs if job.status == "succeeded"]
     if not succeeded_jobs:
-        raise PlanningError(f"no succeeded jobs found in orchestrator summary: {run_root / 'summary.json'}")
+        raise PlanningError(
+            "no succeeded jobs found in orchestrator summaries: "
+            f"{[str(root / 'summary.json') for root in run_roots]}"
+        )
 
     _validate_selection(source_jobs=source_jobs, succeeded_jobs=succeeded_jobs, selection=resolved_selection)
 
@@ -91,13 +116,12 @@ def generate_plan_from_orchestrator(
         mode=mode,
         selection=resolved_selection,
         rounding=resolved_rounding,
-        source_run_id=run_root.name,
     )
     header = EnergyPlanHeader(
         plan_id=output_plan_path.stem,
-        source_orchestrator_run_root=run_root,
+        source_orchestrator_run_root=run_roots[0],
         output_root=Path("results/energy"),
-        python_executable=_resolve_python_executable(run_root),
+        python_executable=_resolve_python_executable(run_roots[-1]),
         mode=mode,
     )
     return EnergyPlan(
@@ -125,8 +149,39 @@ def render_dry_run(plan: EnergyPlan) -> dict[str, Any]:
         "plan_id": plan.plan.plan_id,
         "mode": plan.plan.mode,
         "job_count": len(plan.jobs),
+        "source_orchestrator_run_ids": sorted(
+            {
+                str(job.metadata.get("source_orchestrator_run_id"))
+                for job in plan.jobs
+                if job.metadata.get("source_orchestrator_run_id") is not None
+            }
+        ),
         "groups": groups,
     }
+
+
+def _load_orchestrator_jobs_from_roots(run_roots: tuple[Path, ...]) -> list[OrchestratorJobRecord]:
+    selected_by_key: dict[tuple[str, str, str], OrchestratorJobRecord] = {}
+    all_jobs: list[OrchestratorJobRecord] = []
+    for run_root in run_roots:
+        run_jobs = _load_orchestrator_jobs(run_root)
+        all_jobs.extend(run_jobs)
+        for job in run_jobs:
+            if job.status != "succeeded":
+                continue
+            selected_by_key[_decisive_job_key(job)] = job
+
+    decisive_jobs = set(id(job) for job in selected_by_key.values())
+    merged: list[OrchestratorJobRecord] = []
+    for job in all_jobs:
+        if job.status == "succeeded" and id(job) not in decisive_jobs:
+            continue
+        merged.append(job)
+    return merged
+
+
+def _decisive_job_key(job: OrchestratorJobRecord) -> tuple[str, str, str]:
+    return (job.model, str(job.workload), job.endpoint)
 
 
 def _load_orchestrator_jobs(run_root: Path) -> list[OrchestratorJobRecord]:
@@ -150,8 +205,10 @@ def _load_orchestrator_jobs(run_root: Path) -> list[OrchestratorJobRecord]:
             raise PlanningError(
                 f"orchestrator summary references experiment_id not present in manifest expansion: {experiment_id}"
             )
+        raw_result_dir = item.get("result_dir")
+        result_dir = Path(str(raw_result_dir)) if isinstance(raw_result_dir, str) and raw_result_dir else expanded.result_dir
 
-        search_trace_path = Path(str(item.get("artifacts", {}).get("search_trace") or expanded.result_dir / "search_trace.json"))
+        search_trace_path = Path(str(item.get("artifacts", {}).get("search_trace") or result_dir / "search_trace.json"))
         search_trace: Mapping[str, Any] | None = None
         if search_trace_path.is_file():
             search_trace = _load_json_mapping(search_trace_path)
@@ -162,11 +219,13 @@ def _load_orchestrator_jobs(run_root: Path) -> list[OrchestratorJobRecord]:
         search_result = _require_mapping(search_trace.get("result"), "search_trace.json.result") if search_trace else {}
         records.append(
             OrchestratorJobRecord(
+                source_run_id=run_root.name,
+                source_run_root=run_root,
                 experiment_id=experiment_id,
                 model=expanded.model,
                 workload=expanded.workload,
                 endpoint=expanded.endpoint,
-                result_dir=expanded.result_dir,
+                result_dir=result_dir,
                 status=_expect_str(item.get("status"), "summary.json.jobs[].status"),
                 max_no_drift_request_rate=_optional_numeric(
                     item.get("max_no_drift_request_rate"),
@@ -278,7 +337,6 @@ def _build_plan_jobs(
     mode: EnergyPlanMode,
     selection: EnergyPlanSelection,
     rounding: EnergyPlanRounding,
-    source_run_id: str,
 ) -> list[EnergyPlanJob]:
     jobs: list[EnergyPlanJob] = []
     seen_ids: set[str] = set()
@@ -300,7 +358,7 @@ def _build_plan_jobs(
         if mode == "mst-rounded":
             assert mst_rate is not None
             rounded_rate, step, clamped = round_mst_rate(mst_rate, rounding)
-            metadata = _base_job_metadata(source_job, step, clamped, source_run_id=source_run_id)
+            metadata = _base_job_metadata(source_job, step, clamped)
             metadata["rounded_from_rate"] = mst_rate
             plan_job = _make_plan_job(
                 source_job=source_job,
@@ -321,7 +379,7 @@ def _build_plan_jobs(
                 max_steps=selection.sweep.max_steps,
             )
             for index, request_rate in enumerate(rates, start=1):
-                metadata = _base_job_metadata(source_job, step, clamped, source_run_id=source_run_id)
+                metadata = _base_job_metadata(source_job, step, clamped)
                 metadata.update(
                     {
                         "rounded_from_rate": mst_rate,
@@ -342,7 +400,7 @@ def _build_plan_jobs(
             continue
 
         for request_rate in sorted(selection.explicit_request_rates):
-            metadata = _base_job_metadata(source_job, None, False, source_run_id=source_run_id)
+            metadata = _base_job_metadata(source_job, None, False)
             metadata["explicit_request_rate"] = True
             jobs.append(
                 _make_plan_job(
@@ -415,11 +473,10 @@ def _base_job_metadata(
     source_job: OrchestratorJobRecord,
     rounding_step: float | None,
     clamped: bool,
-    *,
-    source_run_id: str,
 ) -> dict[str, Any]:
     metadata: dict[str, Any] = {
-        "source_orchestrator_run_id": source_run_id,
+        "source_orchestrator_run_id": source_job.source_run_id,
+        "source_orchestrator_run_root": str(source_job.source_run_root),
         "search_id": source_job.search_id,
         "search_mode": source_job.search_mode,
         "confirmation_trial_id": source_job.confirmation_trial_id,

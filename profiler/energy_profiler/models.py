@@ -540,6 +540,8 @@ class EnergyPlan:
 
 @dataclass(frozen=True, slots=True)
 class OrchestratorJobRecord:
+    source_run_id: str
+    source_run_root: Path
     experiment_id: str
     model: str
     workload: Path
