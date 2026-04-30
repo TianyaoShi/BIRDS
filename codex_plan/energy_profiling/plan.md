@@ -217,6 +217,44 @@ Optional future mode:
 
 - logarithmic spacing for models with a large dynamic range, especially if the target rate exceeds 20 req/s.
 
+## Branch TODO: Natural Output Comparison Mode
+
+The current MST and energy profiling path uses workload-specified output lengths
+as an explicit generation budget. For `sampling.output_len.mode=from_dataset`,
+the dataset reference/completion text is tokenized and sent as request
+`max_tokens`; with `ignore_eos: true`, actual output length is expected to stay
+close to that requested budget. This is appropriate for controlled serving
+efficiency comparisons because prompt and output token demand are articulated
+for every model.
+
+This is not the right mode for comparing natural verbosity or reasoning-length
+behavior between thinking and non-thinking variants. Add a separate small
+comparison branch for that purpose:
+
+- fix the input prompt dataset, GPU platform, server config, sampling settings,
+  and request rate across the models being compared
+- do not derive per-request `max_tokens` from dataset answer length
+- either omit `max_tokens` if the serving API and client support it, or use a
+  generous common safety cap that is clearly reported as a cap rather than a
+  target
+- set `ignore_eos: false` so each model can stop naturally
+- report actual output length distributions as first-class outcomes, including
+  p50/p90/p95/p99 and totals
+- compare energy both per request and per actual total token, while clearly
+  labeling the result as behavior-inclusive rather than controlled-token
+  efficiency
+
+Interpretation rule:
+
+- controlled output-length profiling is best for architecture/kernel/hardware
+  efficiency under the same token workload
+- natural-output profiling is best for real-world model behavior and cost,
+  because thinking models may spend additional tokens on reasoning and
+  non-thinking variants may stop earlier or later
+
+Do not mix these two result types in one decisive energy comparison table
+without labeling them separately.
+
 ## Explicit Comparison Policy
 
 Allow the user to specify comparison selections directly in the plan YAML:
