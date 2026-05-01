@@ -138,4 +138,4 @@ experiments:
       - meta-llama/Llama-2-7b-chat-hf
       - meta-llama/Llama-2-13b-chat-hf
     workloads:
-      - ./live_sharegpt_workload_context.yaml
+      - ./workloads/live_sharegpt_workload_context.yaml
