@@ -1,7 +1,7 @@
-# H100 vLLM runtime.
+# NVIDIA vLLM runtime pin shared by the cluster helper scripts.
 #
 # Installed with:
-#   uv pip install --python .venv-h100/bin/python --torch-backend=cu129 -r requirements/vllm-h100.txt
+#   uv pip install --python .venv/bin/python --torch-backend=<cluster-compatible-backend> -r requirements/vllm-h100.txt
 #
 # Keep this pinned separately from the L40S debug environment so benchmark
 # results do not silently change when vLLM releases move.
