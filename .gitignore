@@ -24,6 +24,7 @@ experiments/*rerun*
 experiments/*short*
 experiments/energy/synthetic*
 experiments/dataset_inspections/
+experiments/debug/
 
 # Environment and local overrides
 .env
