@@ -198,7 +198,7 @@ Inspect a workload before profiling:
 ```bash
 PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 /local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli inspect-workload \
-  --workload profiler/llm_mst_finder/workloads/wildchat_hf.yaml \
+  --workload experiments/workloads/wildchat_hf.yaml \
   --model google/gemma-4-E4B-it \
   --sample-size 4096 \
   --output results/mst/wildchat_inspection.json

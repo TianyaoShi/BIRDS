@@ -23,6 +23,7 @@ htmlcov/
 experiments/*rerun*
 experiments/*short*
 experiments/energy/synthetic*
+experiments/dataset_inspections/
 
 # Environment and local overrides
 .env
