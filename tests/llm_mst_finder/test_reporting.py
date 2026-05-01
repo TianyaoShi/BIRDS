@@ -161,6 +161,7 @@ def _write_trial(
     concurrency: int | None,
     analysis: TrialAnalysisResult,
     include_scheduler_metadata: bool = True,
+    include_context_policy_metadata: bool = True,
 ) -> dict[str, object]:
     trial_dir = result_dir / "trials" / trial_id
     trial_dir.mkdir(parents=True)
@@ -171,6 +172,27 @@ def _write_trial(
         concurrency=concurrency,
         completion_rate=8.0 if request_rate is None else request_rate,
     )
+    workload_metadata = {
+        "name": "fixture-workload",
+        "source_path": "fixtures/workload.yaml",
+        "dataset_type": "synthetic-fixed",
+        "num_requests": 20,
+    }
+    if include_context_policy_metadata:
+        workload_metadata["context_policy"] = {
+            "max_model_len": 4096,
+            "tokenizer_source": "vllm_model_config",
+            "tokenizer": "fake-model",
+            "over_limit": "fail",
+            "truncation_side": "left",
+            "unsafe_allow_workload_tokenizer_for_real_datasets": False,
+            "total_samples": 20,
+            "kept_samples": 20,
+            "skipped_samples": 0,
+            "truncated_samples": 0,
+            "skipped_source_indexes": [],
+            "truncated_source_indexes": [],
+        }
     summary_payload = {
         "config": {
             "trial_id": trial_id,
@@ -182,26 +204,7 @@ def _write_trial(
             "request_rate": request_rate,
             "concurrency": concurrency,
             "metadata": {
-                "workload": {
-                    "name": "fixture-workload",
-                    "source_path": "fixtures/workload.yaml",
-                    "dataset_type": "synthetic-fixed",
-                    "num_requests": 20,
-                    "context_policy": {
-                        "max_model_len": 4096,
-                        "tokenizer_source": "vllm_model_config",
-                        "tokenizer": "fake-model",
-                        "over_limit": "fail",
-                        "truncation_side": "left",
-                        "unsafe_allow_workload_tokenizer_for_real_datasets": False,
-                        "total_samples": 20,
-                        "kept_samples": 20,
-                        "skipped_samples": 0,
-                        "truncated_samples": 0,
-                        "skipped_source_indexes": [],
-                        "truncated_source_indexes": [],
-                    },
-                },
+                "workload": workload_metadata,
                 "server_config": (
                     {
                         "max_num_seqs": 32,
@@ -262,6 +265,7 @@ def _write_result_dir(
     confirmation_trial_id: str = "trial_001_openloop_r8_0",
     unstable_status: str = "unstable",
     include_scheduler_metadata: bool = True,
+    include_context_policy_metadata: bool = True,
 ) -> None:
     trials_dir = result_dir / "trials"
     trials_dir.mkdir(parents=True)
@@ -274,6 +278,7 @@ def _write_result_dir(
         concurrency=4,
         analysis=_analysis("trial_000_closedloop_N4", status="stable"),
         include_scheduler_metadata=include_scheduler_metadata,
+        include_context_policy_metadata=include_context_policy_metadata,
     )
     stable_event = _write_trial(
         result_dir,
@@ -284,6 +289,7 @@ def _write_result_dir(
         concurrency=None,
         analysis=_analysis("trial_001_openloop_r8_0", status="stable"),
         include_scheduler_metadata=include_scheduler_metadata,
+        include_context_policy_metadata=include_context_policy_metadata,
     )
     unstable_event = _write_trial(
         result_dir,
@@ -294,6 +300,7 @@ def _write_result_dir(
         concurrency=None,
         analysis=_analysis("trial_002_openloop_r12_0", status=unstable_status),
         include_scheduler_metadata=include_scheduler_metadata,
+        include_context_policy_metadata=include_context_policy_metadata,
     )
     trace_payload = {
         "config": {
@@ -483,3 +490,21 @@ def test_generate_report_explains_scheduler_metadata_missing(tmp_path: Path) -> 
     assert "- max_num_seqs: None" in markdown
     assert "- max_num_batched_tokens: None" in markdown
     assert "not reliably inferred from runtime metrics" in markdown
+
+
+def test_generate_report_tolerates_missing_context_policy_metadata(tmp_path: Path) -> None:
+    result_dir = tmp_path / "run_missing_context_policy"
+    _write_result_dir(
+        result_dir,
+        include_context_policy_metadata=False,
+    )
+
+    generate_report(result_dir, plots_enabled=False)
+
+    payload = json.loads((result_dir / "final_report.json").read_text(encoding="utf-8"))
+    context_policy = payload["workload"]["context_policy"]
+    assert context_policy["metadata_status"] == "not_recorded"
+    assert context_policy["tokenizer_source"] is None
+    assert any("context_policy metadata was not recorded" in item for item in payload["limitations"])
+    markdown = (result_dir / "final_report.md").read_text(encoding="utf-8")
+    assert "- tokenizer_source: None" in markdown

@@ -141,7 +141,7 @@ def _build_report_payload(
     search_trace_summary = _build_search_trace_summary(trace_payload, trace_config, trials)
     stability_boundary = _build_open_loop_boundary(trials)
     decision_context = _build_search_decision_context(trace_payload, trials)
-    limitations = _build_limitations(trials, server_config)
+    limitations = _build_limitations(trials, server_config, workload)
     recommended_action = _recommended_next_action(
         workload=workload,
         trials=trials,
@@ -565,7 +565,11 @@ def _build_open_loop_boundary(trials: Sequence[Mapping[str, object]]) -> dict[st
     }
 
 
-def _build_limitations(trials: Sequence[Mapping[str, object]], server_config: Mapping[str, object]) -> list[str]:
+def _build_limitations(
+    trials: Sequence[Mapping[str, object]],
+    server_config: Mapping[str, object],
+    workload: Mapping[str, object],
+) -> list[str]:
     limitations: list[str] = []
     if not server_config:
         limitations.append("declared server metadata was not recorded in the result artifacts")
@@ -576,6 +580,11 @@ def _build_limitations(trials: Sequence[Mapping[str, object]], server_config: Ma
         )
     if any(trial["analysis"].trial_validity != "valid" for trial in trials):
         limitations.append("some trials were excluded from overload interpretation due to invalidity")
+    context_policy = workload.get("context_policy")
+    if isinstance(context_policy, Mapping) and context_policy.get("metadata_status") == "not_recorded":
+        limitations.append(
+            "workload context_policy metadata was not recorded; context compatibility summary is unavailable"
+        )
     limitations.append("stability thresholds were inferred from the saved default StabilityConfig")
     return limitations
 
@@ -629,7 +638,7 @@ def _extract_workload_payload(
         raise ValueError("result artifacts are missing workload metadata")
     context_policy = workload_payload.get("context_policy")
     if not isinstance(context_policy, Mapping):
-        raise ValueError("result artifacts are missing workload context_policy metadata")
+        context_policy = _missing_context_policy_payload(workload_payload)
     benchmark = trials[0]["summary"].benchmark_metrics
     return {
         "name": workload_payload.get("name"),
@@ -640,6 +649,25 @@ def _extract_workload_payload(
         "output_len_summary": benchmark.output_length_summary,
         "context_policy": dict(context_policy),
         "model": trace_config.get("model"),
+    }
+
+
+def _missing_context_policy_payload(workload_payload: Mapping[str, Any]) -> dict[str, object]:
+    num_requests = workload_payload.get("num_requests")
+    return {
+        "metadata_status": "not_recorded",
+        "max_model_len": None,
+        "tokenizer_source": None,
+        "tokenizer": None,
+        "over_limit": None,
+        "truncation_side": None,
+        "unsafe_allow_workload_tokenizer_for_real_datasets": False,
+        "total_samples": num_requests,
+        "kept_samples": num_requests,
+        "skipped_samples": 0,
+        "truncated_samples": 0,
+        "skipped_source_indexes": [],
+        "truncated_source_indexes": [],
     }
 
 
