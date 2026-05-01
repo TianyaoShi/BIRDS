@@ -38,6 +38,7 @@ from .trial_runner import TrialArtifacts, TrialRunResult, TrialRunner
 from .workload import (
     PreparedWorkload,
     generate_sample_requests,
+    inspect_workload_dataset,
     load_workload_config,
     load_workload_samples,
     load_workload_samples_for_sampling_only,
@@ -94,6 +95,7 @@ __all__ = [
     "cycling_request_source",
     "generate_report",
     "generate_sample_requests",
+    "inspect_workload_dataset",
     "load_workload_config",
     "load_workload_samples",
     "load_workload_samples_for_sampling_only",

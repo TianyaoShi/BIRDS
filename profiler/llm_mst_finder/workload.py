@@ -209,6 +209,7 @@ class DatasetConfig:
     path: str | None = None
     subset: str | None = None
     split: str | None = None
+    max_scan_rows: int | None = None
     conversation_field: str | None = None
     prompt_field: str | None = None
     completion_field: str | None = None
@@ -223,6 +224,8 @@ class DatasetConfig:
             raise ValueError(f"dataset.path is required for dataset type {self.type!r}")
         if self.type == "hf" and not self.split:
             raise ValueError("dataset.split is required for dataset type 'hf'")
+        if self.max_scan_rows is not None and self.max_scan_rows <= 0:
+            raise ValueError("dataset.max_scan_rows must be positive")
         if self.type == "synthetic-fixed":
             if self.path is not None:
                 raise ValueError("synthetic-fixed must not define dataset.path")
@@ -261,6 +264,17 @@ class DatasetEntry:
     prompt_len: int | None = None
     expected_output_len: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class HFDatasetSample:
+    entries: list[DatasetEntry]
+    scanned_rows: int
+    usable_rows: int
+    skipped_missing_prompt: int
+    skipped_missing_completion: int
+    sample_size: int
+    scan_limit: int | None
 
 
 def _parse_length_spec(payload: Any, field_name: str) -> LengthSpec:
@@ -317,6 +331,7 @@ def _parse_dataset(payload: Any, base_dir: Path) -> DatasetConfig:
             "path",
             "subset",
             "split",
+            "max_scan_rows",
             "conversation_field",
             "prompt_field",
             "completion_field",
@@ -339,11 +354,15 @@ def _parse_dataset(payload: Any, base_dir: Path) -> DatasetConfig:
         if not isinstance(prompts_payload, list):
             raise ValueError("dataset.prompts must be a list when provided")
         prompts = tuple(_expect_string(item, "dataset.prompts[]") for item in prompts_payload)
+    max_scan_rows = dataset_payload.get("max_scan_rows")
+    if max_scan_rows is not None:
+        max_scan_rows = _expect_int(max_scan_rows, "dataset.max_scan_rows", positive=True)
     return DatasetConfig(
         type=dataset_type,
         path=path_value,
         subset=_optional_string(dataset_payload.get("subset"), "dataset.subset"),
         split=_optional_string(dataset_payload.get("split"), "dataset.split"),
+        max_scan_rows=max_scan_rows,
         conversation_field=_optional_string(
             dataset_payload.get("conversation_field"),
             "dataset.conversation_field",
@@ -469,10 +488,12 @@ def _manifest_cache_path(
         "dataset_conversation_field": config.dataset.conversation_field,
         "dataset_prompt_field": config.dataset.prompt_field,
         "dataset_completion_field": config.dataset.completion_field,
+        "dataset_max_scan_rows": config.dataset.max_scan_rows,
         "dataset_type": config.dataset.type,
         "num_requests": config.sampling.num_requests,
         "output_len_mode": config.sampling.output_len.mode,
         "prompt_len_mode": config.sampling.prompt_len.mode,
+        "sampling_seed": config.sampling.seed,
         "tokenizer_key": tokenizer_key,
     }
     digest = hashlib.sha256(
@@ -551,10 +572,12 @@ def _write_entries_to_manifest(
         "dataset_conversation_field": config.dataset.conversation_field,
         "dataset_prompt_field": config.dataset.prompt_field,
         "dataset_completion_field": config.dataset.completion_field,
+        "dataset_max_scan_rows": config.dataset.max_scan_rows,
         "dataset_type": config.dataset.type,
         "num_requests": config.sampling.num_requests,
         "output_len_mode": config.sampling.output_len.mode,
         "prompt_len_mode": config.sampling.prompt_len.mode,
+        "sampling_seed": config.sampling.seed,
         "tokenizer_key": tokenizer_key,
         "entries": [_dataset_entry_to_payload(entry) for entry in entries],
     }
@@ -677,14 +700,18 @@ def _load_sharegpt_entries_from_source(
     return entries
 
 
-def _load_hf_entries_from_source(
+def _load_hf_entry_sample_from_source(
     dataset: DatasetConfig,
     tokenizer: PromptTokenizer,
     *,
     include_prompt_len: bool,
     include_output_len: bool,
-    max_entries: int,
-) -> list[DatasetEntry]:
+    sample_size: int,
+    seed: int,
+    scan_limit: int | None,
+) -> HFDatasetSample:
+    if sample_size <= 0:
+        raise ValueError("sample_size must be positive")
     try:
         from datasets import load_dataset
     except ImportError as exc:  # pragma: no cover - optional dependency path
@@ -700,9 +727,13 @@ def _load_hf_entries_from_source(
     entries: list[DatasetEntry] = []
     skipped_missing_prompt = 0
     skipped_missing_completion = 0
+    scanned_rows = 0
+    usable_rows = 0
+    rng = random.Random(seed)
     for index, row in enumerate(rows):
-        if len(entries) >= max_entries:
+        if scan_limit is not None and scanned_rows >= scan_limit:
             break
+        scanned_rows += 1
         if not isinstance(row, dict):
             raise ValueError(f"hf row {index} must be a mapping")
         prompt, completion = _extract_hf_prompt_completion(row, dataset, row_index=index)
@@ -714,19 +745,26 @@ def _load_hf_entries_from_source(
             continue
         prompt_len = len(tokenizer.encode(prompt)) if include_prompt_len else None
         expected_output_len = len(tokenizer.encode(completion)) if include_output_len else None
-        entries.append(
-            DatasetEntry(
-                prompt=prompt,
-                source_index=index,
-                prompt_len=prompt_len,
-                expected_output_len=expected_output_len,
-                metadata={
-                    "hf_dataset_path": dataset.path,
-                    "hf_dataset_subset": dataset.subset,
-                    "hf_dataset_split": dataset.split,
-                },
-            )
+        entry = DatasetEntry(
+            prompt=prompt,
+            source_index=index,
+            prompt_len=prompt_len,
+            expected_output_len=expected_output_len,
+            metadata={
+                "hf_dataset_path": dataset.path,
+                "hf_dataset_subset": dataset.subset,
+                "hf_dataset_split": dataset.split,
+                "hf_sampling_method": "reservoir_uniform",
+            },
         )
+        usable_rows += 1
+        if len(entries) < sample_size:
+            entries.append(entry)
+        else:
+            replacement_index = rng.randrange(usable_rows)
+            if replacement_index < sample_size:
+                entries[replacement_index] = entry
+    rng.shuffle(entries)
     if not entries:
         raise ValueError(
             "hf dataset has no usable rows with prompt and completion: "
@@ -734,7 +772,36 @@ def _load_hf_entries_from_source(
             f"(missing_prompt={skipped_missing_prompt}, "
             f"missing_completion={skipped_missing_completion})"
         )
-    return entries
+    return HFDatasetSample(
+        entries=entries,
+        scanned_rows=scanned_rows,
+        usable_rows=usable_rows,
+        skipped_missing_prompt=skipped_missing_prompt,
+        skipped_missing_completion=skipped_missing_completion,
+        sample_size=sample_size,
+        scan_limit=scan_limit,
+    )
+
+
+def _load_hf_entries_from_source(
+    dataset: DatasetConfig,
+    tokenizer: PromptTokenizer,
+    *,
+    include_prompt_len: bool,
+    include_output_len: bool,
+    sample_size: int,
+    seed: int,
+    scan_limit: int | None,
+) -> list[DatasetEntry]:
+    return _load_hf_entry_sample_from_source(
+        dataset,
+        tokenizer,
+        include_prompt_len=include_prompt_len,
+        include_output_len=include_output_len,
+        sample_size=sample_size,
+        seed=seed,
+        scan_limit=scan_limit,
+    ).entries
 
 
 def _extract_hf_prompt_completion(
@@ -855,7 +922,9 @@ def _sample_dataset_entries(
             tokenizer,
             include_prompt_len=config.sampling.prompt_len.mode == "from_dataset",
             include_output_len=config.sampling.output_len.mode == "from_dataset",
-            max_entries=min(max(config.sampling.num_requests * 4, config.sampling.num_requests), 4096),
+            sample_size=config.sampling.num_requests,
+            seed=config.sampling.seed,
+            scan_limit=dataset.max_scan_rows,
         )
         _write_entries_to_manifest(manifest_path, config=config, tokenizer_key=tokenizer_key, entries=entries)
         return entries
@@ -891,6 +960,8 @@ def generate_sample_requests(
     for request_index in range(config.sampling.num_requests):
         if config.dataset.type == "synthetic-fixed":
             entry = dataset_entries[0]
+        elif config.dataset.type == "hf":
+            entry = dataset_entries[request_index % len(dataset_entries)]
         else:
             entry = rng.choice(dataset_entries)
 
@@ -954,6 +1025,188 @@ def load_workload_samples(
 ) -> list[SampleRequest]:
     """Backward-compatible alias for sampling-only behavior."""
     return load_workload_samples_for_sampling_only(path, tokenizer=tokenizer)
+
+
+def inspect_workload_dataset(
+    path: str | Path,
+    *,
+    model_name: str,
+    sample_size: int | None = None,
+    max_scan_rows: int | None = None,
+) -> dict[str, Any]:
+    config = load_workload_config(path)
+    fallback_tokenizer = resolve_tokenizer(config.tokenizer)
+    fallback_tokenizer_key = _tokenizer_cache_key(config.tokenizer, tokenizer=fallback_tokenizer)
+    tokenizer = fallback_tokenizer
+    tokenizer_key = fallback_tokenizer_key
+    model_context: dict[str, Any] | None = None
+    if config.context_policy is not None:
+        model_context_info = resolve_model_context_info(
+            config.context_policy,
+            workload_tokenizer=fallback_tokenizer,
+            workload_tokenizer_key=fallback_tokenizer_key,
+            model_name=model_name,
+            fallback_tokenizer=fallback_tokenizer,
+            fallback_tokenizer_key=fallback_tokenizer_key,
+            fallback_tokenizer_name=_normalized_tokenizer_spec(config.tokenizer),
+        )
+        tokenizer = model_context_info.tokenizer
+        tokenizer_key = model_context_info.tokenizer_key
+        model_context = model_context_info.to_metadata()
+
+    if sample_size is not None and sample_size <= 0:
+        raise ValueError("sample_size must be positive")
+    if max_scan_rows is not None and max_scan_rows <= 0:
+        raise ValueError("max_scan_rows must be positive")
+
+    if config.dataset.type == "hf":
+        effective_sample_size = sample_size or min(max(config.sampling.num_requests, 1024), 4096)
+        scan_limit = max_scan_rows if max_scan_rows is not None else config.dataset.max_scan_rows
+        hf_sample = _load_hf_entry_sample_from_source(
+            config.dataset,
+            tokenizer,
+            include_prompt_len=True,
+            include_output_len=True,
+            sample_size=effective_sample_size,
+            seed=config.sampling.seed,
+            scan_limit=scan_limit,
+        )
+        entries = hf_sample.entries
+        source_summary = {
+            "sampling_method": "reservoir_uniform",
+            "sample_size": hf_sample.sample_size,
+            "sampled_entries": len(entries),
+            "scanned_rows": hf_sample.scanned_rows,
+            "usable_rows": hf_sample.usable_rows,
+            "skipped_missing_prompt": hf_sample.skipped_missing_prompt,
+            "skipped_missing_completion": hf_sample.skipped_missing_completion,
+            "scan_limit": hf_sample.scan_limit,
+        }
+    else:
+        entries = _sample_dataset_entries(config, tokenizer, tokenizer_key=tokenizer_key)
+        source_summary = {
+            "sampling_method": "source_entries",
+            "sampled_entries": len(entries),
+            "scanned_rows": len(entries),
+            "usable_rows": len(entries),
+            "scan_limit": max_scan_rows,
+        }
+
+    prompt_lengths = [
+        entry.prompt_len if entry.prompt_len is not None else len(tokenizer.encode(entry.prompt))
+        for entry in entries
+    ]
+    output_lengths = [
+        entry.expected_output_len
+        for entry in entries
+        if entry.expected_output_len is not None
+    ]
+    prompt_summary = _summarize_int_values(prompt_lengths)
+    output_summary = _summarize_int_values(output_lengths)
+    return {
+        "workload": {
+            "name": config.name,
+            "source_path": str(config.source_path),
+            "dataset_type": config.dataset.type,
+            "dataset_path": config.dataset.path,
+            "dataset_subset": config.dataset.subset,
+            "dataset_split": config.dataset.split,
+            "conversation_field": config.dataset.conversation_field,
+            "prompt_field": config.dataset.prompt_field,
+            "completion_field": config.dataset.completion_field,
+        },
+        "model": model_name,
+        "tokenizer_key": tokenizer_key,
+        "model_context": model_context,
+        "source_summary": source_summary,
+        "lengths": {
+            "prompt_tokens": prompt_summary,
+            "output_tokens": output_summary,
+        },
+        "suggested_search_overrides": _suggest_search_overrides(
+            prompt_summary=prompt_summary,
+            output_summary=output_summary,
+        ),
+    }
+
+
+def _summarize_int_values(values: list[int]) -> dict[str, float | int | None]:
+    if not values:
+        return {
+            "count": 0,
+            "min": None,
+            "mean": None,
+            "p50": None,
+            "p90": None,
+            "p95": None,
+            "p99": None,
+            "max": None,
+        }
+    ordered = sorted(values)
+    return {
+        "count": len(ordered),
+        "min": ordered[0],
+        "mean": sum(ordered) / len(ordered),
+        "p50": _percentile(ordered, 0.50),
+        "p90": _percentile(ordered, 0.90),
+        "p95": _percentile(ordered, 0.95),
+        "p99": _percentile(ordered, 0.99),
+        "max": ordered[-1],
+    }
+
+
+def _percentile(ordered_values: list[int], percentile: float) -> float:
+    if not ordered_values:
+        raise ValueError("ordered_values must be non-empty")
+    if len(ordered_values) == 1:
+        return float(ordered_values[0])
+    position = percentile * (len(ordered_values) - 1)
+    lower = int(position)
+    upper = min(lower + 1, len(ordered_values) - 1)
+    weight = position - lower
+    return (ordered_values[lower] * (1.0 - weight)) + (ordered_values[upper] * weight)
+
+
+def _suggest_search_overrides(
+    *,
+    prompt_summary: dict[str, float | int | None],
+    output_summary: dict[str, float | int | None],
+) -> dict[str, Any]:
+    prompt_p90 = _summary_float(prompt_summary.get("p90"))
+    output_p90 = _summary_float(output_summary.get("p90"))
+    combined_p90 = (prompt_p90 or 0.0) + (output_p90 or 0.0)
+    if (output_p90 is not None and output_p90 > 1024) or combined_p90 > 4096:
+        durations = {
+            "trial_min_duration_s": 300,
+            "trial_max_duration_s": 600,
+            "final_confirmation_duration_s": 600,
+        }
+        reason = "long prompt/output tail; use longer trials to average workload phases"
+    elif (output_p90 is not None and output_p90 > 256) or combined_p90 > 2048:
+        durations = {
+            "trial_min_duration_s": 180,
+            "trial_max_duration_s": 360,
+            "final_confirmation_duration_s": 360,
+        }
+        reason = "moderate prompt/output tail; use longer-than-smoke trials"
+    else:
+        durations = {
+            "trial_min_duration_s": 90,
+            "trial_max_duration_s": 180,
+            "final_confirmation_duration_s": 180,
+        }
+        reason = "short-to-moderate lengths; default live-search durations are usually sufficient"
+    return {
+        **durations,
+        "rate_precision": 0.05,
+        "reason": reason,
+    }
+
+
+def _summary_float(value: float | int | None) -> float | None:
+    if value is None:
+        return None
+    return float(value)
 
 
 def _build_workload_metadata(

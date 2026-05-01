@@ -19,6 +19,7 @@ from .stability import StabilityConfig
 from .trial_runner import TrialRunner
 from .windowing import FixedWindowAggregator
 from .workload import prepare_workload_for_trial
+from .workload import inspect_workload_dataset
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -86,6 +87,14 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--trial-dir", type=Path, required=True)
     _add_stability_policy_args(analyze, defaults_from_policy=False)
     analyze.set_defaults(handler=_analyze_command)
+
+    inspect_workload = subparsers.add_parser("inspect-workload")
+    inspect_workload.add_argument("--workload", type=Path, required=True)
+    inspect_workload.add_argument("--model", required=True)
+    inspect_workload.add_argument("--sample-size", type=int, default=None)
+    inspect_workload.add_argument("--max-scan-rows", type=int, default=None)
+    inspect_workload.add_argument("--output", type=Path, default=None)
+    inspect_workload.set_defaults(handler=_inspect_workload_command)
 
     search = subparsers.add_parser("search")
     search.add_argument("--search-id", default=_default_search_id())
@@ -231,6 +240,21 @@ async def _analyze_command(args: argparse.Namespace) -> int:
     )
     write_analysis_artifact(args.trial_dir, result)
     print(json.dumps(result.to_dict(), sort_keys=True))
+    return 0
+
+
+async def _inspect_workload_command(args: argparse.Namespace) -> int:
+    result = inspect_workload_dataset(
+        args.workload,
+        model_name=args.model,
+        sample_size=args.sample_size,
+        max_scan_rows=args.max_scan_rows,
+    )
+    payload = json.dumps(result, indent=2, sort_keys=True) + "\n"
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(payload, encoding="utf-8")
+    print(payload, end="")
     return 0
 
 

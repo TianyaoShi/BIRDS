@@ -107,6 +107,10 @@ dataset:
   conversation_field: conversation
 ```
 
+HF datasets are sampled with deterministic reservoir sampling over the streamed split, using `sampling.seed`. This avoids the previous prefix bias from taking the first streamed rows. Add `dataset.max_scan_rows` only when you intentionally want to cap the scan and accept uniformity over the scanned prefix rather than the full split.
+
+For conversation-style HF rows, the current adapter uses the first user/human turn as the prompt and the first assistant/gpt turn as the reference completion length. It does not serialize full multi-round chat history into the request prompt.
+
 Context policy rules:
 
 - `prompt_tokens + requested_output_tokens` must fit the selected model context.
@@ -188,6 +192,19 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 /local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli report \
   --result-dir results/mst/MODEL_WORKLOAD_SERVER
 ```
+
+Inspect a workload before profiling:
+
+```bash
+PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
+/local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli inspect-workload \
+  --workload profiler/llm_mst_finder/workloads/wildchat_hf.yaml \
+  --model google/gemma-4-E4B-it \
+  --sample-size 4096 \
+  --output results/mst/wildchat_inspection.json
+```
+
+This reports sampled prompt/output token length distributions, HF scan/usable/skipped counts, tokenizer/model-context metadata, and suggested search-duration overrides.
 
 ## Output Artifacts
 

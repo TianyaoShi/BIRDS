@@ -1,0 +1,22 @@
+name: wildchat-hf
+dataset:
+  type: hf
+  path: allenai/WildChat
+  split: train
+  conversation_field: conversation
+tokenizer: google/gemma-4-E4B-it
+sampling:
+  seed: 17
+  num_requests: 3000
+  prompt_len:
+    mode: from_dataset
+  output_len:
+    mode: from_dataset
+request:
+  stream: true
+  temperature: 0.0
+  ignore_eos: false
+context_policy:
+  max_model_len: 131072
+  tokenizer_source: vllm_model_config
+  over_limit: skip_sample

@@ -9,6 +9,7 @@ import pytest
 
 from llm_mst_finder.workload import (
     generate_sample_requests,
+    inspect_workload_dataset,
     load_workload_config,
     load_workload_samples,
     load_workload_samples_for_sampling_only,
@@ -101,6 +102,7 @@ def test_hf_dataset_uses_conversation_rows(monkeypatch, tmp_path: Path) -> None:
         return rows
 
     monkeypatch.setitem(sys.modules, "datasets", types.SimpleNamespace(load_dataset=load_dataset))
+    monkeypatch.setattr("llm_mst_finder.workload._manifest_cache_root", lambda: tmp_path / "cache")
     workload_path = tmp_path / "hf_wildchat.yaml"
     workload_path.write_text(
         "\n".join(
@@ -136,6 +138,126 @@ def test_hf_dataset_uses_conversation_rows(monkeypatch, tmp_path: Path) -> None:
     assert all(sample.metadata["dataset_type"] == "hf" for sample in samples)
     assert all(sample.metadata["hf_dataset_path"] == "allenai/WildChat" for sample in samples)
     assert all(sample.expected_output_len > 0 for sample in samples)
+
+
+def test_hf_dataset_uses_reservoir_uniform_sample_not_first_rows(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    rows = [
+        {
+            "conversation": [
+                {"role": "user", "content": f"prompt {index}"},
+                {"role": "assistant", "content": f"answer {index}"},
+            ]
+        }
+        for index in range(30)
+    ]
+
+    def load_dataset(path, *, name, split, streaming):
+        assert path == "allenai/WildChat"
+        assert name is None
+        assert split == "train"
+        assert streaming is True
+        return rows
+
+    monkeypatch.setitem(sys.modules, "datasets", types.SimpleNamespace(load_dataset=load_dataset))
+    monkeypatch.setattr("llm_mst_finder.workload._manifest_cache_root", lambda: tmp_path / "cache")
+    workload_path = tmp_path / "hf_wildchat_uniform.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: hf-wildchat-uniform",
+                "dataset:",
+                "  type: hf",
+                "  path: allenai/WildChat",
+                "  split: train",
+                "tokenizer: whitespace",
+                "sampling:",
+                "  seed: 7",
+                "  num_requests: 5",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+                "context_policy:",
+                "  max_model_len: 4096",
+                "  tokenizer_source: workload_tokenizer",
+                "  unsafe_allow_workload_tokenizer_for_real_datasets: true",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    samples = prepare_workload_for_trial(workload_path, model_name="fake-model").samples
+
+    source_indexes = [sample.metadata["source_index"] for sample in samples]
+    assert len(source_indexes) == 5
+    assert source_indexes != [0, 1, 2, 3, 4]
+    assert all(sample.metadata["hf_sampling_method"] == "reservoir_uniform" for sample in samples)
+
+
+def test_inspect_workload_dataset_reports_hf_length_distribution(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    rows = [
+        {
+            "conversation": [
+                {"role": "user", "content": "short prompt"},
+                {"role": "assistant", "content": "short answer"},
+            ]
+        },
+        {
+            "conversation": [
+                {"role": "user", "content": "longer prompt with more words"},
+                {"role": "assistant", "content": "longer answer with several output words"},
+            ]
+        },
+    ]
+
+    def load_dataset(path, *, name, split, streaming):
+        del name
+        assert path == "allenai/WildChat"
+        assert split == "train"
+        assert streaming is True
+        return rows
+
+    monkeypatch.setitem(sys.modules, "datasets", types.SimpleNamespace(load_dataset=load_dataset))
+    workload_path = tmp_path / "hf_wildchat_inspect.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: hf-wildchat-inspect",
+                "dataset:",
+                "  type: hf",
+                "  path: allenai/WildChat",
+                "  split: train",
+                "tokenizer: whitespace",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 2",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    report = inspect_workload_dataset(
+        workload_path,
+        model_name="fake-model",
+        sample_size=2,
+        max_scan_rows=2,
+    )
+
+    assert report["source_summary"]["sampling_method"] == "reservoir_uniform"
+    assert report["source_summary"]["scanned_rows"] == 2
+    assert report["lengths"]["prompt_tokens"]["count"] == 2
+    assert report["lengths"]["output_tokens"]["max"] == 6
+    assert "trial_min_duration_s" in report["suggested_search_overrides"]
 
 
 def test_missing_dataset_file_raises(tmp_path: Path) -> None:
