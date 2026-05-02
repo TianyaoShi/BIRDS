@@ -153,7 +153,7 @@ overrides:
     launch:
       max_model_len: 4096
 
-    - match:
+  - match:
       models:
         - CodeLlama-34b-Instruct-hf
     reason: CodeLlama model configs derive a 16384-token maximum context; vLLM rejects the default 32768 engine length for this family.
