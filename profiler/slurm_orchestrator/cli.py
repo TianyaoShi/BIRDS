@@ -12,7 +12,15 @@ from typing import Sequence
 
 from local_orchestrator.manifest import load_manifest
 
-from .planning import default_run_id, ensure_run_plan, render_task_shell, submit_run_plan
+from .planning import (
+    default_run_id,
+    ensure_run_plan,
+    load_run_plan,
+    refresh_run_plan_for_resume,
+    render_task_shell,
+    submit_run_plan,
+    submit_run_plan_tasks,
+)
 from .state import collect_run, finalize_task, mark_task_running
 
 
@@ -29,6 +37,27 @@ def build_parser() -> argparse.ArgumentParser:
     submit.add_argument("--manifest", type=Path, required=True)
     submit.add_argument("--run-id", default=None)
     submit.set_defaults(handler=_submit_command)
+
+    resume = subparsers.add_parser("resume")
+    resume.add_argument("--run-root", type=Path, required=True)
+    resume.add_argument(
+        "--force",
+        action="store_true",
+        help="rerun all jobs, including previously succeeded ones",
+    )
+    resume.add_argument(
+        "--include-experiment",
+        action="append",
+        default=[],
+        help="shell-style experiment id pattern to include; may be repeated",
+    )
+    resume.add_argument(
+        "--exclude-experiment",
+        action="append",
+        default=[],
+        help="shell-style experiment id pattern to exclude; may be repeated",
+    )
+    resume.set_defaults(handler=_resume_command)
 
     collect = subparsers.add_parser("collect")
     collect.add_argument("--run-root", type=Path, required=True)
@@ -81,6 +110,27 @@ def _submit_command(args: argparse.Namespace) -> int:
     run_id = args.run_id or manifest.run.run_id or default_run_id()
     plan = ensure_run_plan(manifest, run_id)
     submission = submit_run_plan(plan)
+    print(json.dumps(submission, indent=2, sort_keys=True))
+    return 0 if all(group.get("return_code", 1) == 0 for group in submission.get("groups", [])) else 1
+
+
+def _resume_command(args: argparse.Namespace) -> int:
+    run_root = args.run_root.resolve()
+    existing_plan = load_run_plan(run_root)
+    manifest = load_manifest(Path(str(existing_plan["manifest_path"])))
+    refreshed_plan, selected = refresh_run_plan_for_resume(
+        manifest,
+        run_root,
+        force=bool(args.force),
+        include_experiments=tuple(args.include_experiment or ()),
+        exclude_experiments=tuple(args.exclude_experiment or ()),
+    )
+    submission = submit_run_plan_tasks(
+        refreshed_plan,
+        selected_task_indices_by_group=selected,
+        submission_filename="resume-submission.json",
+    )
+    submission["selected_task_count"] = sum(len(indices) for indices in selected.values())
     print(json.dumps(submission, indent=2, sort_keys=True))
     return 0 if all(group.get("return_code", 1) == 0 for group in submission.get("groups", [])) else 1
 

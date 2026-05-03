@@ -22,6 +22,16 @@ PYTHONPATH=/path/to/BioLLM/profiler \
   --run-id my-slurm-run
 ```
 
+Resume a prior run. This refreshes non-succeeded job payloads from the manifest recorded in the run plan and submits only those Slurm array indices:
+
+```bash
+PYTHONPATH=/path/to/BioLLM/profiler \
+  /path/to/venv/bin/python -m slurm_orchestrator.cli resume \
+  --run-root /path/to/results/orchestrator/my-slurm-run
+```
+
+Use `--force` to rerun all jobs, or `--include-experiment` / `--exclude-experiment` with shell-style experiment ID patterns to target a subset.
+
 Collect per-job JSON state back into `summary.json` and `summary.md`:
 
 ```bash
@@ -91,6 +101,7 @@ The adapter intentionally avoids one shared `state.json` while Slurm tasks are r
 - The sbatch scripts use `set -euo pipefail`.
 - `PYTHONPATH` is set to the repo’s `profiler/` directory inside each task.
 - Result directories are cleaned before search to avoid stale `search_trace.json` failures on reruns.
+- `resume` preserves succeeded job state, refreshes failed/planned/running job configs from the current manifest, and submits selected array indices with an `sbatch --array=...` override.
 - The generated launch commands reuse `local_orchestrator.lifecycle.render_launch_command(...)`.
 - The generated MST commands reuse `local_orchestrator.mst_adapter.build_search_command(...)` and `build_report_command(...)`.
 - Probe output from manifest expansion is preserved in the per-job payloads and state files.

@@ -155,7 +155,7 @@ overrides:
 
   - match:
       models:
-        - CodeLlama-34b-Instruct-hf
+        - meta-llama/CodeLlama-34b-Instruct-hf
     reason: CodeLlama model configs derive a 16384-token maximum context; vLLM rejects the default 32768 engine length for this family.
     launch:
       max_model_len: 16384
@@ -163,7 +163,7 @@ overrides:
   - match:
       models:
         - openai/gpt-oss-120b
-    reason: gpt-oss-120b should use the quantized checkpoint dtype metadata rather than forcing float16.
+    reason: gpt-oss-120b should use the quantized checkpoint dtype metadata rather than forcing float16; TP1/TP2 per-experiment launch caps below avoid the H100 OOM cases documented by vLLM.
     launch:
       dtype: auto
 
@@ -284,33 +284,33 @@ experiments:
 
   - id: codellama-34b-instruct-h100-tp1
     model: meta-llama/CodeLlama-34b-Instruct-hf
-    workload: ./workloads/live_sharegpt_workload_context.yaml
+    workload: ./workloads/live_sharegpt_workload_context_16384.yaml
 
   - id: codellama-34b-instruct-h100-tp2
     model: meta-llama/CodeLlama-34b-Instruct-hf
-    workload: ./workloads/live_sharegpt_workload_context.yaml
+    workload: ./workloads/live_sharegpt_workload_context_16384.yaml
     launch:
       gpu_count: 2
       tensor_parallel_size: 2
 
   - id: codellama-34b-instruct-h100-tp4
     model: meta-llama/CodeLlama-34b-Instruct-hf
-    workload: ./workloads/live_sharegpt_workload_context.yaml
+    workload: ./workloads/live_sharegpt_workload_context_16384.yaml
     launch:
       gpu_count: 4
       tensor_parallel_size: 4
 
   - id: llama-2-7b-chat-h100-tp1
     model: meta-llama/Llama-2-7b-chat-hf
-    workload: ./workloads/live_sharegpt_workload_context.yaml
+    workload: ./workloads/live_sharegpt_workload_context_4096.yaml
 
   - id: llama-2-13b-chat-h100-tp1
     model: meta-llama/Llama-2-13b-chat-hf
-    workload: ./workloads/live_sharegpt_workload_context.yaml
+    workload: ./workloads/live_sharegpt_workload_context_4096.yaml
 
   - id: llama-2-70b-chat-h100-tp4
     model: meta-llama/Llama-2-70b-chat-hf
-    workload: ./workloads/live_sharegpt_workload_context.yaml
+    workload: ./workloads/live_sharegpt_workload_context_4096.yaml
     launch:
       gpu_count: 4
       tensor_parallel_size: 4
@@ -336,14 +336,23 @@ experiments:
 
   - id: gpt-oss-120b-h100-tp1
     model: openai/gpt-oss-120b
-    workload: ./workloads/live_sharegpt_workload_context.yaml
+    workload: ./workloads/live_sharegpt_workload_context_16384.yaml
+    launch:
+      gpu_memory_utilization: 0.95
+      max_model_len: 16384
+      max_num_seqs: 64
+      max_num_batched_tokens: 1024
 
   - id: gpt-oss-120b-h100-tp2
     model: openai/gpt-oss-120b
-    workload: ./workloads/live_sharegpt_workload_context.yaml
+    workload: ./workloads/live_sharegpt_workload_context_16384.yaml
     launch:
       gpu_count: 2
       tensor_parallel_size: 2
+      gpu_memory_utilization: 0.90
+      max_model_len: 16384
+      max_num_seqs: 128
+      max_num_batched_tokens: 1024
 
   - id: gpt-oss-120b-h100-tp4
     model: openai/gpt-oss-120b

@@ -6,6 +6,7 @@ import subprocess
 import sys
 from dataclasses import replace
 from datetime import datetime, timezone
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
@@ -217,24 +218,50 @@ def load_run_plan(run_root: str | Path) -> dict[str, Any]:
 
 
 def submit_run_plan(run_plan: dict[str, Any]) -> dict[str, Any]:
+    return submit_run_plan_tasks(run_plan)
+
+
+def submit_run_plan_tasks(
+    run_plan: dict[str, Any],
+    *,
+    selected_task_indices_by_group: dict[str, set[int]] | None = None,
+    submission_filename: str = "submission.json",
+) -> dict[str, Any]:
     repo_root = Path(str(run_plan["repo_root"]))
     submissions: list[dict[str, Any]] = []
     for group in run_plan.get("groups", []):
+        group_key = str(group.get("group_key"))
+        selected_indices: set[int] | None = None
+        array_spec: str | None = None
+        if selected_task_indices_by_group is not None:
+            selected_indices = selected_task_indices_by_group.get(group_key, set())
+            if not selected_indices:
+                continue
+            array_spec = _selected_array_spec(
+                selected_indices,
+                base_array_spec=str(group["array_spec"]),
+            )
         script_path = Path(str(group["script_path"]))
+        command = ["sbatch", "--parsable"]
+        if array_spec is not None:
+            command.append(f"--array={array_spec}")
+        command.append(str(script_path))
         result = subprocess.run(
-            ["sbatch", "--parsable", str(script_path)],
+            command,
             cwd=str(repo_root),
             capture_output=True,
             text=True,
             check=False,
         )
         payload = {
-            "group_key": group.get("group_key"),
+            "group_key": group_key,
             "script_path": str(script_path),
             "return_code": result.returncode,
             "stdout": result.stdout.strip(),
             "stderr": result.stderr.strip(),
         }
+        if array_spec is not None:
+            payload["array_spec"] = array_spec
         if result.returncode == 0:
             stdout = result.stdout.strip()
             payload["job_id"] = stdout.split(";", 1)[0] if stdout else None
@@ -245,8 +272,90 @@ def submit_run_plan(run_plan: dict[str, Any]) -> dict[str, Any]:
         "submitted_at": now_utc_iso(),
         "groups": submissions,
     }
-    _write_json(Path(str(run_plan["run_root"])) / "submission.json", submission_payload)
+    _write_json(Path(str(run_plan["run_root"])) / submission_filename, submission_payload)
     return submission_payload
+
+
+def refresh_run_plan_for_resume(
+    manifest: OrchestratorManifest,
+    run_root: str | Path,
+    *,
+    force: bool = False,
+    include_experiments: tuple[str, ...] = (),
+    exclude_experiments: tuple[str, ...] = (),
+) -> tuple[dict[str, Any], dict[str, set[int]]]:
+    run_plan = load_run_plan(run_root)
+    repo_root = Path(str(run_plan["repo_root"]))
+    expanded_jobs = [_resolved_job(job, repo_root=repo_root) for job in expand_manifest(manifest)]
+    jobs_by_id = {job.experiment_id: job for job in expanded_jobs}
+    plan_jobs_by_id = {str(job["experiment_id"]): job for job in run_plan.get("jobs", [])}
+    if set(jobs_by_id) != set(plan_jobs_by_id):
+        missing = sorted(set(jobs_by_id) - set(plan_jobs_by_id))
+        extra = sorted(set(plan_jobs_by_id) - set(jobs_by_id))
+        raise ValueError(
+            "resume manifest/job mismatch: "
+            f"missing_in_plan={missing}, extra_in_plan={extra}"
+        )
+
+    group_entries = {str(group["group_key"]): group for group in run_plan.get("groups", [])}
+    group_payloads: dict[str, dict[str, Any]] = {}
+    for group_key, group in group_entries.items():
+        group_payload = _read_json_mapping(Path(str(group["plan_path"])))
+        if group_payload is None:
+            raise RuntimeError(f"group plan is missing or malformed: {group['plan_path']}")
+        group_payloads[group_key] = group_payload
+    selected: dict[str, set[int]] = {}
+    updated_at = now_utc_iso()
+
+    for experiment_id, job in jobs_by_id.items():
+        plan_job = plan_jobs_by_id[experiment_id]
+        status_path = Path(str(plan_job["status_path"]))
+        state = _read_json_mapping(status_path)
+        if state is None:
+            state = dict(plan_job.get("initial_state", {}))
+        status = str(state.get("status", "planned"))
+        if not force and status in {"succeeded", "skipped"}:
+            continue
+        if not _experiment_selected(
+            experiment_id,
+            include_patterns=include_experiments,
+            exclude_patterns=exclude_experiments,
+        ):
+            continue
+
+        group_key = _group_key(job)
+        if group_key != str(plan_job["group_key"]):
+            raise ValueError(
+                f"resume cannot change Slurm GPU group for {experiment_id}: "
+                f"planned={plan_job['group_key']}, current={group_key}"
+            )
+        task_index = int(plan_job["group_task_index"])
+        group_payload = group_payloads[group_key]
+        task = group_payload["jobs"][task_index]
+        if str(task.get("experiment_id")) != experiment_id:
+            raise RuntimeError(
+                f"group task mismatch for {experiment_id}: "
+                f"{group_key}[{task_index}]={task.get('experiment_id')}"
+            )
+
+        fresh_state = build_job_state_payload(job)
+        _refresh_slurm_task_payload(task=task, job=job, fresh_state=fresh_state)
+        _refresh_plan_job_entry(plan_job=plan_job, job=job, task=task, fresh_state=fresh_state)
+        _refresh_status_for_resume(
+            state=state,
+            job=job,
+            task=task,
+            fresh_state=fresh_state,
+            force=force,
+            updated_at=updated_at,
+        )
+        _write_json(status_path, state)
+        selected.setdefault(group_key, set()).add(task_index)
+
+    for group_key, group_payload in group_payloads.items():
+        _write_json(Path(str(group_entries[group_key]["plan_path"])), group_payload)
+    _write_json(Path(str(run_plan["run_root"])) / "plan.json", run_plan)
+    return run_plan, selected
 
 
 def read_group_task(group_plan_path: str | Path, task_index: int) -> dict[str, Any]:
@@ -572,6 +681,27 @@ def _array_spec(*, task_count: int, concurrency_limit: int | None) -> str:
     return f"0-{task_count - 1}{suffix}"
 
 
+def _selected_array_spec(indices: set[int], *, base_array_spec: str) -> str:
+    if not indices:
+        raise ValueError("selected array indices must be non-empty")
+    suffix = ""
+    if "%" in base_array_spec:
+        suffix = "%" + base_array_spec.rsplit("%", 1)[1]
+    return ",".join(str(index) for index in sorted(indices)) + suffix
+
+
+def _experiment_selected(
+    experiment_id: str,
+    *,
+    include_patterns: tuple[str, ...],
+    exclude_patterns: tuple[str, ...],
+) -> bool:
+    lowered = experiment_id.lower()
+    if include_patterns and not any(fnmatchcase(lowered, pattern.lower()) for pattern in include_patterns):
+        return False
+    return not any(fnmatchcase(lowered, pattern.lower()) for pattern in exclude_patterns)
+
+
 def _cpus_per_task(gpu_count: int) -> int:
     if gpu_count <= 0:
         raise ValueError("gpu_count must be positive")
@@ -587,6 +717,105 @@ def _job_name(run_id: str, group_key: str) -> str:
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _read_json_mapping(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _refresh_slurm_task_payload(
+    *,
+    task: dict[str, Any],
+    job: ExpandedExperimentJob,
+    fresh_state: dict[str, Any],
+) -> None:
+    fresh_state["artifacts"]["stdout_log"] = str(task["mst_stdout_log"])
+    fresh_state["artifacts"]["stderr_log"] = str(task["mst_stderr_log"])
+    fresh_state["artifacts"]["vllm_stdout_log"] = str(task["vllm_stdout_log"])
+    fresh_state["artifacts"]["vllm_stderr_log"] = str(task["vllm_stderr_log"])
+    fresh_state["slurm"] = {
+        "group_key": task.get("group_key"),
+        "plan_index": task.get("plan_index"),
+        "group_task_index": task.get("group_task_index"),
+        "gpu_count": job.launch.gpu_count,
+        "base_port": task.get("base_port"),
+        "base_url": task.get("base_url"),
+    }
+    task["gpu_count"] = job.launch.gpu_count
+    task["job"] = serialize_expanded_job(job)
+    task["initial_state"] = fresh_state
+
+
+def _refresh_plan_job_entry(
+    *,
+    plan_job: dict[str, Any],
+    job: ExpandedExperimentJob,
+    task: dict[str, Any],
+    fresh_state: dict[str, Any],
+) -> None:
+    plan_job["gpu_count"] = job.launch.gpu_count
+    plan_job["result_dir"] = str(job.result_dir)
+    plan_job["base_port"] = task["base_port"]
+    plan_job["base_url"] = task["base_url"]
+    plan_job["initial_state"] = fresh_state
+
+
+def _refresh_status_for_resume(
+    *,
+    state: dict[str, Any],
+    job: ExpandedExperimentJob,
+    task: dict[str, Any],
+    fresh_state: dict[str, Any],
+    force: bool,
+    updated_at: str,
+) -> None:
+    for key in (
+        "source_index",
+        "model",
+        "workload",
+        "endpoint",
+        "hardware",
+        "gpu_count",
+        "tensor_parallel_size",
+        "max_model_len",
+        "probe",
+        "result_dir",
+        "server_signature_key",
+    ):
+        state[key] = fresh_state[key]
+    artifacts = state.setdefault("artifacts", {})
+    artifacts["stdout_log"] = str(task["mst_stdout_log"])
+    artifacts["stderr_log"] = str(task["mst_stderr_log"])
+    artifacts["vllm_stdout_log"] = str(task["vllm_stdout_log"])
+    artifacts["vllm_stderr_log"] = str(task["vllm_stderr_log"])
+    state["slurm"] = {
+        "group_key": task.get("group_key"),
+        "plan_index": task.get("plan_index"),
+        "group_task_index": task.get("group_task_index"),
+        "gpu_count": task.get("gpu_count"),
+        "base_port": task.get("base_port"),
+        "base_url": task.get("base_url"),
+    }
+    if force:
+        state["status"] = "planned"
+        state["attempts"] = {"startup": 0, "search": 0}
+        state["last_error"] = None
+        state["artifacts"] = {
+            "search_trace": None,
+            "final_report_json": None,
+            "final_report_md": None,
+            "stdout_log": str(task["mst_stdout_log"]),
+            "stderr_log": str(task["mst_stderr_log"]),
+            "vllm_stdout_log": str(task["vllm_stdout_log"]),
+            "vllm_stderr_log": str(task["vllm_stderr_log"]),
+        }
+    state["updated_at"] = updated_at
 
 
 def _group_plan_value(group_plan_path: str | Path, key: str) -> Any:
