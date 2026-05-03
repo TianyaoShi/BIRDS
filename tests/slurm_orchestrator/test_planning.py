@@ -10,6 +10,7 @@ from slurm_orchestrator.planning import (
     load_run_plan,
     materialize_run_plan,
     refresh_run_plan_for_resume,
+    render_task_shell,
     submit_run_plan_tasks,
 )
 from slurm_orchestrator.state import collect_run, finalize_task
@@ -83,7 +84,12 @@ def test_rendered_sbatch_script_includes_array_limit_wait_search_report_and_clea
                 "setup_commands": ["source /venv/bin/activate"],
             },
             "experiments": [
-                {"id": "exp-a", "model": "model-a", "workload": str(workload)},
+                {
+                    "id": "exp-a",
+                    "model": "model-a",
+                    "workload": str(workload),
+                    "launch": {"env": {"PYTORCH_ALLOC_CONF": "expandable_segments:True"}},
+                },
                 {"id": "exp-b", "model": "model-b", "workload": str(workload)},
             ],
         },
@@ -105,6 +111,8 @@ def test_rendered_sbatch_script_includes_array_limit_wait_search_report_and_clea
     assert '"${SEARCH_CMD[@]}" >>"$MST_STDOUT" 2>>"$MST_STDERR"' in script
     assert '"${REPORT_CMD[@]}" >>"$MST_STDOUT" 2>>"$MST_STDERR"' in script
     assert "trap cleanup EXIT" in script
+    task_shell = render_task_shell(plan["groups"][0]["plan_path"], 0)
+    assert "export PYTORCH_ALLOC_CONF=expandable_segments:True" in task_shell
 
 
 def test_rendered_sbatch_script_scales_cpus_with_gpu_count(tmp_path: Path) -> None:

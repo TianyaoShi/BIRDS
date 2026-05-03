@@ -336,23 +336,29 @@ experiments:
 
   - id: gpt-oss-120b-h100-tp1
     model: openai/gpt-oss-120b
-    workload: ./workloads/live_sharegpt_workload_context_16384.yaml
+    workload: ./workloads/live_sharegpt_workload_context_8192.yaml
     launch:
+      env:
+        PYTORCH_ALLOC_CONF: expandable_segments:True
+        PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
       gpu_memory_utilization: 0.95
-      max_model_len: 16384
+      max_model_len: 8192
       max_num_seqs: 64
       max_num_batched_tokens: 1024
 
   - id: gpt-oss-120b-h100-tp2
     model: openai/gpt-oss-120b
-    workload: ./workloads/live_sharegpt_workload_context_16384.yaml
+    workload: ./workloads/live_sharegpt_workload_context_8192.yaml
     launch:
+      env:
+        PYTORCH_ALLOC_CONF: expandable_segments:True
+        PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
       gpu_count: 2
       tensor_parallel_size: 2
-      gpu_memory_utilization: 0.90
-      max_model_len: 16384
+      gpu_memory_utilization: 0.85
+      max_model_len: 8192
       max_num_seqs: 128
-      max_num_batched_tokens: 1024
+      max_num_batched_tokens: 2048
 
   - id: gpt-oss-120b-h100-tp4
     model: openai/gpt-oss-120b

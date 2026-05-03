@@ -411,6 +411,8 @@ def render_task_shell(group_plan_path: str | Path, task_index: int) -> str:
         _bash_array("SEARCH_CMD", search_command),
         _bash_array("REPORT_CMD", report_command),
     ]
+    for name, value in sorted(job.launch.env.items()):
+        lines.append(_bash_export(name, value))
     return "\n".join(lines)
 
 
@@ -827,6 +829,10 @@ def _group_plan_value(group_plan_path: str | Path, key: str) -> Any:
 
 def _bash_assign(name: str, value: str) -> str:
     return f"{name}={shlex.quote(value)}"
+
+
+def _bash_export(name: str, value: str) -> str:
+    return f"export {name}={shlex.quote(value)}"
 
 
 def _bash_array(name: str, values: tuple[str, ...]) -> str:
