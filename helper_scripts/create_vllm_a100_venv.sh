@@ -22,8 +22,20 @@ mkdir -p "$UV_CACHE_DIR"
 "$UV_BIN" venv "$VENV_DIR" --python "$PYTHON_VERSION" --seed --managed-python --clear
 "$UV_BIN" pip install \
   --python "$VENV_DIR/bin/python" \
+  -r "$ROOT_DIR/requirements/profiler.txt"
+
+# Seed the target environment with build tools and clear any stale isolated
+# build state so repeated vLLM install attempts do not reuse dead Ninja paths.
+"$UV_BIN" pip install \
+  --python "$VENV_DIR/bin/python" \
+  cmake \
+  ninja
+
+rm -rf "$UV_CACHE_DIR/builds-v0" "$UV_CACHE_DIR/sdists-v9/pypi/vllm"
+
+PATH="$VENV_DIR/bin:$PATH" "$UV_BIN" pip install \
+  --python "$VENV_DIR/bin/python" \
   --torch-backend="$TORCH_BACKEND" \
-  -r "$ROOT_DIR/requirements/profiler.txt" \
   -r "$ROOT_DIR/requirements/vllm-h100.txt"
 
 "$VENV_DIR/bin/python" - <<'PY'
