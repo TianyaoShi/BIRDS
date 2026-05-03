@@ -126,4 +126,4 @@ experiments:
       - meta-llama/Llama-3.2-3B-Instruct
       - openai/gpt-oss-20b
     workloads:
-      - ./workloads/longbench_all_truncated.yaml
+      - ./workloads/longbench_nl_truncated.yaml

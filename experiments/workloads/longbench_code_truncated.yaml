@@ -1,7 +1,12 @@
-name: longbench-all-truncated
+name: longbench-code-truncated
 dataset:
   type: longbench
   path: THUDM/LongBench
+  configs:
+    - lcc
+    - repobench-p
+    - lcc_e
+    - repobench-p_e
 sampling:
   seed: 23
   num_requests: 3000
