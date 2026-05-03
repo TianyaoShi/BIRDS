@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 ACCOUNT=""
 PARTITION="${SLURM_PARTITION:-gpu}"
-TIME_LIMIT="${TIME_LIMIT:-00:45:00}"
+TIME_LIMIT="${TIME_LIMIT:-02:00:00}"
 JOB_NAME="${JOB_NAME:-biollm-vllm-a100-env}"
 
 SBATCH_ARGS=(
@@ -46,8 +46,8 @@ echo "pwd=\$(pwd)"
 # source builds.
 if command -v module >/dev/null 2>&1; then
   module load modtree/gpu
+  module load gcc/11.2.0
   module load cuda/12.8.0
-  # module load gcc/12
 fi
 
 "$ROOT_DIR/helper_scripts/create_vllm_a100_venv.sh"
