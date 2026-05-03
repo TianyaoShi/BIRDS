@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -208,6 +209,7 @@ class DatasetConfig:
     type: str
     path: str | None = None
     subset: str | None = None
+    configs: tuple[str, ...] = ()
     split: str | None = None
     max_scan_rows: int | None = None
     conversation_field: str | None = None
@@ -217,10 +219,10 @@ class DatasetConfig:
     prompts: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        allowed = {"synthetic-fixed", "synthetic-distribution", "jsonl", "sharegpt", "hf"}
+        allowed = {"synthetic-fixed", "synthetic-distribution", "jsonl", "sharegpt", "hf", "longbench"}
         if self.type not in allowed:
             raise ValueError(f"unsupported dataset type {self.type!r}")
-        if self.type in {"jsonl", "sharegpt", "hf"} and not self.path:
+        if self.type in {"jsonl", "sharegpt", "hf", "longbench"} and not self.path:
             raise ValueError(f"dataset.path is required for dataset type {self.type!r}")
         if self.type == "hf" and not self.split:
             raise ValueError("dataset.split is required for dataset type 'hf'")
@@ -277,6 +279,53 @@ class HFDatasetSample:
     scan_limit: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class LongBenchDatasetSample:
+    entries: list[DatasetEntry]
+    scanned_rows: int
+    usable_rows: int
+    sample_size: int
+    configs: tuple[str, ...]
+
+
+_LONGBENCH_CONFIGS: tuple[str, ...] = (
+    "narrativeqa",
+    "qasper",
+    "multifieldqa_en",
+    "multifieldqa_zh",
+    "hotpotqa",
+    "2wikimqa",
+    "musique",
+    "dureader",
+    "gov_report",
+    "qmsum",
+    "multi_news",
+    "vcsum",
+    "trec",
+    "triviaqa",
+    "samsum",
+    "lsht",
+    "passage_count",
+    "passage_retrieval_en",
+    "passage_retrieval_zh",
+    "lcc",
+    "repobench-p",
+    "qasper_e",
+    "multifieldqa_en_e",
+    "hotpotqa_e",
+    "2wikimqa_e",
+    "gov_report_e",
+    "multi_news_e",
+    "trec_e",
+    "triviaqa_e",
+    "samsum_e",
+    "passage_count_e",
+    "passage_retrieval_en_e",
+    "lcc_e",
+    "repobench-p_e",
+)
+
+
 def _parse_length_spec(payload: Any, field_name: str) -> LengthSpec:
     spec_payload = _expect_mapping(payload, field_name)
     mode = _expect_string(spec_payload.get("mode"), f"{field_name}.mode")
@@ -330,6 +379,7 @@ def _parse_dataset(payload: Any, base_dir: Path) -> DatasetConfig:
             "type",
             "path",
             "subset",
+            "configs",
             "split",
             "max_scan_rows",
             "conversation_field",
@@ -344,7 +394,25 @@ def _parse_dataset(payload: Any, base_dir: Path) -> DatasetConfig:
     path_value: str | None = None
     if raw_path is not None:
         path_str = _expect_string(raw_path, "dataset.path")
-        path_value = path_str if dataset_type == "hf" else str((base_dir / path_str).resolve())
+        if dataset_type == "hf":
+            path_value = path_str
+        elif dataset_type == "longbench":
+            raw_path_obj = Path(path_str).expanduser()
+            relative_path = (base_dir / path_str).resolve()
+            if raw_path_obj.is_absolute():
+                path_value = str(raw_path_obj)
+            elif relative_path.exists() or path_str.endswith(".zip") or path_str.startswith("."):
+                path_value = str(relative_path)
+            else:
+                path_value = path_str
+        else:
+            path_value = str((base_dir / path_str).resolve())
+    configs_payload = dataset_payload.get("configs", [])
+    configs: tuple[str, ...] = ()
+    if configs_payload:
+        if not isinstance(configs_payload, list):
+            raise ValueError("dataset.configs must be a list when provided")
+        configs = tuple(_expect_string(item, "dataset.configs[]") for item in configs_payload)
     prompt = dataset_payload.get("prompt")
     if prompt is not None and (not isinstance(prompt, str) or not prompt):
         raise ValueError("dataset.prompt must be a non-empty string when provided")
@@ -361,6 +429,7 @@ def _parse_dataset(payload: Any, base_dir: Path) -> DatasetConfig:
         type=dataset_type,
         path=path_value,
         subset=_optional_string(dataset_payload.get("subset"), "dataset.subset"),
+        configs=configs,
         split=_optional_string(dataset_payload.get("split"), "dataset.split"),
         max_scan_rows=max_scan_rows,
         conversation_field=_optional_string(
@@ -484,6 +553,7 @@ def _manifest_cache_path(
         "cache_version": 1,
         "dataset_path": config.dataset.path,
         "dataset_subset": config.dataset.subset,
+        "dataset_configs": list(config.dataset.configs),
         "dataset_split": config.dataset.split,
         "dataset_conversation_field": config.dataset.conversation_field,
         "dataset_prompt_field": config.dataset.prompt_field,
@@ -568,6 +638,7 @@ def _write_entries_to_manifest(
         "cache_version": 1,
         "dataset_path": config.dataset.path,
         "dataset_subset": config.dataset.subset,
+        "dataset_configs": list(config.dataset.configs),
         "dataset_split": config.dataset.split,
         "dataset_conversation_field": config.dataset.conversation_field,
         "dataset_prompt_field": config.dataset.prompt_field,
@@ -804,6 +875,158 @@ def _load_hf_entries_from_source(
     ).entries
 
 
+def _load_longbench_entry_sample_from_source(
+    dataset: DatasetConfig,
+    tokenizer: PromptTokenizer,
+    *,
+    include_prompt_len: bool,
+    include_output_len: bool,
+    sample_size: int,
+    seed: int,
+) -> LongBenchDatasetSample:
+    if sample_size <= 0:
+        raise ValueError("sample_size must be positive")
+    zip_path = _resolve_longbench_zip_path(dataset)
+    configs = dataset.configs or _LONGBENCH_CONFIGS
+    entries: list[DatasetEntry] = []
+    scanned_rows = 0
+    usable_rows = 0
+    rng = random.Random(seed)
+    with zipfile.ZipFile(zip_path) as archive:
+        names = set(archive.namelist())
+        for config_name in configs:
+            row_name = f"data/{config_name}.jsonl"
+            if row_name not in names:
+                raise FileNotFoundError(
+                    f"LongBench config {config_name!r} not found in {zip_path}"
+                )
+            with archive.open(row_name) as handle:
+                for row_index, raw_line in enumerate(handle):
+                    scanned_rows += 1
+                    row = json.loads(raw_line)
+                    if not isinstance(row, dict):
+                        raise ValueError(f"LongBench row {config_name}[{row_index}] must be a mapping")
+                    prompt = _render_longbench_prompt(row)
+                    answers = row.get("answers")
+                    answer_text = _longbench_reference_answer(answers)
+                    prompt_len = len(tokenizer.encode(prompt)) if include_prompt_len else None
+                    expected_output_len = (
+                        max(1, len(tokenizer.encode(answer_text)))
+                        if include_output_len
+                        else None
+                    )
+                    entry = DatasetEntry(
+                        prompt=prompt,
+                        source_index=scanned_rows - 1,
+                        prompt_len=prompt_len,
+                        expected_output_len=expected_output_len,
+                        metadata={
+                            "longbench_config": config_name,
+                            "longbench_row_index": row_index,
+                            "longbench_id": row.get("_id"),
+                            "longbench_language": row.get("language"),
+                            "longbench_length": row.get("length"),
+                            "longbench_dataset": row.get("dataset"),
+                            "longbench_sampling_method": "reservoir_uniform",
+                        },
+                    )
+                    usable_rows += 1
+                    if len(entries) < sample_size:
+                        entries.append(entry)
+                    else:
+                        replacement_index = rng.randrange(usable_rows)
+                        if replacement_index < sample_size:
+                            entries[replacement_index] = entry
+    rng.shuffle(entries)
+    if not entries:
+        raise ValueError(f"LongBench dataset has no usable rows: {zip_path}")
+    return LongBenchDatasetSample(
+        entries=entries,
+        scanned_rows=scanned_rows,
+        usable_rows=usable_rows,
+        sample_size=sample_size,
+        configs=tuple(configs),
+    )
+
+
+def _load_longbench_entries_from_source(
+    dataset: DatasetConfig,
+    tokenizer: PromptTokenizer,
+    *,
+    include_prompt_len: bool,
+    include_output_len: bool,
+    sample_size: int,
+    seed: int,
+) -> list[DatasetEntry]:
+    return _load_longbench_entry_sample_from_source(
+        dataset,
+        tokenizer,
+        include_prompt_len=include_prompt_len,
+        include_output_len=include_output_len,
+        sample_size=sample_size,
+        seed=seed,
+    ).entries
+
+
+def _resolve_longbench_zip_path(dataset: DatasetConfig) -> Path:
+    assert dataset.path is not None
+    raw_path = Path(dataset.path).expanduser()
+    if raw_path.is_file():
+        return raw_path
+    if raw_path.is_dir() and (raw_path / "data.zip").is_file():
+        return raw_path / "data.zip"
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError as exc:  # pragma: no cover - optional dependency path
+        raise RuntimeError(
+            "huggingface_hub is required when dataset.type=longbench uses a Hub repo id"
+        ) from exc
+    return Path(
+        hf_hub_download(
+            dataset.path,
+            filename="data.zip",
+            repo_type="dataset",
+        )
+    )
+
+
+def _render_longbench_prompt(row: dict[str, Any]) -> str:
+    context = row.get("context")
+    task_input = row.get("input")
+    if not isinstance(context, str):
+        raise ValueError("LongBench row.context must be a string")
+    if not isinstance(task_input, str):
+        raise ValueError("LongBench row.input must be a string")
+    all_classes = row.get("all_classes")
+    class_text = ""
+    if isinstance(all_classes, list) and all_classes:
+        labels = [str(item) for item in all_classes if str(item)]
+        if labels:
+            class_text = "\nCandidate labels/classes: " + ", ".join(labels)
+    language = row.get("language")
+    language_text = f"\nLanguage: {language}" if isinstance(language, str) and language else ""
+    return (
+        "Context:\n"
+        f"{context}\n\n"
+        "Task:\n"
+        f"{task_input}"
+        f"{class_text}"
+        f"{language_text}\n\n"
+        "Answer:"
+    )
+
+
+def _longbench_reference_answer(answers: Any) -> str:
+    if isinstance(answers, list):
+        text_answers = [str(item) for item in answers if str(item)]
+        if not text_answers:
+            return " "
+        return max(text_answers, key=len)
+    if answers is None:
+        return " "
+    return str(answers)
+
+
 def _extract_hf_prompt_completion(
     row: dict[str, Any],
     dataset: DatasetConfig,
@@ -928,6 +1151,20 @@ def _sample_dataset_entries(
         )
         _write_entries_to_manifest(manifest_path, config=config, tokenizer_key=tokenizer_key, entries=entries)
         return entries
+    if dataset.type == "longbench":
+        manifest_path = _manifest_cache_path(config, tokenizer_key=tokenizer_key)
+        if manifest_path.exists():
+            return _load_entries_from_manifest(manifest_path)
+        entries = _load_longbench_entries_from_source(
+            dataset,
+            tokenizer,
+            include_prompt_len=config.sampling.prompt_len.mode == "from_dataset",
+            include_output_len=config.sampling.output_len.mode == "from_dataset",
+            sample_size=config.sampling.num_requests,
+            seed=config.sampling.seed,
+        )
+        _write_entries_to_manifest(manifest_path, config=config, tokenizer_key=tokenizer_key, entries=entries)
+        return entries
     raise RuntimeError(f"unsupported dataset type {dataset.type!r}")
 
 
@@ -960,7 +1197,7 @@ def generate_sample_requests(
     for request_index in range(config.sampling.num_requests):
         if config.dataset.type == "synthetic-fixed":
             entry = dataset_entries[0]
-        elif config.dataset.type == "hf":
+        elif config.dataset.type in {"hf", "longbench"}:
             entry = dataset_entries[request_index % len(dataset_entries)]
         else:
             entry = rng.choice(dataset_entries)
@@ -1082,6 +1319,26 @@ def inspect_workload_dataset(
             "skipped_missing_completion": hf_sample.skipped_missing_completion,
             "scan_limit": hf_sample.scan_limit,
         }
+    elif config.dataset.type == "longbench":
+        effective_sample_size = sample_size or min(max(config.sampling.num_requests, 1024), 4096)
+        longbench_sample = _load_longbench_entry_sample_from_source(
+            config.dataset,
+            tokenizer,
+            include_prompt_len=True,
+            include_output_len=True,
+            sample_size=effective_sample_size,
+            seed=config.sampling.seed,
+        )
+        entries = longbench_sample.entries
+        source_summary = {
+            "sampling_method": "reservoir_uniform",
+            "sample_size": longbench_sample.sample_size,
+            "sampled_entries": len(entries),
+            "scanned_rows": longbench_sample.scanned_rows,
+            "usable_rows": longbench_sample.usable_rows,
+            "configs": list(longbench_sample.configs),
+            "scan_limit": None,
+        }
     else:
         entries = _sample_dataset_entries(config, tokenizer, tokenizer_key=tokenizer_key)
         source_summary = {
@@ -1110,6 +1367,7 @@ def inspect_workload_dataset(
             "dataset_type": config.dataset.type,
             "dataset_path": config.dataset.path,
             "dataset_subset": config.dataset.subset,
+            "dataset_configs": list(config.dataset.configs),
             "dataset_split": config.dataset.split,
             "conversation_field": config.dataset.conversation_field,
             "prompt_field": config.dataset.prompt_field,
@@ -1258,7 +1516,7 @@ def prepare_workload_for_trial(
     fallback_tokenizer = resolve_tokenizer(config.tokenizer)
     fallback_tokenizer_key = _tokenizer_cache_key(config.tokenizer, tokenizer=fallback_tokenizer)
     fallback_tokenizer_name = _normalized_tokenizer_spec(config.tokenizer)
-    requires_context_validation = config.dataset.type in {"jsonl", "sharegpt", "hf"}
+    requires_context_validation = config.dataset.type in {"jsonl", "sharegpt", "hf", "longbench"}
 
     if config.context_policy is None:
         if requires_context_validation:

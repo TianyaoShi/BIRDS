@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import types
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -258,6 +259,147 @@ def test_inspect_workload_dataset_reports_hf_length_distribution(
     assert report["lengths"]["prompt_tokens"]["count"] == 2
     assert report["lengths"]["output_tokens"]["max"] == 6
     assert "trial_min_duration_s" in report["suggested_search_overrides"]
+
+
+def test_longbench_dataset_reads_zip_and_formats_prompts(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    zip_path = tmp_path / "longbench.zip"
+    rows = [
+        {
+            "_id": "row-0",
+            "dataset": "gov_report",
+            "input": "Summarize the report.",
+            "context": "alpha beta gamma delta",
+            "answers": ["short summary", "longer reference summary"],
+            "length": 6,
+            "language": "en",
+            "all_classes": [],
+        },
+        {
+            "_id": "row-1",
+            "dataset": "trec",
+            "input": "Classify the question.",
+            "context": "question text here",
+            "answers": ["DESC"],
+            "length": 5,
+            "language": "en",
+            "all_classes": ["DESC", "ENTY"],
+        },
+    ]
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr(
+            "data/gov_report.jsonl",
+            "\n".join(json.dumps(row) for row in rows[:1]) + "\n",
+        )
+        archive.writestr(
+            "data/trec.jsonl",
+            "\n".join(json.dumps(row) for row in rows[1:]) + "\n",
+        )
+
+    monkeypatch.setattr("llm_mst_finder.workload._manifest_cache_root", lambda: tmp_path / "cache")
+    workload_path = tmp_path / "longbench.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: longbench-smoke",
+                "dataset:",
+                "  type: longbench",
+                f"  path: {zip_path}",
+                "  configs:",
+                "    - gov_report",
+                "    - trec",
+                "tokenizer: whitespace",
+                "sampling:",
+                "  seed: 3",
+                "  num_requests: 2",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+                "context_policy:",
+                "  max_model_len: 64",
+                "  tokenizer_source: workload_tokenizer",
+                "  unsafe_allow_workload_tokenizer_for_real_datasets: true",
+                "  over_limit: fail",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    samples = prepare_workload_for_trial(workload_path, model_name="fake-model").samples
+
+    assert len(samples) == 2
+    assert {sample.metadata["longbench_config"] for sample in samples} == {"gov_report", "trec"}
+    assert all(sample.prompt.startswith("Context:\n") for sample in samples)
+    assert all("\n\nTask:\n" in sample.prompt for sample in samples)
+    assert all(sample.prompt.endswith("Answer:") for sample in samples)
+    assert any("Candidate labels/classes: DESC, ENTY" in sample.prompt for sample in samples)
+    gov_report_sample = next(sample for sample in samples if sample.metadata["longbench_config"] == "gov_report")
+    assert gov_report_sample.expected_output_len == 3
+    assert gov_report_sample.metadata["longbench_language"] == "en"
+
+
+def test_longbench_inspection_reports_selected_configs(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    zip_path = tmp_path / "longbench.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr(
+            "data/multi_news.jsonl",
+            json.dumps(
+                {
+                    "_id": "row-0",
+                    "dataset": "multi_news",
+                    "input": "Summarize.",
+                    "context": "one two three four five",
+                    "answers": ["summary text"],
+                    "length": 7,
+                    "language": "en",
+                    "all_classes": [],
+                }
+            )
+            + "\n",
+        )
+
+    monkeypatch.setattr("llm_mst_finder.workload._manifest_cache_root", lambda: tmp_path / "cache")
+    workload_path = tmp_path / "longbench_inspect.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: longbench-inspect",
+                "dataset:",
+                "  type: longbench",
+                f"  path: {zip_path}",
+                "  configs:",
+                "    - multi_news",
+                "tokenizer: whitespace",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 1",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    report = inspect_workload_dataset(
+        workload_path,
+        model_name="fake-model",
+        sample_size=1,
+    )
+
+    assert report["workload"]["dataset_type"] == "longbench"
+    assert report["workload"]["dataset_configs"] == ["multi_news"]
+    assert report["source_summary"]["sampling_method"] == "reservoir_uniform"
+    assert report["source_summary"]["configs"] == ["multi_news"]
+    assert report["source_summary"]["scanned_rows"] == 1
+    assert report["lengths"]["output_tokens"]["count"] == 1
 
 
 def test_missing_dataset_file_raises(tmp_path: Path) -> None:
