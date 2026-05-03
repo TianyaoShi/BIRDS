@@ -249,6 +249,10 @@ def validate_samples_against_context_window(
             )
 
         if allowed_prompt_tokens < 0:
+            if policy.over_limit == "skip_sample":
+                skipped_samples += 1
+                skipped_source_indexes.append(source_index)
+                continue
             raise ValueError(
                 "sample expected_output_len exceeds context_policy.max_model_len "
                 f"(source_index={source_index}, expected_output_len={sample.expected_output_len}, "

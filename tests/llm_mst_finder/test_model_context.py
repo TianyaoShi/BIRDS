@@ -108,6 +108,23 @@ def test_context_validation_skip_sample_records_counts_and_indexes() -> None:
     assert result.report.skipped_source_indexes == (11, 12)
 
 
+def test_context_validation_skip_sample_handles_output_longer_than_context() -> None:
+    tokenizer = WordTokenizer()
+    samples = [
+        _sample("a b", prompt_len=2, expected_output_len=2, source_index=20),
+        _sample("c", prompt_len=1, expected_output_len=7, source_index=21),
+    ]
+    policy = ContextPolicy(max_model_len=6, tokenizer_source="workload_tokenizer", over_limit="skip_sample")
+
+    result = validate_samples_against_context_window(samples, tokenizer=tokenizer, policy=policy)
+
+    assert [sample.metadata["source_index"] for sample in result.samples] == [20]
+    assert result.report.total_samples == 2
+    assert result.report.kept_samples == 1
+    assert result.report.skipped_samples == 1
+    assert result.report.skipped_source_indexes == (21,)
+
+
 def test_context_validation_truncate_prompt_shortens_and_records_indexes() -> None:
     tokenizer = WordTokenizer()
     samples = [_sample("a b c d e", prompt_len=5, expected_output_len=2, source_index=33)]
