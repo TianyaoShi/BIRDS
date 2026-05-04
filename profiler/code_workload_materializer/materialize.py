@@ -55,10 +55,8 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
     dataset_name = _optional_string(dataset.get("name"), "dataset.name") or "crosscodeeval"
     if dataset_name not in {"crosscodeeval", "repobench"}:
         raise ValueError("supported dataset.name values: crosscodeeval, repobench")
-    raw_path = _resolve_path(
-        _required_string(dataset, "raw_path"),
-        base_dir=config_source.parent if config_source is not None else Path.cwd(),
-    )
+    base_dir = config_source.parent if config_source is not None else Path.cwd()
+    raw_path = _config_raw_path(dataset, base_dir=base_dir)
     split = _optional_string(dataset.get("split"), "dataset.split") or "unspecified"
     task = _optional_string(dataset.get("mode"), "dataset.mode") or (
         "cross_file_first" if dataset_name == "repobench" else "cross_file_materialized"
@@ -93,6 +91,8 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
 
     counters = Counters()
     if dataset_name == "crosscodeeval":
+        if raw_path is None:
+            raise ValueError("crosscodeeval materialization requires dataset.raw_path")
         assert aliases is not None
         samples = _load_crosscodeeval_samples(
             raw_path,
@@ -115,7 +115,10 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
             dataset_name=dataset_name,
             split=split,
             task=task,
-            language=_required_string(dataset, "language"),
+            language=_required_string(dataset, "language") if task != "aggregate" else None,
+            aggregate_sources=_repobench_aggregate_sources(dataset, base_dir=base_dir)
+            if task == "aggregate"
+            else None,
             tokenizer=tokenizer,
             min_prompt_tokens=min_prompt_tokens,
             max_prompt_tokens=max_prompt_tokens,
@@ -182,7 +185,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
 
 
 def _load_crosscodeeval_samples(
-    raw_path: Path,
+    raw_path: Path | None,
     *,
     aliases: dict[str, list[str]],
     dataset_name: str,
@@ -238,12 +241,13 @@ def _load_crosscodeeval_samples(
 
 
 def _load_repobench_samples(
-    raw_path: Path,
+    raw_path: Path | None,
     *,
     dataset_name: str,
     split: str,
     task: str,
-    language: str,
+    language: str | None,
+    aggregate_sources: list[tuple[str, Path, str]] | None = None,
     tokenizer: PromptTokenizer,
     min_prompt_tokens: int,
     max_prompt_tokens: int,
@@ -253,40 +257,52 @@ def _load_repobench_samples(
     dedup_content_hash: bool,
     counters: Counters,
 ) -> list[MaterializedSample]:
-    if task not in {"cross_file_first", "cross_file_random", "in_file"}:
+    if task not in {"aggregate", "cross_file_first", "cross_file_random", "in_file"}:
         raise ValueError(
-            "repobench dataset.mode must be one of: cross_file_first, cross_file_random, in_file"
+            "repobench dataset.mode must be one of: aggregate, cross_file_first, "
+            "cross_file_random, in_file"
         )
-    if not _language_allowed(language, language_filter):
-        raise ValueError(f"unsupported language for materialization: {language}")
-    files = _repobench_parquet_files(raw_path, mode=task)
+    if task == "aggregate":
+        if not aggregate_sources:
+            raise ValueError("repobench aggregate mode requires dataset.raw_paths")
+        sources = aggregate_sources
+    else:
+        if raw_path is None:
+            raise ValueError("repobench non-aggregate mode requires dataset.raw_path")
+        if language is None:
+            raise ValueError("repobench non-aggregate mode requires dataset.language")
+        sources = [(language, raw_path, task)]
     samples: list[MaterializedSample] = []
     seen_content_hashes: set[str] = set()
     global_index = 0
-    for file_path in files:
-        rows = _read_parquet_rows(file_path)
-        for row_index, row in enumerate(rows):
-            counters.total_rows += 1
-            sample = _repobench_row_to_sample(
-                row,
-                row_index=global_index,
-                dataset_name=dataset_name,
-                split=split,
-                task=task,
-                language=language,
-                tokenizer=tokenizer,
-                min_prompt_tokens=min_prompt_tokens,
-                max_prompt_tokens=max_prompt_tokens,
-                min_target_tokens=min_target_tokens,
-                max_target_tokens=max_target_tokens,
-                seen_content_hashes=seen_content_hashes,
-                dedup_content_hash=dedup_content_hash,
-                counters=counters,
-                source=f"{file_path}:{row_index}",
-            )
-            global_index += 1
-            if sample is not None:
-                samples.append(sample)
+    for source_language, source_path, source_task in sources:
+        if not _language_allowed(source_language, language_filter):
+            raise ValueError(f"unsupported language for materialization: {source_language}")
+        files = _repobench_parquet_files(source_path, mode=source_task)
+        for file_path in files:
+            rows = _read_parquet_rows(file_path)
+            for row_index, row in enumerate(rows):
+                counters.total_rows += 1
+                sample = _repobench_row_to_sample(
+                    row,
+                    row_index=global_index,
+                    dataset_name=dataset_name,
+                    split=split,
+                    task=source_task,
+                    language=source_language,
+                    tokenizer=tokenizer,
+                    min_prompt_tokens=min_prompt_tokens,
+                    max_prompt_tokens=max_prompt_tokens,
+                    min_target_tokens=min_target_tokens,
+                    max_target_tokens=max_target_tokens,
+                    seen_content_hashes=seen_content_hashes,
+                    dedup_content_hash=dedup_content_hash,
+                    counters=counters,
+                    source=f"{file_path}:{row_index}",
+                )
+                global_index += 1
+                if sample is not None:
+                    samples.append(sample)
     counters.materialized_rows = len(samples)
     return samples
 
@@ -708,7 +724,7 @@ def _build_report(
         "workload_name": name,
         "dataset": dataset_name,
         "task": task,
-        "raw_path": str(raw_path),
+        "raw_path": str(raw_path) if raw_path is not None else None,
         "output_dir": str(output_dir),
         "tokenizer": {
             "name": tokenizer_name,
@@ -887,6 +903,44 @@ def _percentile(ordered: list[int], q: float) -> float:
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _config_raw_path(dataset: dict[str, Any], *, base_dir: Path) -> Path | None:
+    raw_path = dataset.get("raw_path")
+    if raw_path is None:
+        return None
+    return _resolve_path(_expect_string(raw_path, "dataset.raw_path"), base_dir=base_dir)
+
+
+def _repobench_aggregate_sources(
+    dataset: dict[str, Any],
+    *,
+    base_dir: Path,
+) -> list[tuple[str, Path, str]]:
+    raw_paths = _optional_mapping(dataset.get("raw_paths"), "dataset.raw_paths")
+    if not raw_paths:
+        raise ValueError("repobench aggregate mode requires dataset.raw_paths")
+    tasks = _repobench_tasks(dataset.get("tasks"))
+    sources: list[tuple[str, Path, str]] = []
+    for language in sorted(raw_paths):
+        raw_path = _resolve_path(
+            _expect_string(raw_paths[language], f"dataset.raw_paths.{language}"),
+            base_dir=base_dir,
+        )
+        for task in tasks:
+            sources.append((language, raw_path, task))
+    return sources
+
+
+def _repobench_tasks(value: Any) -> list[str]:
+    if value is None:
+        return ["in_file", "cross_file_first", "cross_file_random"]
+    tasks = _string_list(value, "dataset.tasks")
+    allowed = {"in_file", "cross_file_first", "cross_file_random"}
+    unknown = sorted(set(tasks) - allowed)
+    if unknown:
+        raise ValueError(f"dataset.tasks has unsupported RepoBench tasks: {unknown}")
+    return tasks
 
 
 def _hash_text(text: str) -> str:
