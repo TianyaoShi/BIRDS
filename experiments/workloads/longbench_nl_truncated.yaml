@@ -49,3 +49,4 @@ context_policy:
   tokenizer_source: vllm_model_config
   over_limit: truncate_prompt
   truncation_side: left
+  reserve_tokens: 64

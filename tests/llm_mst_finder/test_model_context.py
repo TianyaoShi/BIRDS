@@ -48,6 +48,22 @@ class CountingTokenizer(WordTokenizer):
         return super().encode(text)
 
 
+class ChatTemplateTokenizer(WordTokenizer):
+    def apply_chat_template(
+        self,
+        messages,
+        *,
+        tokenize: bool,
+        add_generation_prompt: bool,
+    ):
+        assert tokenize is True
+        assert add_generation_prompt is True
+        content_tokens: list[int] = []
+        for message in messages:
+            content_tokens.extend(self.encode(message["content"]))
+        return [1001, 1002] + content_tokens + [1003]
+
+
 def _sample(
     prompt: str,
     *,
@@ -151,6 +167,53 @@ def test_context_validation_truncate_prompt_shortens_and_records_indexes() -> No
     assert result.report.truncated_source_indexes == (33,)
 
 
+def test_context_validation_chat_endpoint_accounts_for_template_overhead() -> None:
+    tokenizer = ChatTemplateTokenizer()
+    samples = [_sample("a b c d", prompt_len=4, expected_output_len=2, source_index=34)]
+    policy = ContextPolicy(
+        max_model_len=8,
+        tokenizer_source="workload_tokenizer",
+        over_limit="truncate_prompt",
+        truncation_side="left",
+    )
+
+    result = validate_samples_against_context_window(
+        samples,
+        tokenizer=tokenizer,
+        policy=policy,
+        endpoint="/v1/chat/completions",
+    )
+
+    truncated = result.samples[0]
+    assert truncated.prompt == "b c d"
+    assert truncated.prompt_len == 6
+    assert truncated.prompt_len + truncated.expected_output_len == 8
+    assert truncated.metadata["context_truncated"] is True
+
+
+def test_context_validation_chat_endpoint_ignores_cached_raw_prompt_len() -> None:
+    tokenizer = ChatTemplateTokenizer()
+    sample = _sample("a b c d", prompt_len=4, expected_output_len=2, source_index=35)
+    sample.metadata["prompt_tokenizer_key"] = "chat-tokenizer"
+    policy = ContextPolicy(
+        max_model_len=8,
+        tokenizer_source="workload_tokenizer",
+        over_limit="truncate_prompt",
+        truncation_side="left",
+    )
+
+    result = validate_samples_against_context_window(
+        [sample],
+        tokenizer=tokenizer,
+        policy=policy,
+        tokenizer_key="chat-tokenizer",
+        endpoint="/v1/chat/completions",
+    )
+
+    assert result.samples[0].prompt == "b c d"
+    assert result.samples[0].prompt_len == 6
+
+
 def test_parse_context_policy_allows_model_resolved_max_model_len() -> None:
     policy = parse_context_policy({"over_limit": "fail"})
 
@@ -178,6 +241,18 @@ def test_parse_context_policy_parses_unsafe_override_flag() -> None:
     )
     assert policy is not None
     assert policy.unsafe_allow_workload_tokenizer_for_real_datasets is True
+
+
+def test_parse_context_policy_parses_reserve_tokens() -> None:
+    policy = parse_context_policy({"max_model_len": 8192, "reserve_tokens": 64})
+
+    assert policy is not None
+    assert policy.reserve_tokens == 64
+
+
+def test_parse_context_policy_rejects_negative_reserve_tokens() -> None:
+    with pytest.raises(ValueError, match="reserve_tokens must be non-negative"):
+        parse_context_policy({"reserve_tokens": -1})
 
 
 def test_resolve_model_tokenizer_vllm_forces_offline_env(monkeypatch) -> None:

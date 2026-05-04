@@ -156,6 +156,7 @@ async def _run_trial_command(args: argparse.Namespace) -> int:
     prepared_workload = prepare_workload_for_trial(
         args.workload,
         model_name=args.model,
+        endpoint=args.endpoint,
     )
     request_samples = prepared_workload.samples
     request_source = cycling_request_source(request_samples)
@@ -262,6 +263,7 @@ async def _search_command(args: argparse.Namespace) -> int:
     prepared_workload = prepare_workload_for_trial(
         args.workload,
         model_name=args.model,
+        endpoint=args.endpoint,
     )
     request_client = RequestClient(
         base_url=args.base_url,

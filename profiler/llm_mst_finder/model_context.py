@@ -27,11 +27,14 @@ class ContextPolicy:
     tokenizer: str | None = None
     over_limit: str = "fail"
     truncation_side: str = "left"
+    reserve_tokens: int = 0
     unsafe_allow_workload_tokenizer_for_real_datasets: bool = False
 
     def __post_init__(self) -> None:
         if self.max_model_len is not None and self.max_model_len <= 0:
             raise ValueError("context_policy.max_model_len must be positive")
+        if self.reserve_tokens < 0:
+            raise ValueError("context_policy.reserve_tokens must be non-negative")
         if self.tokenizer_source not in {"vllm_model_config", "explicit", "workload_tokenizer"}:
             raise ValueError(
                 "context_policy.tokenizer_source must be one of "
@@ -147,6 +150,7 @@ def parse_context_policy(payload: Any | None) -> ContextPolicy | None:
             "tokenizer",
             "over_limit",
             "truncation_side",
+            "reserve_tokens",
             "unsafe_allow_workload_tokenizer_for_real_datasets",
         },
     )
@@ -165,6 +169,10 @@ def parse_context_policy(payload: Any | None) -> ContextPolicy | None:
     truncation_side = policy_payload.get("truncation_side", "left")
     if not isinstance(truncation_side, str):
         raise ValueError("context_policy.truncation_side must be a string")
+    reserve_tokens = policy_payload.get("reserve_tokens", 0)
+    reserve_tokens = _expect_int(reserve_tokens, "context_policy.reserve_tokens")
+    if reserve_tokens < 0:
+        raise ValueError("context_policy.reserve_tokens must be non-negative")
     unsafe_override = policy_payload.get("unsafe_allow_workload_tokenizer_for_real_datasets", False)
     if not isinstance(unsafe_override, bool):
         raise ValueError(
@@ -176,6 +184,7 @@ def parse_context_policy(payload: Any | None) -> ContextPolicy | None:
         tokenizer=tokenizer,
         over_limit=over_limit,
         truncation_side=truncation_side,
+        reserve_tokens=reserve_tokens,
         unsafe_allow_workload_tokenizer_for_real_datasets=unsafe_override,
     )
 
@@ -214,12 +223,67 @@ def _truncate_prompt_tokens(
     raise ValueError(f"unsupported truncation_side {truncation_side!r}")
 
 
+def _is_chat_endpoint(endpoint: str | None) -> bool:
+    return bool(endpoint and endpoint.rstrip("/").endswith("/chat/completions"))
+
+
+def _request_prompt_token_count(
+    prompt: str,
+    *,
+    tokenizer: ModelTokenizer,
+    endpoint: str | None,
+) -> int:
+    if _is_chat_endpoint(endpoint) and hasattr(tokenizer, "apply_chat_template"):
+        token_ids = getattr(tokenizer, "apply_chat_template")(
+            [{"role": "user", "content": prompt}],
+            tokenize=True,
+            add_generation_prompt=True,
+        )
+        if not isinstance(token_ids, list):
+            raise TypeError("tokenizer.apply_chat_template(..., tokenize=True) must return a list")
+        return len(token_ids)
+    return len(tokenizer.encode(prompt))
+
+
+def _truncate_prompt_to_fit(
+    prompt_token_ids: list[int],
+    *,
+    tokenizer: DecodingModelTokenizer,
+    allowed_total_prompt_tokens: int,
+    endpoint: str | None,
+    truncation_side: str,
+) -> tuple[str, int]:
+    low = 0
+    high = len(prompt_token_ids)
+    best_prompt = ""
+    best_len = _request_prompt_token_count("", tokenizer=tokenizer, endpoint=endpoint)
+    while low <= high:
+        keep_tokens = (low + high) // 2
+        candidate_ids = _truncate_prompt_tokens(
+            prompt_token_ids,
+            keep_tokens=keep_tokens,
+            truncation_side=truncation_side,
+        )
+        candidate_prompt = tokenizer.decode(candidate_ids)
+        if not isinstance(candidate_prompt, str):
+            raise TypeError("tokenizer.decode must return a string")
+        candidate_len = _request_prompt_token_count(candidate_prompt, tokenizer=tokenizer, endpoint=endpoint)
+        if candidate_len <= allowed_total_prompt_tokens:
+            best_prompt = candidate_prompt
+            best_len = candidate_len
+            low = keep_tokens + 1
+        else:
+            high = keep_tokens - 1
+    return best_prompt, best_len
+
+
 def validate_samples_against_context_window(
     samples: list[SampleRequest],
     *,
     tokenizer: ModelTokenizer,
     policy: ContextPolicy,
     tokenizer_key: str | None = None,
+    endpoint: str | None = None,
 ) -> ContextValidationResult:
     kept: list[SampleRequest] = []
     skipped_source_indexes: list[int] = []
@@ -235,12 +299,20 @@ def validate_samples_against_context_window(
                 "sample.metadata['prompt_tokenizer_key'] must be a string when present, "
                 f"got {type(cached_prompt_tokenizer_key).__name__}"
             )
-        if tokenizer_key is not None and cached_prompt_tokenizer_key == tokenizer_key:
+        if (
+            not _is_chat_endpoint(endpoint)
+            and tokenizer_key is not None
+            and cached_prompt_tokenizer_key == tokenizer_key
+        ):
             prompt_token_count = sample.prompt_len
         else:
             prompt_token_ids = tokenizer.encode(sample.prompt)
-            prompt_token_count = len(prompt_token_ids)
-        allowed_prompt_tokens = policy.max_model_len - sample.expected_output_len
+            prompt_token_count = _request_prompt_token_count(
+                sample.prompt,
+                tokenizer=tokenizer,
+                endpoint=endpoint,
+            )
+        allowed_prompt_tokens = policy.max_model_len - sample.expected_output_len - policy.reserve_tokens
         source_index = sample.metadata.get("source_index", sample_index)
         if not isinstance(source_index, int):
             raise TypeError(
@@ -256,10 +328,10 @@ def validate_samples_against_context_window(
             raise ValueError(
                 "sample expected_output_len exceeds context_policy.max_model_len "
                 f"(source_index={source_index}, expected_output_len={sample.expected_output_len}, "
-                f"max_model_len={policy.max_model_len})"
+                f"max_model_len={policy.max_model_len}, reserve_tokens={policy.reserve_tokens})"
             )
 
-        if prompt_token_count + sample.expected_output_len <= policy.max_model_len:
+        if prompt_token_count + sample.expected_output_len + policy.reserve_tokens <= policy.max_model_len:
             kept.append(sample)
             continue
 
@@ -268,7 +340,7 @@ def validate_samples_against_context_window(
                 "sample exceeds context window "
                 f"(source_index={source_index}, prompt_tokens={prompt_token_count}, "
                 f"expected_output_len={sample.expected_output_len}, "
-                f"max_model_len={policy.max_model_len})"
+                f"max_model_len={policy.max_model_len}, reserve_tokens={policy.reserve_tokens})"
             )
 
         if policy.over_limit == "skip_sample":
@@ -286,21 +358,19 @@ def validate_samples_against_context_window(
         decoding_tokenizer = tokenizer  # typing helper
         if prompt_token_ids is None:
             prompt_token_ids = tokenizer.encode(sample.prompt)
-        truncated_token_ids = _truncate_prompt_tokens(
+        truncated_prompt, truncated_prompt_len = _truncate_prompt_to_fit(
             prompt_token_ids,
-            keep_tokens=allowed_prompt_tokens,
+            tokenizer=decoding_tokenizer,
+            allowed_total_prompt_tokens=allowed_prompt_tokens,
+            endpoint=endpoint,
             truncation_side=policy.truncation_side,
         )
-        truncated_prompt = getattr(decoding_tokenizer, "decode")(truncated_token_ids)
-        if not isinstance(truncated_prompt, str):
-            raise TypeError("tokenizer.decode must return a string")
-        truncated_prompt_len = len(tokenizer.encode(truncated_prompt))
-        if truncated_prompt_len + sample.expected_output_len > policy.max_model_len:
+        if truncated_prompt_len + sample.expected_output_len + policy.reserve_tokens > policy.max_model_len:
             raise RuntimeError(
                 "truncate_prompt did not produce a context-fitting prompt "
                 f"(source_index={source_index}, truncated_prompt_tokens={truncated_prompt_len}, "
                 f"expected_output_len={sample.expected_output_len}, "
-                f"max_model_len={policy.max_model_len})"
+                f"max_model_len={policy.max_model_len}, reserve_tokens={policy.reserve_tokens})"
             )
         truncated_samples += 1
         truncated_source_indexes.append(source_index)

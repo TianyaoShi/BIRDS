@@ -1545,6 +1545,7 @@ def _build_workload_metadata(
             "tokenizer": policy.tokenizer,
             "over_limit": policy.over_limit,
             "truncation_side": policy.truncation_side,
+            "reserve_tokens": policy.reserve_tokens,
             "unsafe_allow_workload_tokenizer_for_real_datasets": (
                 policy.unsafe_allow_workload_tokenizer_for_real_datasets
             ),
@@ -1564,6 +1565,7 @@ def prepare_workload_for_trial(
     path: str | Path,
     *,
     model_name: str,
+    endpoint: str | None = None,
 ) -> PreparedWorkload:
     config = load_workload_config(path)
     fallback_tokenizer = resolve_tokenizer(config.tokenizer)
@@ -1623,6 +1625,7 @@ def prepare_workload_for_trial(
         tokenizer=model_context_info.tokenizer,
         policy=effective_context_policy,
         tokenizer_key=model_context_info.tokenizer_key,
+        endpoint=endpoint,
     )
     if not validation_result.samples:
         raise ValueError(
