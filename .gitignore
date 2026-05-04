@@ -25,6 +25,7 @@ experiments/*short*
 experiments/energy/synthetic*
 experiments/dataset_inspections/
 experiments/debug/
+experiments/code_workloads/*/
 
 # Environment and local overrides
 .env
