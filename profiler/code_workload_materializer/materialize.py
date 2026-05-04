@@ -52,15 +52,18 @@ def materialize_from_config(config_path: str | Path) -> dict[str, Any]:
 def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dict[str, Any]:
     name = _required_string(config, "name")
     dataset = _required_mapping(config, "dataset")
-    if dataset.get("name", "crosscodeeval") != "crosscodeeval":
-        raise ValueError("MVP supports only dataset.name=crosscodeeval")
+    dataset_name = _optional_string(dataset.get("name"), "dataset.name") or "crosscodeeval"
+    if dataset_name not in {"crosscodeeval", "repobench"}:
+        raise ValueError("supported dataset.name values: crosscodeeval, repobench")
     raw_path = _resolve_path(
         _required_string(dataset, "raw_path"),
         base_dir=config_source.parent if config_source is not None else Path.cwd(),
     )
     split = _optional_string(dataset.get("split"), "dataset.split") or "unspecified"
-    task = _optional_string(dataset.get("mode"), "dataset.mode") or "cross_file_materialized"
-    aliases = _field_aliases(dataset.get("field_aliases", {}))
+    task = _optional_string(dataset.get("mode"), "dataset.mode") or (
+        "cross_file_first" if dataset_name == "repobench" else "cross_file_materialized"
+    )
+    aliases = _field_aliases(dataset.get("field_aliases", {})) if dataset_name == "crosscodeeval" else None
 
     tokenization = _optional_mapping(config.get("tokenization"), "tokenization")
     tokenizer_name = _optional_string(tokenization.get("tokenizer"), "tokenization.tokenizer") or "whitespace"
@@ -89,21 +92,39 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
         requested_num_shards = _positive_int(requested_num_shards, "sharding.num_shards")
 
     counters = Counters()
-    samples = _load_samples(
-        raw_path,
-        aliases=aliases,
-        dataset_name="crosscodeeval",
-        split=split,
-        task=task,
-        tokenizer=tokenizer,
-        min_prompt_tokens=min_prompt_tokens,
-        max_prompt_tokens=max_prompt_tokens,
-        min_target_tokens=min_target_tokens,
-        max_target_tokens=max_target_tokens,
-        language_filter=language_filter,
-        dedup_content_hash=dedup_content_hash,
-        counters=counters,
-    )
+    if dataset_name == "crosscodeeval":
+        assert aliases is not None
+        samples = _load_crosscodeeval_samples(
+            raw_path,
+            aliases=aliases,
+            dataset_name=dataset_name,
+            split=split,
+            task=task,
+            tokenizer=tokenizer,
+            min_prompt_tokens=min_prompt_tokens,
+            max_prompt_tokens=max_prompt_tokens,
+            min_target_tokens=min_target_tokens,
+            max_target_tokens=max_target_tokens,
+            language_filter=language_filter,
+            dedup_content_hash=dedup_content_hash,
+            counters=counters,
+        )
+    else:
+        samples = _load_repobench_samples(
+            raw_path,
+            dataset_name=dataset_name,
+            split=split,
+            task=task,
+            language=_required_string(dataset, "language"),
+            tokenizer=tokenizer,
+            min_prompt_tokens=min_prompt_tokens,
+            max_prompt_tokens=max_prompt_tokens,
+            min_target_tokens=min_target_tokens,
+            max_target_tokens=max_target_tokens,
+            language_filter=language_filter,
+            dedup_content_hash=dedup_content_hash,
+            counters=counters,
+        )
     if not samples:
         raise ValueError("materialization produced no samples")
     ordered = _cache_realistic_order(samples, seed=seed, burst_size=burst_size)
@@ -133,7 +154,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
     )
     manifest = _build_manifest(
         name=name,
-        dataset_name="crosscodeeval",
+        dataset_name=dataset_name,
         task=task,
         shards=shards,
         shard_entries=shard_entries,
@@ -141,7 +162,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
     )
     report = _build_report(
         name=name,
-        dataset_name="crosscodeeval",
+        dataset_name=dataset_name,
         task=task,
         raw_path=raw_path,
         output_dir=output_dir,
@@ -160,7 +181,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
     }
 
 
-def _load_samples(
+def _load_crosscodeeval_samples(
     raw_path: Path,
     *,
     aliases: dict[str, list[str]],
@@ -214,6 +235,145 @@ def _load_samples(
                     samples.append(sample)
     counters.materialized_rows = len(samples)
     return samples
+
+
+def _load_repobench_samples(
+    raw_path: Path,
+    *,
+    dataset_name: str,
+    split: str,
+    task: str,
+    language: str,
+    tokenizer: PromptTokenizer,
+    min_prompt_tokens: int,
+    max_prompt_tokens: int,
+    min_target_tokens: int,
+    max_target_tokens: int,
+    language_filter: dict[str, set[str]],
+    dedup_content_hash: bool,
+    counters: Counters,
+) -> list[MaterializedSample]:
+    if task not in {"cross_file_first", "cross_file_random", "in_file"}:
+        raise ValueError(
+            "repobench dataset.mode must be one of: cross_file_first, cross_file_random, in_file"
+        )
+    if not _language_allowed(language, language_filter):
+        raise ValueError(f"unsupported language for materialization: {language}")
+    files = _repobench_parquet_files(raw_path, mode=task)
+    samples: list[MaterializedSample] = []
+    seen_content_hashes: set[str] = set()
+    global_index = 0
+    for file_path in files:
+        rows = _read_parquet_rows(file_path)
+        for row_index, row in enumerate(rows):
+            counters.total_rows += 1
+            sample = _repobench_row_to_sample(
+                row,
+                row_index=global_index,
+                dataset_name=dataset_name,
+                split=split,
+                task=task,
+                language=language,
+                tokenizer=tokenizer,
+                min_prompt_tokens=min_prompt_tokens,
+                max_prompt_tokens=max_prompt_tokens,
+                min_target_tokens=min_target_tokens,
+                max_target_tokens=max_target_tokens,
+                seen_content_hashes=seen_content_hashes,
+                dedup_content_hash=dedup_content_hash,
+                counters=counters,
+                source=f"{file_path}:{row_index}",
+            )
+            global_index += 1
+            if sample is not None:
+                samples.append(sample)
+    counters.materialized_rows = len(samples)
+    return samples
+
+
+def _repobench_row_to_sample(
+    row: dict[str, Any],
+    *,
+    row_index: int,
+    dataset_name: str,
+    split: str,
+    task: str,
+    language: str,
+    tokenizer: PromptTokenizer,
+    min_prompt_tokens: int,
+    max_prompt_tokens: int,
+    min_target_tokens: int,
+    max_target_tokens: int,
+    seen_content_hashes: set[str],
+    dedup_content_hash: bool,
+    counters: Counters,
+    source: str,
+) -> MaterializedSample | None:
+    repo_id = _expect_string(row.get("repo_name"), f"{source}.repo_name")
+    file_path = _expect_string(row.get("file_path"), f"{source}.file_path")
+    target = _expect_string(row.get("next_line"), f"{source}.next_line")
+    cropped_code = _expect_string(row.get("cropped_code"), f"{source}.cropped_code")
+    import_statement = _optional_string(row.get("import_statement"), f"{source}.import_statement") or ""
+    context = row.get("context", [])
+    if context is None:
+        context = []
+    if not isinstance(context, list):
+        raise ValueError(f"{source}.context must be a list")
+    prompt = _render_repobench_prompt(
+        context=context,
+        import_statement=import_statement,
+        cropped_code=cropped_code,
+        include_cross_file_context=task != "in_file",
+    )
+    prompt_token_count = len(tokenizer.encode(prompt))
+    target_token_count = len(tokenizer.encode(target))
+    if prompt_token_count < min_prompt_tokens:
+        counters.drops["prompt_too_short"] += 1
+        return None
+    if prompt_token_count > max_prompt_tokens:
+        counters.drops["prompt_too_long"] += 1
+        return None
+    if target_token_count < min_target_tokens:
+        counters.drops["missing_empty_target"] += 1
+        return None
+    if target_token_count > max_target_tokens:
+        counters.drops["target_too_long"] += 1
+        return None
+    content_hash = _hash_text(prompt)
+    if dedup_content_hash and content_hash in seen_content_hashes:
+        counters.drops["duplicate_content_hash"] += 1
+        return None
+    seen_content_hashes.add(content_hash)
+    directory = Path(file_path).parent.as_posix()
+    if directory == ".":
+        directory = ""
+    sample_id = f"{dataset_name}-{language}-{row_index:06d}"
+    metadata = {
+        "dataset": dataset_name,
+        "task": task,
+        "split": split,
+        "language": language,
+        "repo_id": repo_id,
+        "file_path": file_path,
+        "session_id": f"{dataset_name}::{language}::{repo_id}::{directory}",
+        "sample_id": sample_id,
+        "sequence_index": row_index,
+        "content_hash": content_hash,
+        "target_hash": _hash_text(target),
+        "prompt_token_count": prompt_token_count,
+        "target_token_count": target_token_count,
+        "level": row.get("level"),
+        "token_num": row.get("token_num"),
+        "gold_snippet_index": row.get("gold_snippet_index"),
+        "created_at": row.get("created_at"),
+    }
+    return MaterializedSample(
+        sample_id=sample_id,
+        prompt=prompt,
+        target=target,
+        expected_output_len=max(1, target_token_count),
+        metadata=metadata,
+    )
 
 
 def _row_to_sample(
@@ -324,6 +484,43 @@ def _render_code_prompt(current_file_prefix: str, cross_file_context: str | None
         f"{current_file_prefix}\n"
         "</CURRENT_FILE_PREFIX>"
     )
+
+
+def _render_repobench_prompt(
+    *,
+    context: list[Any],
+    import_statement: str,
+    cropped_code: str,
+    include_cross_file_context: bool,
+) -> str:
+    parts = ["Complete the next line of code. Return only the next line."]
+    if include_cross_file_context and context:
+        context_blocks: list[str] = []
+        for index, item in enumerate(context):
+            if not isinstance(item, dict):
+                raise ValueError(f"repobench context[{index}] must be a mapping")
+            path = _optional_string(item.get("path"), f"repobench context[{index}].path") or "unknown"
+            identifier = (
+                _optional_string(item.get("identifier"), f"repobench context[{index}].identifier")
+                or "unknown"
+            )
+            raw_snippet = item.get("snippet")
+            if raw_snippet in (None, ""):
+                continue
+            snippet = _expect_string(raw_snippet, f"repobench context[{index}].snippet")
+            context_blocks.append(
+                f"# file: {path}\n# identifier: {identifier}\n{snippet}"
+            )
+        if context_blocks:
+            parts.append(
+                "<REPOSITORY_CONTEXT>\n"
+                + "\n\n".join(context_blocks)
+                + "\n</REPOSITORY_CONTEXT>"
+            )
+    if import_statement:
+        parts.append(f"<IMPORTS>\n{import_statement}\n</IMPORTS>")
+    parts.append(f"<CURRENT_FILE_PREFIX>\n{cropped_code}\n</CURRENT_FILE_PREFIX>")
+    return "\n\n".join(parts)
 
 
 def _cache_realistic_order(
@@ -539,6 +736,36 @@ def _jsonl_files(raw_path: Path) -> list[Path]:
             return files
         raise FileNotFoundError(f"raw_path directory has no .jsonl files: {raw_path}")
     raise FileNotFoundError(f"raw_path not found: {raw_path}")
+
+
+def _repobench_parquet_files(raw_path: Path, *, mode: str) -> list[Path]:
+    if raw_path.is_file():
+        if raw_path.suffix != ".parquet":
+            raise ValueError(f"RepoBench raw_path file must be .parquet: {raw_path}")
+        if not raw_path.name.startswith(f"{mode}-"):
+            raise ValueError(f"RepoBench parquet file does not match mode {mode!r}: {raw_path}")
+        return [raw_path]
+    if raw_path.is_dir():
+        files = sorted(raw_path.rglob(f"{mode}-*.parquet"))
+        if files:
+            return files
+        raise FileNotFoundError(f"RepoBench raw_path directory has no {mode}-*.parquet files: {raw_path}")
+    raise FileNotFoundError(f"RepoBench raw_path not found: {raw_path}")
+
+
+def _read_parquet_rows(path: Path) -> list[dict[str, Any]]:
+    try:
+        import pyarrow.parquet as pq
+    except ImportError as exc:  # pragma: no cover - optional dependency path
+        raise RuntimeError("pyarrow is required for RepoBench parquet materialization") from exc
+    table = pq.read_table(path)
+    rows = table.to_pylist()
+    if not rows:
+        raise ValueError(f"RepoBench parquet file is empty: {path}")
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise ValueError(f"RepoBench parquet row {path}:{index} must be a mapping")
+    return rows
 
 
 def _field_aliases(payload: Any) -> dict[str, list[str]]:
