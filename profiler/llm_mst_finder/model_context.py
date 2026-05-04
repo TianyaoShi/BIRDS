@@ -239,10 +239,37 @@ def _request_prompt_token_count(
             tokenize=True,
             add_generation_prompt=True,
         )
-        if not isinstance(token_ids, list):
-            raise TypeError("tokenizer.apply_chat_template(..., tokenize=True) must return a list")
-        return len(token_ids)
+        return _token_id_count(token_ids, field_name="tokenizer.apply_chat_template(..., tokenize=True)")
     return len(tokenizer.encode(prompt))
+
+
+def _token_id_count(value: Any, *, field_name: str) -> int:
+    if isinstance(value, dict):
+        if "input_ids" not in value:
+            raise TypeError(f"{field_name} mapping must contain input_ids")
+        return _token_id_count(value["input_ids"], field_name=f"{field_name}.input_ids")
+    input_ids = getattr(value, "input_ids", None)
+    if input_ids is not None:
+        return _token_id_count(input_ids, field_name=f"{field_name}.input_ids")
+    shape = getattr(value, "shape", None)
+    if shape is not None:
+        if len(shape) == 0:
+            raise TypeError(f"{field_name} tensor-like value must have at least one dimension")
+        return int(shape[-1])
+    tolist = getattr(value, "tolist", None)
+    if callable(tolist):
+        return _token_id_count(tolist(), field_name=field_name)
+    if isinstance(value, tuple):
+        value = list(value)
+    if isinstance(value, list):
+        if value and isinstance(value[0], list):
+            if len(value) != 1:
+                raise TypeError(f"{field_name} batched token ids must contain exactly one row")
+            return len(value[0])
+        return len(value)
+    raise TypeError(
+        f"{field_name} must return token ids as a list, mapping with input_ids, or tensor-like value"
+    )
 
 
 def _truncate_prompt_to_fit(

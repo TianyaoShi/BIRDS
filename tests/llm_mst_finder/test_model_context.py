@@ -64,6 +64,45 @@ class ChatTemplateTokenizer(WordTokenizer):
         return [1001, 1002] + content_tokens + [1003]
 
 
+class MappingChatTemplateTokenizer(ChatTemplateTokenizer):
+    def apply_chat_template(
+        self,
+        messages,
+        *,
+        tokenize: bool,
+        add_generation_prompt: bool,
+    ):
+        return {"input_ids": super().apply_chat_template(
+            messages,
+            tokenize=tokenize,
+            add_generation_prompt=add_generation_prompt,
+        )}
+
+
+class TensorLikeIds:
+    def __init__(self, token_ids: list[int]) -> None:
+        self._token_ids = token_ids
+        self.shape = (1, len(token_ids))
+
+    def tolist(self) -> list[list[int]]:
+        return [self._token_ids]
+
+
+class TensorChatTemplateTokenizer(ChatTemplateTokenizer):
+    def apply_chat_template(
+        self,
+        messages,
+        *,
+        tokenize: bool,
+        add_generation_prompt: bool,
+    ):
+        return TensorLikeIds(super().apply_chat_template(
+            messages,
+            tokenize=tokenize,
+            add_generation_prompt=add_generation_prompt,
+        ))
+
+
 def _sample(
     prompt: str,
     *,
@@ -207,6 +246,28 @@ def test_context_validation_chat_endpoint_ignores_cached_raw_prompt_len() -> Non
         tokenizer=tokenizer,
         policy=policy,
         tokenizer_key="chat-tokenizer",
+        endpoint="/v1/chat/completions",
+    )
+
+    assert result.samples[0].prompt == "b c d"
+    assert result.samples[0].prompt_len == 6
+
+
+@pytest.mark.parametrize("tokenizer_cls", [MappingChatTemplateTokenizer, TensorChatTemplateTokenizer])
+def test_context_validation_chat_endpoint_accepts_common_template_return_shapes(tokenizer_cls) -> None:
+    tokenizer = tokenizer_cls()
+    samples = [_sample("a b c d", prompt_len=4, expected_output_len=2, source_index=36)]
+    policy = ContextPolicy(
+        max_model_len=8,
+        tokenizer_source="workload_tokenizer",
+        over_limit="truncate_prompt",
+        truncation_side="left",
+    )
+
+    result = validate_samples_against_context_window(
+        samples,
+        tokenizer=tokenizer,
+        policy=policy,
         endpoint="/v1/chat/completions",
     )
 
