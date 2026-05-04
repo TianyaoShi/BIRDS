@@ -37,8 +37,8 @@ profiler/
     materialize.py
 ```
 
-Only split out `datasets.py` or `sharding.py` later if `materialize.py` becomes
-hard to read. Do not create one file per dataset for the MVP.
+Split out `datasets.py` once CrossCodeEval and RepoBench both exist. Do not
+create one file per dataset for the MVP.
 
 Do not add dataset-specific behavior to:
 
@@ -167,30 +167,26 @@ The exported metadata contract matters more than the internal Python shape.
 
 ## 5. Dataset Scope
 
-### Priority 0: LongBench Code Already Available
-
-Use the existing LongBench workload first:
-
-```text
-experiments/workloads/longbench_code_truncated.yaml
-```
-
-It already covers:
-
-```text
-lcc
-repobench-p
-lcc_e
-repobench-p_e
-```
-
-Important: `repobench-p` is already included through LongBench-code. Do not
-build a separate RepoBench adapter just to start code workload profiling.
-
 ### Priority 1: CrossCodeEval-Like Materialization
+
+Primary source:
+
+```text
+GitHub: https://github.com/amazon-science/cceval
+Project: https://crosscodeeval.github.io/
+```
 
 Implement one offline materializer for CrossCodeEval or
 CrossCodeEval-like preprocessed JSONL.
+
+Why first:
+
+```text
+directly targets cross-file code completion
+multilingual: Python, Java, TypeScript, C#
+already organized around materialized retrieval/cross-file context settings
+closest match to single-turn IDE-style serving workload
+```
 
 MVP input forms:
 
@@ -231,6 +227,69 @@ If no cross-file context exists, omit the repository-context block.
 Do not add chain-of-thought, explanations, chat framing, quality judging, or
 task-solving evaluation.
 
+### Priority 2: RepoBench As A Complete Code Workload
+
+Primary source:
+
+```text
+GitHub: https://github.com/Leolty/repobench
+HF Python: tianyang/repobench_python_v1.1
+HF Java: tianyang/repobench_java_v1.1
+```
+
+Implement RepoBench after CrossCodeEval, but value the whole benchmark rather
+than only the LongBench subset.
+
+Why second:
+
+```text
+dedicated repository-level code auto-completion benchmark
+explicit in_file, cross_file_first, and cross_file_random settings
+useful context-budget levels: 2k, 4k, 8k, 12k, 16k
+better source for controlled code-context scaling than LongBench-code
+```
+
+Required RepoBench materialization modes:
+
+```text
+repobench/in_file
+repobench/cross_file_first
+repobench/cross_file_random
+```
+
+Default profiling mode:
+
+```text
+repobench/cross_file_first
+```
+
+Treat context budgets as materialization-time variants. Emit separate workload
+directories or shard groups for each selected budget, rather than adding
+runtime logic to `llm_mst_finder`.
+
+### Priority 3: Existing LongBench-Code Baseline
+
+Use the existing LongBench-code workload as a convenient baseline, not as the
+main code-completion source:
+
+```text
+experiments/workloads/longbench_code_truncated.yaml
+```
+
+It covers:
+
+```text
+lcc
+repobench-p
+lcc_e
+repobench-p_e
+```
+
+Important: LongBench-code includes `repobench-p`, but LongBench is a mixed
+long-context benchmark collection rather than a complete code-completion
+benchmark. Keep it for comparison and smoke coverage; do not let it replace the
+dedicated RepoBench materializer.
+
 ### Dropped From Current Implementation Priority
 
 Remove these from the active plan:
@@ -241,7 +300,6 @@ R2C2-Bench
 HumanEval
 MBPP
 EvalPlus
-dedicated RepoBench adapter
 ```
 
 Reasons:
@@ -250,11 +308,7 @@ Reasons:
 M2RC-EVAL artifact availability is unclear.
 R2C2 is only useful if earlier sources lack volume.
 HumanEval/MBPP/EvalPlus are toy code-generation smoke tests, not serving workloads.
-RepoBench is already represented by LongBench-code for the immediate need.
 ```
-
-Revisit dedicated RepoBench only if CrossCodeEval plus LongBench-code do not
-cover the desired context-length or cache-locality regimes.
 
 ## 6. Offline Filtering And Reporting
 
@@ -392,8 +446,12 @@ workload_yaml:
 1. Implement `code_workload_materializer` with local JSONL/directory input,
    filtering, reports, sharding, and generated workload YAMLs.
 2. Add `sampling.entry_selection` to `llm_mst_finder.workload`.
-3. Run one CrossCodeEval-like shard through a short live MST smoke test.
-4. Compare behavior against existing LongBench-code:
+3. Materialize and run one CrossCodeEval-like shard through a short live MST
+   smoke test.
+4. Add RepoBench materialization as the second real adapter, covering
+   `in_file`, `cross_file_first`, and `cross_file_random`, with selected
+   context-budget variants emitted offline.
+5. Compare CrossCodeEval and RepoBench behavior against existing LongBench-code:
    `experiments/workloads/longbench_code_truncated.yaml`.
 
 ## 11. Acceptance Criteria
