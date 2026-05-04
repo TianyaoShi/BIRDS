@@ -1,0 +1,702 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import random
+from collections import Counter, defaultdict, deque
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from llm_mst_finder.workload import PromptTokenizer, resolve_tokenizer
+
+
+DEFAULT_FIELD_ALIASES: dict[str, list[str]] = {
+    "prompt": ["prompt", "input", "code_context", "current_file_prefix"],
+    "target": ["target", "completion", "reference", "groundtruth"],
+    "language": ["language", "lang"],
+    "repo_id": ["repo", "repo_name", "repository"],
+    "file_path": ["file_path", "path"],
+    "cross_file_context": ["cross_file_context", "retrieved_context", "context"],
+    "sequence_index": ["sequence_index", "cursor_index", "order"],
+}
+
+
+@dataclass(slots=True)
+class MaterializedSample:
+    sample_id: str
+    prompt: str
+    target: str
+    expected_output_len: int
+    metadata: dict[str, Any]
+
+
+@dataclass(slots=True)
+class Counters:
+    total_rows: int = 0
+    materialized_rows: int = 0
+    drops: Counter[str] = field(default_factory=Counter)
+
+
+def materialize_from_config(config_path: str | Path) -> dict[str, Any]:
+    path = Path(config_path)
+    with path.open("r", encoding="utf-8") as handle:
+        payload = yaml.safe_load(handle)
+    if not isinstance(payload, dict):
+        raise ValueError("materialization config must be a mapping")
+    return prepare(payload, config_source=path)
+
+
+def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dict[str, Any]:
+    name = _required_string(config, "name")
+    dataset = _required_mapping(config, "dataset")
+    if dataset.get("name", "crosscodeeval") != "crosscodeeval":
+        raise ValueError("MVP supports only dataset.name=crosscodeeval")
+    raw_path = _resolve_path(
+        _required_string(dataset, "raw_path"),
+        base_dir=config_source.parent if config_source is not None else Path.cwd(),
+    )
+    split = _optional_string(dataset.get("split"), "dataset.split") or "unspecified"
+    task = _optional_string(dataset.get("mode"), "dataset.mode") or "cross_file_materialized"
+    aliases = _field_aliases(dataset.get("field_aliases", {}))
+
+    tokenization = _optional_mapping(config.get("tokenization"), "tokenization")
+    tokenizer_name = _optional_string(tokenization.get("tokenizer"), "tokenization.tokenizer") or "whitespace"
+    tokenizer = resolve_tokenizer(tokenizer_name)
+
+    filtering = _optional_mapping(config.get("filtering"), "filtering")
+    min_prompt_tokens = _int_setting(filtering, "min_prompt_tokens", 128)
+    max_prompt_tokens = _int_setting(filtering, "max_prompt_tokens", 8192)
+    min_target_tokens = _int_setting(filtering, "min_target_tokens", 1)
+    max_target_tokens = _int_setting(filtering, "max_target_tokens", 128)
+    language_filter = _language_filter(filtering.get("languages", {}))
+    dedup_content_hash = _dedup_content_hash(filtering.get("dedup", {}))
+
+    sampling = _optional_mapping(config.get("sampling"), "sampling")
+    seed = _int_setting(sampling, "seed", 42)
+    burst_size = _int_setting(sampling, "burst_size", 8)
+
+    sharding = _required_mapping(config, "sharding")
+    output_dir = _resolve_path(
+        _required_string(sharding, "output_dir"),
+        base_dir=config_source.parent if config_source is not None else Path.cwd(),
+    )
+    samples_per_shard = _int_setting(sharding, "samples_per_shard", 8000)
+    requested_num_shards = sharding.get("num_shards")
+    if requested_num_shards is not None:
+        requested_num_shards = _positive_int(requested_num_shards, "sharding.num_shards")
+
+    counters = Counters()
+    samples = _load_samples(
+        raw_path,
+        aliases=aliases,
+        dataset_name="crosscodeeval",
+        split=split,
+        task=task,
+        tokenizer=tokenizer,
+        min_prompt_tokens=min_prompt_tokens,
+        max_prompt_tokens=max_prompt_tokens,
+        min_target_tokens=min_target_tokens,
+        max_target_tokens=max_target_tokens,
+        language_filter=language_filter,
+        dedup_content_hash=dedup_content_hash,
+        counters=counters,
+    )
+    if not samples:
+        raise ValueError("materialization produced no samples")
+    ordered = _cache_realistic_order(samples, seed=seed, burst_size=burst_size)
+    shards = _shard_samples(
+        ordered,
+        samples_per_shard=samples_per_shard,
+        requested_num_shards=requested_num_shards,
+    )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "shards").mkdir(exist_ok=True)
+    (output_dir / "workload_yamls").mkdir(exist_ok=True)
+    normalized_config = dict(config)
+    (output_dir / "materialization_config.yaml").write_text(
+        yaml.safe_dump(normalized_config, sort_keys=False),
+        encoding="utf-8",
+    )
+    shard_entries = _write_outputs(
+        output_dir,
+        name=name,
+        shards=shards,
+        request=_optional_mapping(config.get("request"), "request"),
+        context_policy=_optional_mapping(
+            _optional_mapping(config.get("workload_yaml"), "workload_yaml").get("context_policy"),
+            "workload_yaml.context_policy",
+        ),
+    )
+    manifest = _build_manifest(
+        name=name,
+        dataset_name="crosscodeeval",
+        task=task,
+        shards=shards,
+        shard_entries=shard_entries,
+        samples_per_shard=samples_per_shard,
+    )
+    report = _build_report(
+        name=name,
+        dataset_name="crosscodeeval",
+        task=task,
+        raw_path=raw_path,
+        output_dir=output_dir,
+        tokenizer_name=tokenizer_name,
+        samples=samples,
+        counters=counters,
+    )
+    _write_json(output_dir / "shards_manifest.json", manifest)
+    _write_json(output_dir / "materialization_report.json", report)
+    return {
+        "output_dir": str(output_dir),
+        "materialization_report": str(output_dir / "materialization_report.json"),
+        "shards_manifest": str(output_dir / "shards_manifest.json"),
+        "num_shards": len(shards),
+        "num_samples": sum(len(shard) for shard in shards),
+    }
+
+
+def _load_samples(
+    raw_path: Path,
+    *,
+    aliases: dict[str, list[str]],
+    dataset_name: str,
+    split: str,
+    task: str,
+    tokenizer: PromptTokenizer,
+    min_prompt_tokens: int,
+    max_prompt_tokens: int,
+    min_target_tokens: int,
+    max_target_tokens: int,
+    language_filter: dict[str, set[str]],
+    dedup_content_hash: bool,
+    counters: Counters,
+) -> list[MaterializedSample]:
+    files = _jsonl_files(raw_path)
+    samples: list[MaterializedSample] = []
+    seen_content_hashes: set[str] = set()
+    global_index = 0
+    for file_path in files:
+        with file_path.open("r", encoding="utf-8") as handle:
+            for line_index, line in enumerate(handle):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                counters.total_rows += 1
+                row = json.loads(stripped)
+                if not isinstance(row, dict):
+                    raise ValueError(f"{file_path}:{line_index + 1} must be a JSON object")
+                sample = _row_to_sample(
+                    row,
+                    row_index=global_index,
+                    aliases=aliases,
+                    dataset_name=dataset_name,
+                    split=split,
+                    task=task,
+                    tokenizer=tokenizer,
+                    min_prompt_tokens=min_prompt_tokens,
+                    max_prompt_tokens=max_prompt_tokens,
+                    min_target_tokens=min_target_tokens,
+                    max_target_tokens=max_target_tokens,
+                    language_filter=language_filter,
+                    seen_content_hashes=seen_content_hashes,
+                    dedup_content_hash=dedup_content_hash,
+                    counters=counters,
+                    source=f"{file_path}:{line_index + 1}",
+                )
+                global_index += 1
+                if sample is not None:
+                    samples.append(sample)
+    counters.materialized_rows = len(samples)
+    return samples
+
+
+def _row_to_sample(
+    row: dict[str, Any],
+    *,
+    row_index: int,
+    aliases: dict[str, list[str]],
+    dataset_name: str,
+    split: str,
+    task: str,
+    tokenizer: PromptTokenizer,
+    min_prompt_tokens: int,
+    max_prompt_tokens: int,
+    min_target_tokens: int,
+    max_target_tokens: int,
+    language_filter: dict[str, set[str]],
+    seen_content_hashes: set[str],
+    dedup_content_hash: bool,
+    counters: Counters,
+    source: str,
+) -> MaterializedSample | None:
+    current_file_prefix = _string_alias(row, aliases["prompt"], field_name="prompt", source=source)
+    if current_file_prefix is None:
+        counters.drops["missing_empty_prompt"] += 1
+        return None
+    target = _string_alias(row, aliases["target"], field_name="target", source=source)
+    if target is None:
+        counters.drops["missing_empty_target"] += 1
+        return None
+    cross_file_context = _string_alias(
+        row,
+        aliases["cross_file_context"],
+        field_name="cross_file_context",
+        source=source,
+        required=False,
+    )
+    prompt = _render_code_prompt(current_file_prefix, cross_file_context)
+    prompt_token_count = len(tokenizer.encode(prompt))
+    target_token_count = len(tokenizer.encode(target))
+    if prompt_token_count < min_prompt_tokens:
+        counters.drops["prompt_too_short"] += 1
+        return None
+    if prompt_token_count > max_prompt_tokens:
+        counters.drops["prompt_too_long"] += 1
+        return None
+    if target_token_count < min_target_tokens:
+        counters.drops["missing_empty_target"] += 1
+        return None
+    if target_token_count > max_target_tokens:
+        counters.drops["target_too_long"] += 1
+        return None
+
+    language = _metadata_alias(row, aliases["language"], "unknown")
+    if not _language_allowed(str(language), language_filter):
+        counters.drops["unsupported_language"] += 1
+        return None
+    repo_id = str(_metadata_alias(row, aliases["repo_id"], "unknown"))
+    source_file_path = str(_metadata_alias(row, aliases["file_path"], "unknown"))
+    sequence_index = _sequence_index(row, aliases["sequence_index"], row_index, source=source)
+    content_hash = _hash_text(prompt)
+    if dedup_content_hash and content_hash in seen_content_hashes:
+        counters.drops["duplicate_content_hash"] += 1
+        return None
+    seen_content_hashes.add(content_hash)
+    directory = Path(source_file_path).parent.as_posix()
+    if directory == ".":
+        directory = ""
+    sample_id = f"{dataset_name}-{language}-{row_index:06d}"
+    metadata = {
+        "dataset": dataset_name,
+        "task": task,
+        "split": split,
+        "language": language,
+        "repo_id": repo_id,
+        "file_path": source_file_path,
+        "session_id": f"{dataset_name}::{language}::{repo_id}::{directory}",
+        "sample_id": sample_id,
+        "sequence_index": sequence_index,
+        "content_hash": content_hash,
+        "target_hash": _hash_text(target),
+        "prompt_token_count": prompt_token_count,
+        "target_token_count": target_token_count,
+    }
+    return MaterializedSample(
+        sample_id=sample_id,
+        prompt=prompt,
+        target=target,
+        expected_output_len=max(1, target_token_count),
+        metadata=metadata,
+    )
+
+
+def _render_code_prompt(current_file_prefix: str, cross_file_context: str | None) -> str:
+    if cross_file_context:
+        return (
+            "Complete the code at the cursor. Return only the completion.\n\n"
+            "<REPOSITORY_CONTEXT>\n"
+            f"{cross_file_context}\n"
+            "</REPOSITORY_CONTEXT>\n\n"
+            "<CURRENT_FILE_PREFIX>\n"
+            f"{current_file_prefix}\n"
+            "</CURRENT_FILE_PREFIX>"
+        )
+    return (
+        "Complete the code at the cursor. Return only the completion.\n\n"
+        "<CURRENT_FILE_PREFIX>\n"
+        f"{current_file_prefix}\n"
+        "</CURRENT_FILE_PREFIX>"
+    )
+
+
+def _cache_realistic_order(
+    samples: list[MaterializedSample],
+    *,
+    seed: int,
+    burst_size: int,
+) -> list[MaterializedSample]:
+    by_session: dict[str, list[MaterializedSample]] = defaultdict(list)
+    for sample in samples:
+        by_session[str(sample.metadata["session_id"])].append(sample)
+    session_ids = sorted(by_session)
+    rng = random.Random(seed)
+    rng.shuffle(session_ids)
+    queues: deque[tuple[str, deque[MaterializedSample]]] = deque()
+    for session_id in session_ids:
+        ordered = sorted(
+            by_session[session_id],
+            key=lambda sample: (
+                int(sample.metadata["sequence_index"]),
+                str(sample.metadata["file_path"]),
+                str(sample.metadata["content_hash"]),
+            ),
+        )
+        queues.append((session_id, deque(ordered)))
+    output: list[MaterializedSample] = []
+    while queues:
+        session_id, queue = queues.popleft()
+        del session_id
+        for _ in range(burst_size):
+            if not queue:
+                break
+            output.append(queue.popleft())
+        if queue:
+            queues.append(("", queue))
+    return output
+
+
+def _shard_samples(
+    samples: list[MaterializedSample],
+    *,
+    samples_per_shard: int,
+    requested_num_shards: int | None,
+) -> list[list[MaterializedSample]]:
+    shards = [
+        samples[index : index + samples_per_shard]
+        for index in range(0, len(samples), samples_per_shard)
+    ]
+    if requested_num_shards is not None and len(shards) > requested_num_shards:
+        raise ValueError(
+            "materialized samples exceed sharding capacity: "
+            f"need {len(shards)} shards with samples_per_shard={samples_per_shard}, "
+            f"but sharding.num_shards={requested_num_shards}"
+        )
+    return [shard for shard in shards if shard]
+
+
+def _write_outputs(
+    output_dir: Path,
+    *,
+    name: str,
+    shards: list[list[MaterializedSample]],
+    request: dict[str, Any],
+    context_policy: dict[str, Any],
+) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for shard_index, shard in enumerate(shards):
+        shard_id = f"shard_{shard_index:03d}"
+        shard_path = output_dir / "shards" / f"{shard_id}.runner.jsonl"
+        workload_path = output_dir / "workload_yamls" / f"{shard_id}.yaml"
+        with shard_path.open("w", encoding="utf-8") as handle:
+            for sample in shard:
+                metadata = dict(sample.metadata)
+                metadata["shard_id"] = shard_id
+                handle.write(
+                    json.dumps(
+                        {
+                            "prompt": sample.prompt,
+                            "expected_output_len": sample.expected_output_len,
+                            "metadata": metadata,
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+        workload_payload = _workload_yaml_payload(
+            name=name,
+            shard_id=shard_id,
+            shard_size=len(shard),
+            request=request,
+            context_policy=context_policy,
+        )
+        workload_path.write_text(
+            yaml.safe_dump(workload_payload, sort_keys=False),
+            encoding="utf-8",
+        )
+        entries.append(
+            {
+                "shard_id": shard_id,
+                "num_samples": len(shard),
+                "path": str(shard_path.relative_to(output_dir)),
+                "workload_yaml_path": str(workload_path.relative_to(output_dir)),
+            }
+        )
+    return entries
+
+
+def _workload_yaml_payload(
+    *,
+    name: str,
+    shard_id: str,
+    shard_size: int,
+    request: dict[str, Any],
+    context_policy: dict[str, Any],
+) -> dict[str, Any]:
+    request_payload: dict[str, Any] = {
+        "stream": request.get("stream", True),
+        "temperature": request.get("temperature", 0.0),
+        "ignore_eos": request.get("ignore_eos", False),
+    }
+    if "top_p" in request:
+        request_payload["top_p"] = request["top_p"]
+    extra_body = dict(_optional_mapping(request.get("extra_body"), "request.extra_body"))
+    if "stop" in request:
+        extra_body["stop"] = request["stop"]
+    if extra_body:
+        request_payload["extra_body"] = extra_body
+    payload: dict[str, Any] = {
+        "name": f"{name}-{shard_id}",
+        "dataset": {
+            "type": "jsonl",
+            "path": f"../shards/{shard_id}.runner.jsonl",
+        },
+        "tokenizer": "whitespace",
+        "sampling": {
+            "seed": 42,
+            "num_requests": shard_size,
+            "entry_selection": "sequential",
+            "prompt_len": {"mode": "from_dataset"},
+            "output_len": {"mode": "from_dataset"},
+        },
+        "request": request_payload,
+    }
+    if context_policy:
+        payload["context_policy"] = context_policy
+    return payload
+
+
+def _build_manifest(
+    *,
+    name: str,
+    dataset_name: str,
+    task: str,
+    shards: list[list[MaterializedSample]],
+    shard_entries: list[dict[str, Any]],
+    samples_per_shard: int,
+) -> dict[str, Any]:
+    all_samples = [sample for shard in shards for sample in shard]
+    return {
+        "workload_name": name,
+        "dataset": dataset_name,
+        "task": task,
+        "num_shards": len(shards),
+        "samples_per_shard": samples_per_shard,
+        "shards": shard_entries,
+        "language_counts": dict(Counter(str(sample.metadata["language"]) for sample in all_samples)),
+        "prompt_tokens": _summary([int(sample.metadata["prompt_token_count"]) for sample in all_samples]),
+        "target_tokens": _summary([int(sample.metadata["target_token_count"]) for sample in all_samples]),
+        "unique_content_hashes": len({sample.metadata["content_hash"] for sample in all_samples}),
+    }
+
+
+def _build_report(
+    *,
+    name: str,
+    dataset_name: str,
+    task: str,
+    raw_path: Path,
+    output_dir: Path,
+    tokenizer_name: str,
+    samples: list[MaterializedSample],
+    counters: Counters,
+) -> dict[str, Any]:
+    return {
+        "workload_name": name,
+        "dataset": dataset_name,
+        "task": task,
+        "raw_path": str(raw_path),
+        "output_dir": str(output_dir),
+        "tokenizer": {
+            "name": tokenizer_name,
+            "fallback_used": False,
+        },
+        "rows": {
+            "total": counters.total_rows,
+            "materialized": len(samples),
+            "drops": dict(counters.drops),
+        },
+        "language_counts": dict(Counter(str(sample.metadata["language"]) for sample in samples)),
+        "prompt_tokens": _summary([int(sample.metadata["prompt_token_count"]) for sample in samples]),
+        "target_tokens": _summary([int(sample.metadata["target_token_count"]) for sample in samples]),
+    }
+
+
+def _jsonl_files(raw_path: Path) -> list[Path]:
+    if raw_path.is_file():
+        if raw_path.suffix != ".jsonl":
+            raise ValueError(f"raw_path file must be .jsonl: {raw_path}")
+        return [raw_path]
+    if raw_path.is_dir():
+        files = sorted(raw_path.glob("*.jsonl"))
+        if files:
+            return files
+        raise FileNotFoundError(f"raw_path directory has no .jsonl files: {raw_path}")
+    raise FileNotFoundError(f"raw_path not found: {raw_path}")
+
+
+def _field_aliases(payload: Any) -> dict[str, list[str]]:
+    aliases = {key: list(value) for key, value in DEFAULT_FIELD_ALIASES.items()}
+    overrides = _optional_mapping(payload, "dataset.field_aliases")
+    for key, value in overrides.items():
+        if key not in aliases:
+            raise ValueError(f"dataset.field_aliases has unknown key: {key}")
+        if not isinstance(value, list) or not value:
+            raise ValueError(f"dataset.field_aliases.{key} must be a non-empty list")
+        aliases[key] = [_expect_string(item, f"dataset.field_aliases.{key}[]") for item in value]
+    return aliases
+
+
+def _string_alias(
+    row: dict[str, Any],
+    aliases: list[str],
+    *,
+    field_name: str,
+    source: str,
+    required: bool = True,
+) -> str | None:
+    for alias in aliases:
+        if alias not in row:
+            continue
+        value = row[alias]
+        if value is None or value == "":
+            return None
+        if not isinstance(value, str):
+            raise ValueError(f"{source} field {alias!r} for {field_name} must be a string")
+        return value
+    if required:
+        return None
+    return None
+
+
+def _metadata_alias(row: dict[str, Any], aliases: list[str], default: str) -> Any:
+    for alias in aliases:
+        if alias in row and row[alias] not in (None, ""):
+            return row[alias]
+    return default
+
+
+def _sequence_index(
+    row: dict[str, Any],
+    aliases: list[str],
+    default: int,
+    *,
+    source: str,
+) -> int:
+    value = _metadata_alias(row, aliases, default)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    raise ValueError(f"{source} sequence_index must be an integer")
+
+
+def _language_filter(payload: Any) -> dict[str, set[str]]:
+    languages = _optional_mapping(payload, "filtering.languages")
+    return {
+        "include": set(_string_list(languages.get("include", []), "filtering.languages.include")),
+        "exclude": set(_string_list(languages.get("exclude", []), "filtering.languages.exclude")),
+    }
+
+
+def _language_allowed(language: str, language_filter: dict[str, set[str]]) -> bool:
+    include = language_filter["include"]
+    exclude = language_filter["exclude"]
+    return (not include or language in include) and language not in exclude
+
+
+def _dedup_content_hash(payload: Any) -> bool:
+    dedup = _optional_mapping(payload, "filtering.dedup")
+    value = dedup.get("content_hash", True)
+    if not isinstance(value, bool):
+        raise ValueError("filtering.dedup.content_hash must be a boolean")
+    return value
+
+
+def _summary(values: list[int]) -> dict[str, float | int | None]:
+    if not values:
+        return {"count": 0, "p50": None, "p90": None, "p95": None}
+    ordered = sorted(values)
+    return {
+        "count": len(ordered),
+        "p50": _percentile(ordered, 0.50),
+        "p90": _percentile(ordered, 0.90),
+        "p95": _percentile(ordered, 0.95),
+    }
+
+
+def _percentile(ordered: list[int], q: float) -> float:
+    if len(ordered) == 1:
+        return float(ordered[0])
+    position = q * (len(ordered) - 1)
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    weight = position - lower
+    return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _hash_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _resolve_path(path: str, *, base_dir: Path) -> Path:
+    raw = Path(path).expanduser()
+    if raw.is_absolute():
+        return raw
+    return (base_dir / raw).resolve()
+
+
+def _required_mapping(payload: dict[str, Any], key: str) -> dict[str, Any]:
+    if key not in payload:
+        raise ValueError(f"{key} is required")
+    return _optional_mapping(payload[key], key)
+
+
+def _optional_mapping(value: Any, field_name: str) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be a mapping")
+    return value
+
+
+def _required_string(payload: dict[str, Any], key: str) -> str:
+    if key not in payload:
+        raise ValueError(f"{key} is required")
+    return _expect_string(payload[key], key)
+
+
+def _optional_string(value: Any, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _expect_string(value, field_name)
+
+
+def _expect_string(value: Any, field_name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{field_name} must be a non-empty string")
+    return value
+
+
+def _string_list(value: Any, field_name: str) -> list[str]:
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} must be a list")
+    return [_expect_string(item, f"{field_name}[]") for item in value]
+
+
+def _int_setting(payload: dict[str, Any], key: str, default: int) -> int:
+    return _positive_int(payload.get(key, default), key)
+
+
+def _positive_int(value: Any, field_name: str) -> int:
+    if not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{field_name} must be a positive integer")
+    return value

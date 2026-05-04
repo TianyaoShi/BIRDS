@@ -51,6 +51,54 @@ def test_jsonl_from_dataset_uses_dataset_lengths() -> None:
     assert all(sample.metadata["dataset_type"] == "jsonl" for sample in samples)
 
 
+def test_jsonl_sequential_entry_selection_replays_rows_in_order(tmp_path: Path) -> None:
+    dataset_path = tmp_path / "requests.jsonl"
+    dataset_path.write_text(
+        "\n".join(
+            [
+                json.dumps({"prompt": "row zero", "expected_output_len": 1}),
+                json.dumps({"prompt": "row one", "expected_output_len": 2}),
+                json.dumps({"prompt": "row two", "expected_output_len": 3}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    workload_path = tmp_path / "jsonl_sequential.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: jsonl-sequential",
+                "dataset:",
+                "  type: jsonl",
+                f"  path: {dataset_path}",
+                "tokenizer: whitespace",
+                "sampling:",
+                "  seed: 99",
+                "  num_requests: 5",
+                "  entry_selection: sequential",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    samples = load_workload_samples_for_sampling_only(workload_path)
+
+    assert [sample.prompt for sample in samples] == [
+        "row zero",
+        "row one",
+        "row two",
+        "row zero",
+        "row one",
+    ]
+    assert [sample.expected_output_len for sample in samples] == [1, 2, 3, 1, 2]
+    assert all(sample.metadata["sampling_entry_selection"] == "sequential" for sample in samples)
+
+
 def test_sharegpt_from_dataset_uses_assistant_output_length() -> None:
     workload_path = FIXTURES_ROOT / "workloads" / "sharegpt_from_dataset.yaml"
     samples = load_workload_samples_for_sampling_only(workload_path)

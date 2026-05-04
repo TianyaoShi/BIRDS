@@ -193,10 +193,16 @@ class SamplingConfig:
     num_requests: int
     prompt_len: LengthSpec
     output_len: LengthSpec
+    entry_selection: str = "random_with_replacement"
 
     def __post_init__(self) -> None:
         if self.num_requests <= 0:
             raise ValueError("sampling.num_requests must be positive")
+        if self.entry_selection not in {"random_with_replacement", "sequential"}:
+            raise ValueError(
+                "sampling.entry_selection must be one of: "
+                "random_with_replacement, sequential"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -483,12 +489,20 @@ def load_workload_config(path: str | Path) -> WorkloadConfig:
     if tokenizer is not None and not isinstance(tokenizer, str):
         raise ValueError("tokenizer must be a string when provided")
     sampling_payload = _expect_mapping(root.get("sampling"), "sampling")
-    _check_allowed_keys(sampling_payload, "sampling", {"seed", "num_requests", "prompt_len", "output_len"})
+    _check_allowed_keys(
+        sampling_payload,
+        "sampling",
+        {"seed", "num_requests", "prompt_len", "output_len", "entry_selection"},
+    )
+    entry_selection = sampling_payload.get("entry_selection", "random_with_replacement")
+    if not isinstance(entry_selection, str):
+        raise ValueError("sampling.entry_selection must be a string")
     sampling = SamplingConfig(
         seed=_expect_int(sampling_payload.get("seed"), "sampling.seed"),
         num_requests=_expect_int(sampling_payload.get("num_requests"), "sampling.num_requests", positive=True),
         prompt_len=_parse_length_spec(sampling_payload.get("prompt_len"), "sampling.prompt_len"),
         output_len=_parse_length_spec(sampling_payload.get("output_len"), "sampling.output_len"),
+        entry_selection=entry_selection,
     )
     config = WorkloadConfig(
         name=name,
@@ -564,6 +578,7 @@ def _manifest_cache_path(
         "output_len_mode": config.sampling.output_len.mode,
         "prompt_len_mode": config.sampling.prompt_len.mode,
         "sampling_seed": config.sampling.seed,
+        "sampling_entry_selection": config.sampling.entry_selection,
         "tokenizer_key": tokenizer_key,
     }
     digest = hashlib.sha256(
@@ -649,6 +664,7 @@ def _write_entries_to_manifest(
         "output_len_mode": config.sampling.output_len.mode,
         "prompt_len_mode": config.sampling.prompt_len.mode,
         "sampling_seed": config.sampling.seed,
+        "sampling_entry_selection": config.sampling.entry_selection,
         "tokenizer_key": tokenizer_key,
         "entries": [_dataset_entry_to_payload(entry) for entry in entries],
     }
@@ -1197,6 +1213,8 @@ def generate_sample_requests(
     for request_index in range(config.sampling.num_requests):
         if config.dataset.type == "synthetic-fixed":
             entry = dataset_entries[0]
+        elif config.sampling.entry_selection == "sequential":
+            entry = dataset_entries[request_index % len(dataset_entries)]
         elif config.dataset.type in {"hf", "longbench"}:
             entry = dataset_entries[request_index % len(dataset_entries)]
         else:
@@ -1231,6 +1249,7 @@ def generate_sample_requests(
                     "request_index": request_index,
                     "source_index": entry.source_index,
                     "seed": config.sampling.seed,
+                    "sampling_entry_selection": config.sampling.entry_selection,
                     "sampling_prompt_len_mode": config.sampling.prompt_len.mode,
                     "sampling_output_len_mode": config.sampling.output_len.mode,
                     "prompt_tokenizer_key": workload_tokenizer_key,
