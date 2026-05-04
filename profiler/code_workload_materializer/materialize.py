@@ -61,6 +61,9 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
     task = _optional_string(dataset.get("mode"), "dataset.mode") or (
         "cross_file_first" if dataset_name == "repobench" else "cross_file_materialized"
     )
+    prompt_template = _prompt_template(
+        dataset.get("prompt_template", config.get("prompt_template", "plain_prefix"))
+    )
     aliases = _field_aliases(dataset.get("field_aliases", {})) if dataset_name == "crosscodeeval" else None
 
     tokenization = _optional_mapping(config.get("tokenization"), "tokenization")
@@ -100,6 +103,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
             dataset_name=dataset_name,
             split=split,
             task=task,
+            prompt_template=prompt_template,
             tokenizer=tokenizer,
             min_prompt_tokens=min_prompt_tokens,
             max_prompt_tokens=max_prompt_tokens,
@@ -115,6 +119,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
             dataset_name=dataset_name,
             split=split,
             task=task,
+            prompt_template=prompt_template,
             language=_required_string(dataset, "language") if task != "aggregate" else None,
             aggregate_sources=_repobench_aggregate_sources(dataset, base_dir=base_dir)
             if task == "aggregate"
@@ -159,6 +164,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
         name=name,
         dataset_name=dataset_name,
         task=task,
+        prompt_template=prompt_template,
         shards=shards,
         shard_entries=shard_entries,
         samples_per_shard=samples_per_shard,
@@ -167,6 +173,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
         name=name,
         dataset_name=dataset_name,
         task=task,
+        prompt_template=prompt_template,
         raw_path=raw_path,
         output_dir=output_dir,
         tokenizer_name=tokenizer_name,
@@ -191,6 +198,7 @@ def _load_crosscodeeval_samples(
     dataset_name: str,
     split: str,
     task: str,
+    prompt_template: str,
     tokenizer: PromptTokenizer,
     min_prompt_tokens: int,
     max_prompt_tokens: int,
@@ -222,6 +230,7 @@ def _load_crosscodeeval_samples(
                     dataset_name=dataset_name,
                     split=split,
                     task=task,
+                    prompt_template=prompt_template,
                     tokenizer=tokenizer,
                     min_prompt_tokens=min_prompt_tokens,
                     max_prompt_tokens=max_prompt_tokens,
@@ -246,6 +255,7 @@ def _load_repobench_samples(
     dataset_name: str,
     split: str,
     task: str,
+    prompt_template: str,
     language: str | None,
     aggregate_sources: list[tuple[str, Path, str]] | None = None,
     tokenizer: PromptTokenizer,
@@ -289,6 +299,7 @@ def _load_repobench_samples(
                     dataset_name=dataset_name,
                     split=split,
                     task=source_task,
+                    prompt_template=prompt_template,
                     language=source_language,
                     tokenizer=tokenizer,
                     min_prompt_tokens=min_prompt_tokens,
@@ -314,6 +325,7 @@ def _repobench_row_to_sample(
     dataset_name: str,
     split: str,
     task: str,
+    prompt_template: str,
     language: str,
     tokenizer: PromptTokenizer,
     min_prompt_tokens: int,
@@ -340,6 +352,7 @@ def _repobench_row_to_sample(
         import_statement=import_statement,
         cropped_code=cropped_code,
         include_cross_file_context=task != "in_file",
+        prompt_template=prompt_template,
     )
     prompt_token_count = len(tokenizer.encode(prompt))
     target_token_count = len(tokenizer.encode(target))
@@ -367,6 +380,7 @@ def _repobench_row_to_sample(
     metadata = {
         "dataset": dataset_name,
         "task": task,
+        "prompt_template": prompt_template,
         "split": split,
         "language": language,
         "repo_id": repo_id,
@@ -375,6 +389,7 @@ def _repobench_row_to_sample(
         "sample_id": sample_id,
         "sequence_index": row_index,
         "content_hash": content_hash,
+        "ground_truth": target,
         "target_hash": _hash_text(target),
         "prompt_token_count": prompt_token_count,
         "target_token_count": target_token_count,
@@ -401,6 +416,7 @@ def _row_to_sample(
     dataset_name: str,
     split: str,
     task: str,
+    prompt_template: str,
     tokenizer: PromptTokenizer,
     min_prompt_tokens: int,
     max_prompt_tokens: int,
@@ -427,7 +443,7 @@ def _row_to_sample(
         source=source,
         required=False,
     )
-    prompt = _render_code_prompt(current_file_prefix, cross_file_context)
+    prompt = _render_code_prompt(current_file_prefix, cross_file_context, prompt_template=prompt_template)
     prompt_token_count = len(tokenizer.encode(prompt))
     target_token_count = len(tokenizer.encode(target))
     if prompt_token_count < min_prompt_tokens:
@@ -462,6 +478,7 @@ def _row_to_sample(
     metadata = {
         "dataset": dataset_name,
         "task": task,
+        "prompt_template": prompt_template,
         "split": split,
         "language": language,
         "repo_id": repo_id,
@@ -470,6 +487,7 @@ def _row_to_sample(
         "sample_id": sample_id,
         "sequence_index": sequence_index,
         "content_hash": content_hash,
+        "ground_truth": target,
         "target_hash": _hash_text(target),
         "prompt_token_count": prompt_token_count,
         "target_token_count": target_token_count,
@@ -483,8 +501,19 @@ def _row_to_sample(
     )
 
 
-def _render_code_prompt(current_file_prefix: str, cross_file_context: str | None) -> str:
-    if cross_file_context:
+def _render_code_prompt(
+    current_file_prefix: str,
+    cross_file_context: str | None,
+    *,
+    prompt_template: str,
+) -> str:
+    if prompt_template == "plain_prefix":
+        parts: list[str] = []
+        if cross_file_context:
+            parts.append("Relevant repository context:\n" + cross_file_context.strip())
+        parts.append(current_file_prefix.rstrip())
+        return "\n\n".join(parts)
+    if prompt_template == "xml_tags" and cross_file_context:
         return (
             "Complete the code at the cursor. Return only the completion.\n\n"
             "<REPOSITORY_CONTEXT>\n"
@@ -494,6 +523,8 @@ def _render_code_prompt(current_file_prefix: str, cross_file_context: str | None
             f"{current_file_prefix}\n"
             "</CURRENT_FILE_PREFIX>"
         )
+    if prompt_template != "xml_tags":
+        raise ValueError(f"unsupported prompt_template: {prompt_template}")
     return (
         "Complete the code at the cursor. Return only the completion.\n\n"
         "<CURRENT_FILE_PREFIX>\n"
@@ -508,35 +539,48 @@ def _render_repobench_prompt(
     import_statement: str,
     cropped_code: str,
     include_cross_file_context: bool,
+    prompt_template: str,
 ) -> str:
-    parts = ["Complete the next line of code. Return only the next line."]
-    if include_cross_file_context and context:
-        context_blocks: list[str] = []
-        for index, item in enumerate(context):
-            if not isinstance(item, dict):
-                raise ValueError(f"repobench context[{index}] must be a mapping")
-            path = _optional_string(item.get("path"), f"repobench context[{index}].path") or "unknown"
-            identifier = (
-                _optional_string(item.get("identifier"), f"repobench context[{index}].identifier")
-                or "unknown"
-            )
-            raw_snippet = item.get("snippet")
-            if raw_snippet in (None, ""):
-                continue
-            snippet = _expect_string(raw_snippet, f"repobench context[{index}].snippet")
-            context_blocks.append(
-                f"# file: {path}\n# identifier: {identifier}\n{snippet}"
-            )
+    context_blocks = _repobench_context_blocks(context) if include_cross_file_context and context else []
+    if prompt_template == "plain_prefix":
+        parts: list[str] = []
         if context_blocks:
-            parts.append(
-                "<REPOSITORY_CONTEXT>\n"
-                + "\n\n".join(context_blocks)
-                + "\n</REPOSITORY_CONTEXT>"
-            )
+            parts.append("Relevant repository context:\n" + "\n\n".join(context_blocks))
+        if import_statement:
+            parts.append(import_statement.strip())
+        parts.append(cropped_code.rstrip())
+        return "\n\n".join(parts)
+    if prompt_template != "xml_tags":
+        raise ValueError(f"unsupported prompt_template: {prompt_template}")
+    parts = ["Complete the next line of code. Return only the next line."]
+    if context_blocks:
+        parts.append(
+            "<REPOSITORY_CONTEXT>\n"
+            + "\n\n".join(context_blocks)
+            + "\n</REPOSITORY_CONTEXT>"
+        )
     if import_statement:
         parts.append(f"<IMPORTS>\n{import_statement}\n</IMPORTS>")
     parts.append(f"<CURRENT_FILE_PREFIX>\n{cropped_code}\n</CURRENT_FILE_PREFIX>")
     return "\n\n".join(parts)
+
+
+def _repobench_context_blocks(context: list[Any]) -> list[str]:
+    context_blocks: list[str] = []
+    for index, item in enumerate(context):
+        if not isinstance(item, dict):
+            raise ValueError(f"repobench context[{index}] must be a mapping")
+        path = _optional_string(item.get("path"), f"repobench context[{index}].path") or "unknown"
+        identifier = (
+            _optional_string(item.get("identifier"), f"repobench context[{index}].identifier")
+            or "unknown"
+        )
+        raw_snippet = item.get("snippet")
+        if raw_snippet in (None, ""):
+            continue
+        snippet = _expect_string(raw_snippet, f"repobench context[{index}].snippet")
+        context_blocks.append(f"# file: {path}\n# identifier: {identifier}\n{snippet}")
+    return context_blocks
 
 
 def _cache_realistic_order(
@@ -690,6 +734,7 @@ def _build_manifest(
     name: str,
     dataset_name: str,
     task: str,
+    prompt_template: str,
     shards: list[list[MaterializedSample]],
     shard_entries: list[dict[str, Any]],
     samples_per_shard: int,
@@ -699,6 +744,7 @@ def _build_manifest(
         "workload_name": name,
         "dataset": dataset_name,
         "task": task,
+        "prompt_template": prompt_template,
         "num_shards": len(shards),
         "samples_per_shard": samples_per_shard,
         "shards": shard_entries,
@@ -714,7 +760,8 @@ def _build_report(
     name: str,
     dataset_name: str,
     task: str,
-    raw_path: Path,
+    prompt_template: str,
+    raw_path: Path | None,
     output_dir: Path,
     tokenizer_name: str,
     samples: list[MaterializedSample],
@@ -724,6 +771,7 @@ def _build_report(
         "workload_name": name,
         "dataset": dataset_name,
         "task": task,
+        "prompt_template": prompt_template,
         "raw_path": str(raw_path) if raw_path is not None else None,
         "output_dir": str(output_dir),
         "tokenizer": {
@@ -941,6 +989,13 @@ def _repobench_tasks(value: Any) -> list[str]:
     if unknown:
         raise ValueError(f"dataset.tasks has unsupported RepoBench tasks: {unknown}")
     return tasks
+
+
+def _prompt_template(value: Any) -> str:
+    template = _optional_string(value, "prompt_template") or "plain_prefix"
+    if template not in {"plain_prefix", "xml_tags"}:
+        raise ValueError("prompt_template must be one of: plain_prefix, xml_tags")
+    return template
 
 
 def _hash_text(text: str) -> str:

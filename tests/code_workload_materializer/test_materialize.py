@@ -51,8 +51,11 @@ def test_crosscodeeval_like_materialization_from_local_jsonl(tmp_path: Path) -> 
     assert len(shard_rows) == 2
     assert shard_rows[0]["metadata"]["dataset"] == "crosscodeeval"
     assert shard_rows[0]["metadata"]["task"] == "cross_file_materialized"
+    assert shard_rows[0]["metadata"]["prompt_template"] == "plain_prefix"
     assert shard_rows[0]["metadata"]["content_hash"]
-    assert "<CURRENT_FILE_PREFIX>" in shard_rows[0]["prompt"]
+    assert "<CURRENT_FILE_PREFIX>" not in shard_rows[0]["prompt"]
+    assert "Relevant repository context:" in shard_rows[0]["prompt"]
+    assert shard_rows[0]["prompt"].rstrip().endswith("return")
 
 
 def test_crosscodeeval_like_materialization_from_jsonl_directory(tmp_path: Path) -> None:
@@ -114,6 +117,7 @@ def _write_config(tmp_path: Path, *, raw_path: Path, output_dir: Path) -> Path:
             "raw_path": str(raw_path),
             "split": "test",
             "mode": "cross_file_materialized",
+            "prompt_template": "plain_prefix",
         },
         "tokenization": {"tokenizer": "whitespace"},
         "filtering": {

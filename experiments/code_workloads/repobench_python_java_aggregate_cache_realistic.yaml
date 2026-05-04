@@ -4,6 +4,7 @@ dataset:
   name: repobench
   mode: aggregate
   split: v1.1
+  prompt_template: plain_prefix
   raw_paths:
     java: ../../data/raw/repobench_java_v1.1/data
     python: ../../data/raw/repobench_python_v1.1/data

@@ -781,3 +781,46 @@ def test_jsonl_manifest_cache_is_reused_when_present(
 
     second = load_workload_samples_for_sampling_only(workload_path)
     assert [sample.to_dict() for sample in second] == [sample.to_dict() for sample in first]
+
+
+def test_jsonl_manifest_cache_invalidates_when_source_changes(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr("llm_mst_finder.workload._manifest_cache_root", lambda: tmp_path / "cache")
+    dataset_path = tmp_path / "requests.jsonl"
+    dataset_path.write_text(
+        json.dumps({"prompt": "first", "expected_output_len": 1, "metadata": {"version": 1}}) + "\n",
+        encoding="utf-8",
+    )
+    workload_path = tmp_path / "jsonl_cached.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: jsonl-cached-invalidates",
+                "dataset:",
+                "  type: jsonl",
+                f"  path: {dataset_path}",
+                "tokenizer: whitespace",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 1",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    first = load_workload_samples_for_sampling_only(workload_path)
+    dataset_path.write_text(
+        json.dumps({"prompt": "second", "expected_output_len": 1, "metadata": {"version": 2}}) + "\n",
+        encoding="utf-8",
+    )
+    second = load_workload_samples_for_sampling_only(workload_path)
+
+    assert first[0].prompt == "first"
+    assert second[0].prompt == "second"
+    assert second[0].metadata["version"] == 2

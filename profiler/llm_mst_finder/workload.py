@@ -563,9 +563,11 @@ def _manifest_cache_path(
     *,
     tokenizer_key: str,
 ) -> Path:
+    source_fingerprint = _dataset_source_fingerprint(config.dataset)
     key_payload = {
-        "cache_version": 1,
+        "cache_version": 2,
         "dataset_path": config.dataset.path,
+        "dataset_source_fingerprint": source_fingerprint,
         "dataset_subset": config.dataset.subset,
         "dataset_configs": list(config.dataset.configs),
         "dataset_split": config.dataset.split,
@@ -640,6 +642,37 @@ def _load_entries_from_manifest(path: Path) -> list[DatasetEntry]:
     ]
 
 
+def _dataset_source_fingerprint(dataset: DatasetConfig) -> dict[str, Any] | None:
+    if dataset.path is None or dataset.type == "hf":
+        return None
+    path = Path(dataset.path).expanduser()
+    if not path.exists():
+        return None
+    if path.is_file():
+        stat = path.stat()
+        return {
+            "kind": "file",
+            "mtime_ns": stat.st_mtime_ns,
+            "size": stat.st_size,
+        }
+    if path.is_dir():
+        entries: list[dict[str, Any]] = []
+        for child in sorted(item for item in path.rglob("*") if item.is_file()):
+            stat = child.stat()
+            entries.append(
+                {
+                    "mtime_ns": stat.st_mtime_ns,
+                    "path": child.relative_to(path).as_posix(),
+                    "size": stat.st_size,
+                }
+            )
+        return {
+            "entries": entries,
+            "kind": "directory",
+        }
+    return None
+
+
 def _write_entries_to_manifest(
     path: Path,
     *,
@@ -650,8 +683,9 @@ def _write_entries_to_manifest(
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     payload = {
-        "cache_version": 1,
+        "cache_version": 2,
         "dataset_path": config.dataset.path,
+        "dataset_source_fingerprint": _dataset_source_fingerprint(config.dataset),
         "dataset_subset": config.dataset.subset,
         "dataset_configs": list(config.dataset.configs),
         "dataset_split": config.dataset.split,

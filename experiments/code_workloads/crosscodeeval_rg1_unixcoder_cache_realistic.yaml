@@ -5,6 +5,7 @@ dataset:
   raw_path: ../../data/raw/crosscodeeval_rg1_unixcoder
   split: test
   mode: line_completion_rg1_unixcoder_cosine_sim
+  prompt_template: plain_prefix
   field_aliases:
     repo_id: [repository]
     file_path: [file]
