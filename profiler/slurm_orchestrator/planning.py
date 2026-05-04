@@ -354,6 +354,12 @@ def refresh_run_plan_for_resume(
 
     for group_key, group_payload in group_payloads.items():
         _write_json(Path(str(group_entries[group_key]["plan_path"])), group_payload)
+        script_path = Path(str(group_entries[group_key]["script_path"]))
+        script_path.write_text(
+            render_sbatch_script(group_payload=group_payload, slurm=manifest.slurm),
+            encoding="utf-8",
+        )
+        script_path.chmod(0o755)
     _write_json(Path(str(run_plan["run_root"])) / "plan.json", run_plan)
     return run_plan, selected
 
@@ -476,6 +482,29 @@ def render_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmConfig) -
             "",
             "SEARCH_STARTED=0",
             "",
+            "log_gpu_diagnostics() {",
+            "  local phase=$1",
+            '  echo "==== slurm gpu diagnostics: ${phase} $(date -Is) ===="',
+            '  echo "experiment_id=${EXPERIMENT_ID:-unknown}"',
+            '  echo "hostname=$(hostname)"',
+            '  echo "SLURM_JOB_ID=${SLURM_JOB_ID:-}"',
+            '  echo "SLURM_ARRAY_JOB_ID=${SLURM_ARRAY_JOB_ID:-}"',
+            '  echo "SLURM_ARRAY_TASK_ID=${SLURM_ARRAY_TASK_ID:-}"',
+            '  echo "SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-}"',
+            '  echo "SLURM_STEP_GPUS=${SLURM_STEP_GPUS:-}"',
+            '  echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}"',
+            '  echo "ROCR_VISIBLE_DEVICES=${ROCR_VISIBLE_DEVICES:-}"',
+            '  echo "VLLM_PID=${VLLM_PID:-}"',
+            '  echo "VLLM_CMD=${VLLM_CMD[*]}"',
+            "  if command -v nvidia-smi >/dev/null 2>&1; then",
+            "    nvidia-smi || true",
+            "    nvidia-smi pmon -c 1 || true",
+            "  else",
+            '    echo "nvidia-smi not found on PATH"',
+            "  fi",
+            '  echo "==== end slurm gpu diagnostics: ${phase} ===="',
+            "}",
+            "",
             "cleanup() {",
             "  local exit_code=$?",
             '  if [[ -n "${VLLM_PID:-}" ]]; then',
@@ -494,8 +523,10 @@ def render_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmConfig) -
             'rm -rf "$RESULT_DIR"',
             'mkdir -p "$RESULT_DIR"',
             "",
+            'log_gpu_diagnostics "before_vllm_start"',
             'setsid "${VLLM_CMD[@]}" >>"$VLLM_STDOUT" 2>>"$VLLM_STDERR" &',
             "VLLM_PID=$!",
+            'log_gpu_diagnostics "after_vllm_start"',
             "",
             '  "$PYTHON_BIN" -m slurm_orchestrator.cli mark-task-running --group-plan "$GROUP_PLAN" --task-index "$TASK_INDEX"'.lstrip(),
             '  "$PYTHON_BIN" -m slurm_orchestrator.cli wait-ready \\'.lstrip(),

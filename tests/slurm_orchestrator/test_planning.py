@@ -107,6 +107,12 @@ def test_rendered_sbatch_script_includes_array_limit_wait_search_report_and_clea
     assert "module load cuda/12.4" in script
     assert "source /venv/bin/activate" in script
     assert 'setsid "${VLLM_CMD[@]}"' in script
+    assert "log_gpu_diagnostics()" in script
+    assert 'echo "SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-}"' in script
+    assert 'echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-}"' in script
+    assert "nvidia-smi pmon -c 1" in script
+    assert 'log_gpu_diagnostics "before_vllm_start"' in script
+    assert 'log_gpu_diagnostics "after_vllm_start"' in script
     assert "wait-ready" in script
     assert '"${SEARCH_CMD[@]}" >>"$MST_STDOUT" 2>>"$MST_STDERR"' in script
     assert '"${REPORT_CMD[@]}" >>"$MST_STDOUT" 2>>"$MST_STDERR"' in script
