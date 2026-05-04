@@ -48,6 +48,7 @@ tests/llm_mst_finder/fixtures/
 
 # Results from local runs of LLM MST finder tests
 results/
+data/
 
 # slurm logs
 slurm-*.out

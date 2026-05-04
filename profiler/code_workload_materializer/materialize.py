@@ -19,7 +19,7 @@ DEFAULT_FIELD_ALIASES: dict[str, list[str]] = {
     "language": ["language", "lang"],
     "repo_id": ["repo", "repo_name", "repository"],
     "file_path": ["file_path", "path"],
-    "cross_file_context": ["cross_file_context", "retrieved_context", "context"],
+    "cross_file_context": ["cross_file_context", "crossfile_context", "retrieved_context", "context"],
     "sequence_index": ["sequence_index", "cursor_index", "order"],
 }
 
@@ -193,6 +193,7 @@ def _load_samples(
                 sample = _row_to_sample(
                     row,
                     row_index=global_index,
+                    input_path=file_path,
                     aliases=aliases,
                     dataset_name=dataset_name,
                     split=split,
@@ -219,6 +220,7 @@ def _row_to_sample(
     row: dict[str, Any],
     *,
     row_index: int,
+    input_path: Path,
     aliases: dict[str, list[str]],
     dataset_name: str,
     split: str,
@@ -265,7 +267,7 @@ def _row_to_sample(
         counters.drops["target_too_long"] += 1
         return None
 
-    language = _metadata_alias(row, aliases["language"], "unknown")
+    language = _metadata_alias(row, aliases["language"], input_path.parent.name)
     if not _language_allowed(str(language), language_filter):
         counters.drops["unsupported_language"] += 1
         return None
@@ -532,7 +534,7 @@ def _jsonl_files(raw_path: Path) -> list[Path]:
             raise ValueError(f"raw_path file must be .jsonl: {raw_path}")
         return [raw_path]
     if raw_path.is_dir():
-        files = sorted(raw_path.glob("*.jsonl"))
+        files = sorted(raw_path.rglob("*.jsonl"))
         if files:
             return files
         raise FileNotFoundError(f"raw_path directory has no .jsonl files: {raw_path}")
@@ -560,11 +562,13 @@ def _string_alias(
     required: bool = True,
 ) -> str | None:
     for alias in aliases:
-        if alias not in row:
+        found, value = _lookup_alias(row, alias)
+        if not found:
             continue
-        value = row[alias]
         if value is None or value == "":
             return None
+        if isinstance(value, dict) and isinstance(value.get("text"), str):
+            value = value["text"]
         if not isinstance(value, str):
             raise ValueError(f"{source} field {alias!r} for {field_name} must be a string")
         return value
@@ -575,9 +579,24 @@ def _string_alias(
 
 def _metadata_alias(row: dict[str, Any], aliases: list[str], default: str) -> Any:
     for alias in aliases:
-        if alias in row and row[alias] not in (None, ""):
-            return row[alias]
+        found, value = _lookup_alias(row, alias)
+        if found and value not in (None, ""):
+            return value
+        metadata = row.get("metadata")
+        if isinstance(metadata, dict):
+            found, value = _lookup_alias(metadata, alias)
+            if found and value not in (None, ""):
+                return value
     return default
+
+
+def _lookup_alias(row: dict[str, Any], alias: str) -> tuple[bool, Any]:
+    current: Any = row
+    for part in alias.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return False, None
+        current = current[part]
+    return True, current
 
 
 def _sequence_index(
