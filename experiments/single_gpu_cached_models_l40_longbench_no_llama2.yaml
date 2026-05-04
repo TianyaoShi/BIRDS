@@ -1,8 +1,8 @@
 run:
   run_id: single-gpu-model-loop-run-longbench-no-llama2-000
   output_root: ../results/orchestrator
-  allowed_gpu_ids: [0, 1]
-  max_active_gpus: 2
+  allowed_gpu_ids: [0, 1, 2, 3]
+  max_active_gpus: 4
   keep_one_gpu_spare: false
   default_endpoint: /v1/chat/completions
   base_port_start: 8300
