@@ -7,6 +7,7 @@ ACCOUNT=""
 PARTITION="${SLURM_PARTITION:-gpu}"
 TIME_LIMIT="${TIME_LIMIT:-04:00:00}"
 JOB_NAME="${JOB_NAME:-biollm-vllm-a100-env}"
+CPUS_PER_TASK="${CPUS_PER_TASK:-16}"
 
 SBATCH_ARGS=(
   --job-name "$JOB_NAME"
@@ -14,6 +15,7 @@ SBATCH_ARGS=(
   --error "$ROOT_DIR/slurm-%x-%j.err"
   --nodes 1
   --ntasks 1
+  --cpus-per-task "$CPUS_PER_TASK"
   --gres gpu:1
   --time "$TIME_LIMIT"
   --chdir "$ROOT_DIR"
