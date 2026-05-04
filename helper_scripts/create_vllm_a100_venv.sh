@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="${VLLM_A100_VENV_DIR:-$ROOT_DIR/.venv-a100}"
 PYTHON_VERSION="${VLLM_A100_PYTHON_VERSION:-3.12}"
 TORCH_BACKEND="${VLLM_A100_TORCH_BACKEND:-cu128}"
+RECREATE_VENV="${VLLM_A100_RECREATE_VENV:-0}"
 UV_BIN="${UV_BIN:-uv}"
 export UV_CACHE_DIR="${UV_CACHE_DIR:-$ROOT_DIR/.cache/uv}"
 export VLLM_TARGET_DEVICE="${VLLM_TARGET_DEVICE:-cuda}"
@@ -26,7 +27,13 @@ fi
 
 mkdir -p "$UV_CACHE_DIR"
 
-"$UV_BIN" venv "$VENV_DIR" --python "$PYTHON_VERSION" --seed --managed-python --clear
+if [[ "$RECREATE_VENV" == "1" || ! -x "$VENV_DIR/bin/python" ]]; then
+  VENV_ARGS=("$VENV_DIR" --python "$PYTHON_VERSION" --seed --managed-python)
+  if [[ "$RECREATE_VENV" == "1" ]]; then
+    VENV_ARGS+=(--clear)
+  fi
+  "$UV_BIN" venv "${VENV_ARGS[@]}"
+fi
 "$UV_BIN" pip install \
   --python "$VENV_DIR/bin/python" \
   -r "$ROOT_DIR/requirements/profiler.txt"
