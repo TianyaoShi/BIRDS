@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 ACCOUNT=""
 PARTITION="${SLURM_PARTITION:-gpu}"
-TIME_LIMIT="${TIME_LIMIT:-04:00:00}"
+TIME_LIMIT="${TIME_LIMIT:-06:00:00}"
 JOB_NAME="${JOB_NAME:-biollm-vllm-a100-env}"
 CPUS_PER_TASK="${CPUS_PER_TASK:-16}"
 
