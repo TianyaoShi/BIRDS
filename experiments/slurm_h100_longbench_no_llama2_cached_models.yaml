@@ -132,9 +132,7 @@ overrides:
   - match:
       models:
         - meta-llama/Llama-3.1-70B-Instruct
-        - deepseek-ai/DeepSeek-V4-Flash
-        - deepseek-ai/DeepSeek-V4-Flash-Base
-    reason: 70B and DeepSeek-V4 LongBench class run at TP4 with a low ceiling to avoid wasting long trials.
+    reason: 70B LongBench class runs at TP4 with a low ceiling to avoid wasting long trials.
     search:
       initial_request_rate: 0.1
       max_request_rate: 4
@@ -336,20 +334,6 @@ experiments:
 
   - id: gpt-oss-120b-h100-longbench-tp4
     model: openai/gpt-oss-120b
-    workload: ./workloads/longbench_nl_truncated.yaml
-    launch:
-      gpu_count: 4
-      tensor_parallel_size: 4
-
-  - id: deepseek-v4-flash-h100-longbench-tp4
-    model: deepseek-ai/DeepSeek-V4-Flash
-    workload: ./workloads/longbench_nl_truncated.yaml
-    launch:
-      gpu_count: 4
-      tensor_parallel_size: 4
-
-  - id: deepseek-v4-flash-base-h100-longbench-tp4
-    model: deepseek-ai/DeepSeek-V4-Flash-Base
     workload: ./workloads/longbench_nl_truncated.yaml
     launch:
       gpu_count: 4

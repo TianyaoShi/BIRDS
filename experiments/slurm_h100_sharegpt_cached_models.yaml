@@ -135,9 +135,7 @@ overrides:
       models:
         - meta-llama/Llama-2-70b-chat-hf
         - meta-llama/Llama-3.1-70B-Instruct
-        - deepseek-ai/DeepSeek-V4-Flash
-        - deepseek-ai/DeepSeek-V4-Flash-Base
-    reason: 70B and DeepSeek-V4 class run at TP4 with a low ceiling to avoid wasting long ShareGPT trials.
+    reason: 70B class runs at TP4 with a low ceiling to avoid wasting long ShareGPT trials.
     search:
       initial_request_rate: 0.25
       max_request_rate: 15
@@ -362,20 +360,6 @@ experiments:
 
   - id: gpt-oss-120b-h100-tp4
     model: openai/gpt-oss-120b
-    workload: ./workloads/live_sharegpt_workload_context.yaml
-    launch:
-      gpu_count: 4
-      tensor_parallel_size: 4
-
-  - id: deepseek-v4-flash-h100-tp4
-    model: deepseek-ai/DeepSeek-V4-Flash
-    workload: ./workloads/live_sharegpt_workload_context.yaml
-    launch:
-      gpu_count: 4
-      tensor_parallel_size: 4
-
-  - id: deepseek-v4-flash-base-h100-tp4
-    model: deepseek-ai/DeepSeek-V4-Flash-Base
     workload: ./workloads/live_sharegpt_workload_context.yaml
     launch:
       gpu_count: 4
