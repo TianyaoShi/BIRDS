@@ -20,6 +20,19 @@ def build_job_state_payload(job: ExpandedExperimentJob) -> dict[str, Any]:
         "gpu_count": job.launch.gpu_count,
         "tensor_parallel_size": job.launch.tensor_parallel_size,
         "max_model_len": job.launch.max_model_len,
+        "search": {
+            "search_mode": job.search.search_mode,
+            "trial_min_duration_s": job.search.trial_min_duration_s,
+            "trial_max_duration_s": job.search.trial_max_duration_s,
+            "final_confirmation_duration_s": job.search.final_confirmation_duration_s,
+            "rate_precision": job.search.rate_precision,
+            "initial_request_rate": job.search.initial_request_rate,
+            "max_request_rate": job.search.max_request_rate,
+            "ttft_slo_ms": job.search.ttft_slo_ms,
+            "tpot_slo_ms": job.search.tpot_slo_ms,
+            "ttft_slo_field": job.search.ttft_slo_field,
+            "tpot_slo_field": job.search.tpot_slo_field,
+        },
         "probe": None if job.probe is None else job.probe.to_payload(),
         "result_dir": str(job.result_dir),
         "server_signature_key": job.server_signature_key,
@@ -212,6 +225,7 @@ class RunStateStore:
             "gpu_count",
             "tensor_parallel_size",
             "max_model_len",
+            "search",
             "probe",
             "result_dir",
             "server_signature_key",
@@ -243,6 +257,7 @@ class RunStateStore:
         counts = {"planned": 0, "running": 0, "succeeded": 0, "failed": 0, "skipped": 0}
         termination_reason_counts: dict[str, int] = {}
         bottleneck_class_counts: dict[str, int] = {}
+        slo_policy_counts: dict[str, int] = {}
         max_no_drift_rates: list[float] = []
         max_slo_rates: list[float] = []
         job_summaries: list[dict[str, Any]] = []
@@ -252,14 +267,18 @@ class RunStateStore:
                 status = "planned"
             counts[status] += 1
 
-            search_result = self._extract_search_result(job)
+            trace_payload = self._extract_search_trace_payload(job)
+            search_result = self._extract_search_result_from_trace(trace_payload)
             termination_reason = None if search_result is None else search_result.get("termination_reason")
             bottleneck_class = None if search_result is None else search_result.get("bottleneck_class")
+            slo_policy = self._extract_slo_policy(job, trace_payload)
+            slo_policy_label = self._format_slo_policy(slo_policy)
 
             if isinstance(termination_reason, str) and termination_reason:
                 termination_reason_counts[termination_reason] = termination_reason_counts.get(termination_reason, 0) + 1
             if isinstance(bottleneck_class, str) and bottleneck_class:
                 bottleneck_class_counts[bottleneck_class] = bottleneck_class_counts.get(bottleneck_class, 0) + 1
+            slo_policy_counts[slo_policy_label] = slo_policy_counts.get(slo_policy_label, 0) + 1
 
             max_no_drift = self._as_finite_float(
                 None if search_result is None else search_result.get("max_no_drift_request_rate")
@@ -286,6 +305,8 @@ class RunStateStore:
                     "last_error": job.get("last_error"),
                     "termination_reason": termination_reason,
                     "bottleneck_class": bottleneck_class,
+                    "slo_policy": slo_policy,
+                    "slo_policy_label": slo_policy_label,
                     "max_no_drift_request_rate": max_no_drift,
                     "max_slo_satisfying_request_rate": max_slo,
                     "artifacts": {
@@ -315,6 +336,7 @@ class RunStateStore:
             "aggregate": {
                 "termination_reason_counts": dict(sorted(termination_reason_counts.items())),
                 "bottleneck_class_counts": dict(sorted(bottleneck_class_counts.items())),
+                "slo_policy_counts": dict(sorted(slo_policy_counts.items())),
                 "max_no_drift_request_rate": self._rate_stats(max_no_drift_rates),
                 "max_slo_satisfying_request_rate": self._rate_stats(max_slo_rates),
                 "failed_jobs": failed_jobs,
@@ -342,16 +364,31 @@ class RunStateStore:
             f"- Termination Reasons: {json.dumps(summary['aggregate']['termination_reason_counts'], sort_keys=True)}",
             f"- Bottleneck Classes: {json.dumps(summary['aggregate']['bottleneck_class_counts'], sort_keys=True)}",
             "",
-            "## Jobs",
+            "## SLO Policies",
             "",
-            (
-                "| Experiment ID | Status | Startup Attempts | Search Attempts | "
-                "Termination | Bottleneck | Max No-Drift RPS | Max SLO RPS | Result Dir |"
-            ),
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| Policy | Jobs |",
+            "| --- | ---: |",
         ]
+        for policy, count in summary["aggregate"]["slo_policy_counts"].items():
+            lines.append(f"| {policy} | {count} |")
+        lines.extend(
+            [
+                "",
+                "## Jobs",
+                "",
+                (
+                    "| Experiment ID | Status | Startup Attempts | Search Attempts | "
+                    "Termination | Bottleneck | TTFT SLO | TPOT SLO | Max No-Drift RPS | "
+                    "Max SLO RPS | Result Dir |"
+                ),
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            ]
+        )
         for job in summary["jobs"]:
             attempts = job.get("attempts", {})
+            slo_policy = job.get("slo_policy")
+            if not isinstance(slo_policy, dict):
+                slo_policy = {}
             lines.append(
                 "| "
                 f"{job.get('experiment_id')} | "
@@ -360,6 +397,8 @@ class RunStateStore:
                 f"{attempts.get('search', 0)} | "
                 f"{job.get('termination_reason') or '-'} | "
                 f"{job.get('bottleneck_class') or '-'} | "
+                f"{self._format_single_slo(slo_policy, metric='ttft')} | "
+                f"{self._format_single_slo(slo_policy, metric='tpot')} | "
                 f"{self._format_rate(job.get('max_no_drift_request_rate'))} | "
                 f"{self._format_rate(job.get('max_slo_satisfying_request_rate'))} | "
                 f"{job.get('result_dir')} |"
@@ -369,6 +408,12 @@ class RunStateStore:
 
     @staticmethod
     def _extract_search_result(job: dict[str, Any]) -> dict[str, Any] | None:
+        return RunStateStore._extract_search_result_from_trace(
+            RunStateStore._extract_search_trace_payload(job)
+        )
+
+    @staticmethod
+    def _extract_search_trace_payload(job: dict[str, Any]) -> dict[str, Any] | None:
         artifacts = job.get("artifacts")
         artifact_path: Path | None = None
         if isinstance(artifacts, dict):
@@ -379,13 +424,69 @@ class RunStateStore:
             artifact_path = Path(str(job.get("result_dir"))) / "search_trace.json"
         if not artifact_path.is_file():
             return None
-        payload = RunStateStore._read_json_mapping(artifact_path)
-        if payload is None:
+        return RunStateStore._read_json_mapping(artifact_path)
+
+    @staticmethod
+    def _extract_search_result_from_trace(trace_payload: dict[str, Any] | None) -> dict[str, Any] | None:
+        if trace_payload is None:
             return None
-        result = payload.get("result")
+        result = trace_payload.get("result")
         if not isinstance(result, dict):
             return None
         return result
+
+    @staticmethod
+    def _extract_slo_policy(
+        job: dict[str, Any],
+        trace_payload: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        search = job.get("search")
+        if isinstance(search, dict) and any(
+            key in search
+            for key in ("ttft_slo_ms", "tpot_slo_ms", "ttft_slo_field", "tpot_slo_field")
+        ):
+            return {
+                "ttft_slo_ms": search.get("ttft_slo_ms"),
+                "ttft_slo_field": search.get("ttft_slo_field", "ttft_p90_ms"),
+                "tpot_slo_ms": search.get("tpot_slo_ms"),
+                "tpot_slo_field": search.get("tpot_slo_field", "tpot_p90_ms"),
+            }
+        if trace_payload is not None:
+            config = trace_payload.get("config")
+            if isinstance(config, dict):
+                metadata = config.get("metadata")
+                if isinstance(metadata, dict):
+                    policy = metadata.get("stability_policy")
+                    if isinstance(policy, dict):
+                        return {
+                            "ttft_slo_ms": policy.get("ttft_slo_ms"),
+                            "ttft_slo_field": policy.get("ttft_slo_field", "ttft_p90_ms"),
+                            "tpot_slo_ms": policy.get("tpot_slo_ms"),
+                            "tpot_slo_field": policy.get("tpot_slo_field", "tpot_p90_ms"),
+                        }
+        return {
+            "ttft_slo_ms": None,
+            "ttft_slo_field": "ttft_p90_ms",
+            "tpot_slo_ms": None,
+            "tpot_slo_field": "tpot_p90_ms",
+        }
+
+    @staticmethod
+    def _format_slo_policy(policy: dict[str, Any]) -> str:
+        return (
+            f"{RunStateStore._format_single_slo(policy, metric='ttft')}; "
+            f"{RunStateStore._format_single_slo(policy, metric='tpot')}"
+        )
+
+    @staticmethod
+    def _format_single_slo(policy: dict[str, Any], *, metric: str) -> str:
+        if metric not in {"ttft", "tpot"}:
+            raise ValueError(f"unsupported SLO metric: {metric!r}")
+        value = RunStateStore._as_finite_float(policy.get(f"{metric}_slo_ms"))
+        field = policy.get(f"{metric}_slo_field") or f"{metric}_p90_ms"
+        if value is None:
+            return f"{field} disabled"
+        return f"{field}<={value:.6g}ms"
 
     @staticmethod
     def _read_json_mapping(path: Path) -> dict[str, Any] | None:

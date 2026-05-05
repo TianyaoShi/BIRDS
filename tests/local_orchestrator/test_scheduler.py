@@ -158,6 +158,7 @@ def _make_job(
     experiment_id: str,
     signature: str,
     launch: LaunchConfig | None = None,
+    search: SearchConfig | None = None,
     probe: ResourceProbeResult | None = None,
 ) -> ExpandedExperimentJob:
     workload = tmp_path / f"{experiment_id}.yaml"
@@ -169,7 +170,7 @@ def _make_job(
         workload=workload,
         endpoint="/v1/chat/completions",
         launch=launch or LaunchConfig(),
-        search=SearchConfig(),
+        search=search or SearchConfig(),
         hardware=HardwareConfig(),
         probe=probe,
         result_dir=tmp_path / "results" / experiment_id,
@@ -610,8 +611,9 @@ def test_scheduler_marks_adapter_exceptions_failed(tmp_path: Path) -> None:
 
 
 def test_state_store_summary_includes_search_result_aggregates(tmp_path: Path) -> None:
-    succeeded = _make_job(tmp_path, experiment_id="job-success", signature="sig-a")
-    failed = _make_job(tmp_path, experiment_id="job-failed", signature="sig-b")
+    search = SearchConfig(ttft_slo_ms=15000, tpot_slo_ms=150)
+    succeeded = _make_job(tmp_path, experiment_id="job-success", signature="sig-a", search=search)
+    failed = _make_job(tmp_path, experiment_id="job-failed", signature="sig-b", search=search)
 
     state_store = RunStateStore(tmp_path / "summary-run")
     state = state_store.initialize_new(
@@ -666,10 +668,22 @@ def test_state_store_summary_includes_search_result_aggregates(tmp_path: Path) -
         "max": 8.75,
         "mean": 8.75,
     }
+    assert summary["aggregate"]["slo_policy_counts"] == {
+        "ttft_p90_ms<=15000ms; tpot_p90_ms<=150ms": 2
+    }
     assert summary["aggregate"]["failed_jobs"] == [
         {"experiment_id": "job-failed", "error": "simulated failure"}
     ]
+    assert summary["jobs"][0]["slo_policy"] == {
+        "ttft_slo_ms": 15000,
+        "ttft_slo_field": "ttft_p90_ms",
+        "tpot_slo_ms": 150,
+        "tpot_slo_field": "tpot_p90_ms",
+    }
 
     markdown = state_store.summary_md_path.read_text(encoding="utf-8")
     assert "confirmed_stable" in markdown
     assert "decode_bandwidth" in markdown
+    assert "## SLO Policies" in markdown
+    assert "ttft_p90_ms<=15000ms; tpot_p90_ms<=150ms" in markdown
+    assert "| TTFT SLO | TPOT SLO |" in markdown
