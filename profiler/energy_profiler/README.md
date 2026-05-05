@@ -155,6 +155,29 @@ Managed plan runs also keep run state and summaries under:
 results/energy/<plan_id>/
 ```
 
+## Running A Plan On Slurm
+
+Reviewed plans can also be submitted through `slurm_orchestrator`:
+
+```bash
+PYTHONPATH=profiler:. python -m slurm_orchestrator.cli energy-submit \
+  --plan experiments/energy/<plan_id>.yaml \
+  --run-id <energy_slurm_run_id>
+```
+
+After the Slurm arrays finish, collect per-task state into the normal energy
+summary files:
+
+```bash
+PYTHONPATH=profiler:. python -m slurm_orchestrator.cli energy-collect \
+  --run-root results/energy/<plan_id>/<energy_slurm_run_id>
+```
+
+Slurm energy runs store artifacts under
+`results/energy/<plan_id>/<energy_slurm_run_id>/jobs/<energy_job_id>/` with the
+same per-job `summary.json`, `gpu_power.json`, and `energy_summary.json` files
+as local managed execution.
+
 ## Metrics
 
 Latency percentiles are available as `p50`, `p90`, `p95`, and `p99` for metric

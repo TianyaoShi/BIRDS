@@ -12,6 +12,14 @@ from typing import Sequence
 
 from local_orchestrator.manifest import load_manifest
 
+from .energy import (
+    collect_energy_run,
+    ensure_energy_run_plan,
+    finalize_energy_task,
+    mark_energy_task_running,
+    render_energy_task_shell,
+    submit_energy_run_plan,
+)
 from .planning import (
     default_run_id,
     ensure_run_plan,
@@ -63,10 +71,24 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--run-root", type=Path, required=True)
     collect.set_defaults(handler=_collect_command)
 
+    energy_submit = subparsers.add_parser("energy-submit")
+    energy_submit.add_argument("--plan", type=Path, required=True)
+    energy_submit.add_argument("--run-id", default=None)
+    energy_submit.set_defaults(handler=_energy_submit_command)
+
+    energy_collect = subparsers.add_parser("energy-collect")
+    energy_collect.add_argument("--run-root", type=Path, required=True)
+    energy_collect.set_defaults(handler=_energy_collect_command)
+
     emit_task_shell = subparsers.add_parser("emit-task-shell", help=argparse.SUPPRESS)
     emit_task_shell.add_argument("--group-plan", type=Path, required=True)
     emit_task_shell.add_argument("--task-index", type=int, required=True)
     emit_task_shell.set_defaults(handler=_emit_task_shell_command)
+
+    emit_energy_task_shell = subparsers.add_parser("emit-energy-task-shell", help=argparse.SUPPRESS)
+    emit_energy_task_shell.add_argument("--group-plan", type=Path, required=True)
+    emit_energy_task_shell.add_argument("--task-index", type=int, required=True)
+    emit_energy_task_shell.set_defaults(handler=_emit_energy_task_shell_command)
 
     wait_ready = subparsers.add_parser("wait-ready", help=argparse.SUPPRESS)
     wait_ready.add_argument("--base-url", required=True)
@@ -81,12 +103,24 @@ def build_parser() -> argparse.ArgumentParser:
     mark_running.add_argument("--task-index", type=int, required=True)
     mark_running.set_defaults(handler=_mark_task_running_command)
 
+    mark_energy_running = subparsers.add_parser("mark-energy-task-running", help=argparse.SUPPRESS)
+    mark_energy_running.add_argument("--group-plan", type=Path, required=True)
+    mark_energy_running.add_argument("--task-index", type=int, required=True)
+    mark_energy_running.set_defaults(handler=_mark_energy_task_running_command)
+
     finalize = subparsers.add_parser("finalize-task", help=argparse.SUPPRESS)
     finalize.add_argument("--group-plan", type=Path, required=True)
     finalize.add_argument("--task-index", type=int, required=True)
     finalize.add_argument("--exit-code", type=int, required=True)
     finalize.add_argument("--search-started", type=int, choices=(0, 1), required=True)
     finalize.set_defaults(handler=_finalize_task_command)
+
+    finalize_energy = subparsers.add_parser("finalize-energy-task", help=argparse.SUPPRESS)
+    finalize_energy.add_argument("--group-plan", type=Path, required=True)
+    finalize_energy.add_argument("--task-index", type=int, required=True)
+    finalize_energy.add_argument("--exit-code", type=int, required=True)
+    finalize_energy.add_argument("--trial-started", type=int, choices=(0, 1), required=True)
+    finalize_energy.set_defaults(handler=_finalize_energy_task_command)
 
     return parser
 
@@ -141,8 +175,26 @@ def _collect_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _energy_submit_command(args: argparse.Namespace) -> int:
+    plan = ensure_energy_run_plan(args.plan, run_id=args.run_id)
+    submission = submit_energy_run_plan(plan)
+    print(json.dumps(submission, indent=2, sort_keys=True))
+    return 0 if all(group.get("return_code", 1) == 0 for group in submission.get("groups", [])) else 1
+
+
+def _energy_collect_command(args: argparse.Namespace) -> int:
+    payload = collect_energy_run(args.run_root)
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
 def _emit_task_shell_command(args: argparse.Namespace) -> int:
     print(render_task_shell(args.group_plan, args.task_index))
+    return 0
+
+
+def _emit_energy_task_shell_command(args: argparse.Namespace) -> int:
+    print(render_energy_task_shell(args.group_plan, args.task_index))
     return 0
 
 
@@ -174,6 +226,12 @@ def _mark_task_running_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _mark_energy_task_running_command(args: argparse.Namespace) -> int:
+    payload = mark_energy_task_running(args.group_plan, args.task_index)
+    print(json.dumps({"job_id": payload.get("job_id"), "status": payload.get("status")}))
+    return 0
+
+
 def _finalize_task_command(args: argparse.Namespace) -> int:
     payload = finalize_task(
         args.group_plan,
@@ -182,6 +240,17 @@ def _finalize_task_command(args: argparse.Namespace) -> int:
         search_started=bool(args.search_started),
     )
     print(json.dumps({"experiment_id": payload.get("experiment_id"), "status": payload.get("status")}))
+    return 0
+
+
+def _finalize_energy_task_command(args: argparse.Namespace) -> int:
+    payload = finalize_energy_task(
+        args.group_plan,
+        args.task_index,
+        exit_code=args.exit_code,
+        trial_started=bool(args.trial_started),
+    )
+    print(json.dumps({"job_id": payload.get("job_id"), "status": payload.get("status")}))
     return 0
 
 
