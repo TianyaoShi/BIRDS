@@ -60,6 +60,7 @@ Current real-dataset configs live under `experiments/code_workloads/`:
 ```text
 experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic.yaml
 experiments/code_workloads/repobench_python_java_aggregate_cache_realistic.yaml
+experiments/code_workloads/repobench_python_java_aggregate_cache_realistic_8k_drop.yaml
 ```
 
 Both explicitly set:
@@ -104,6 +105,7 @@ Recent real materialization counts:
 
 - CrossCodeEval RG1 UnixCoder: 9,927 samples, 2 shards.
 - RepoBench Python+Java aggregate: 46,781 samples, 6 shards.
+- RepoBench Python+Java aggregate 8k-drop: 41,957 samples, 6 shards.
 
 ## Length Statistics
 
@@ -117,6 +119,7 @@ Tracked real workload summaries:
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | CrossCodeEval RG1 UnixCoder | 9,927 | 583.5 | 490 | 963.4 | 1,221.4 | 1,842.4 | 4,517 | 4.0 | 3 | 8 | 10 | 14.7 | 37 |
 | RepoBench Python+Java aggregate | 46,781 | 2,910.6 | 1,010 | 8,308 | 10,880 | 16,519 | 19,999 | 4.0 | 3 | 7 | 9 | 14 | 113 |
+| RepoBench Python+Java aggregate 8k-drop | 41,957 | 1,885.3 | 691 | 5,366 | 6,732 | 7,858 | 8,192 | 4.0 | 3 | 7 | 9 | 14 | 72 |
 
 RepoBench aggregate includes three task shapes:
 
@@ -193,10 +196,10 @@ benchmark workload rather than an IDE latency target:
 | `repobench-p` | 500 | 3,507 | 7,578 | 9,051 | 3 | 7 | 8 |
 | `repobench-p_e` | 300 | 5,252 | 10,892 | 12,663 | 3 | 7 | 8 |
 
-Because of this, the code-workload manifest caps RepoBench TTFT at 5s. This is
-still slow for a one-line IDE completion, but it avoids treating a 12-15s
-first-token delay as acceptable just because the prompt has a long retrieved
-context tail.
+Because of this, the code-workload manifest uses the RepoBench 8k-drop
+materialization and caps RepoBench TTFT at 5s. This is still slow for a one-line
+IDE completion, but it avoids treating a 12-15s first-token delay as acceptable
+just because the prompt has a long retrieved context tail.
 
 ### RepoBench Context Limits
 
@@ -216,6 +219,11 @@ execution. A smarter future option is a materializer-side truncation policy that
 keeps the current file and cursor-near prefix intact, then truncates retrieved
 context blocks to a configured token budget before final token counting.
 
+The current 8k-drop config materializes to
+`experiments/code_workloads/repobench_python_java_aggregate_cache_realistic_8k_drop/`.
+Its report shows 6,416 rows dropped for `prompt_too_long`, reducing the prompt
+distribution from p90/p95 8,308/10,880 tokens to p90/p95 5,366/6,732 tokens.
+
 ## Experiment Manifest
 
 The L40 single-GPU manifest for these workloads is:
@@ -229,7 +237,7 @@ materialized shard per dataset:
 
 ```text
 experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
-experiments/code_workloads/repobench_python_java_aggregate_cache_realistic/workload_yamls/shard_000.yaml
+experiments/code_workloads/repobench_python_java_aggregate_cache_realistic_8k_drop/workload_yamls/shard_000.yaml
 ```
 
 The manifest intentionally does not expand over every RepoBench shard. RepoBench
@@ -244,10 +252,10 @@ SLOs are tuned around the measured input/output profile:
 
 - CrossCodeEval: moderate prompts, p90 output 8 tokens. TTFT targets stay
   interactive-code oriented, with tighter SLOs for smaller models.
-- RepoBench aggregate: p90 input 8.3k tokens and p95 input 10.9k tokens, but
-  p90 output only 7 tokens. TTFT is prefill-oriented but capped at 5s because
-  this is still an IDE completion workload; TPOT remains relatively tight
-  because completions are short.
+- RepoBench aggregate 8k-drop: p90 input 5.4k tokens and p95 input 6.7k tokens,
+  but p90 output only 7 tokens. TTFT is prefill-oriented but capped at 5s
+  because this is still an IDE completion workload; TPOT remains relatively
+  tight because completions are short.
 
 `openai/gpt-oss-20b` is omitted from this manifest because the live probes showed
 it is not a useful `/v1/completions` code-completion model in this setup.

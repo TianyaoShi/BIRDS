@@ -117,7 +117,7 @@ overrides:
         - meta-llama/Llama-3.2-1B-Instruct
       workloads:
         - '*repobench*'
-    reason: RepoBench aggregate has short completions but a long cross-file prompt tail; even long IDE completion prompts should not normalize double-digit-second first-token latency.
+    reason: RepoBench 8k-drop aggregate has short completions but a long cross-file prompt tail; even long IDE completion prompts should not normalize double-digit-second first-token latency.
     launch:
       max_num_seqs: 1024
       max_num_batched_tokens: 8192
@@ -138,7 +138,7 @@ overrides:
         - meta-llama/Llama-3.2-3B-Instruct
       workloads:
         - '*repobench*'
-    reason: RepoBench p90 input is about 8.3k tokens and p95 is about 10.9k, but completions are one-line sized; keep TTFT bounded to an IDE-realistic ceiling.
+    reason: RepoBench 8k-drop p90 input is about 5.4k tokens and p95 is about 6.7k, while completions are one-line sized; keep TTFT bounded to an IDE-realistic ceiling.
     search:
       initial_request_rate: 0.25
       max_request_rate: 8
@@ -155,7 +155,7 @@ overrides:
         - meta-llama/Llama-3.1-8B-Instruct
       workloads:
         - '*repobench*'
-    reason: Larger models get lower request-rate ceilings for RepoBench, but the latency target still reflects interactive code completion rather than summarization.
+    reason: Larger models get lower request-rate ceilings for RepoBench 8k-drop, but the latency target still reflects interactive code completion rather than summarization.
     search:
       initial_request_rate: 0.25
       max_request_rate: 4
@@ -181,4 +181,4 @@ experiments:
       - meta-llama/Llama-3.2-3B-Instruct
     workloads:
       - ./code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
-      - ./code_workloads/repobench_python_java_aggregate_cache_realistic/workload_yamls/shard_000.yaml
+      - ./code_workloads/repobench_python_java_aggregate_cache_realistic_8k_drop/workload_yamls/shard_000.yaml
