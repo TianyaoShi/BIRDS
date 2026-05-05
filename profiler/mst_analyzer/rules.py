@@ -116,6 +116,10 @@ def build_bucket_summaries(
                 median_mst_rps=float(median(mst_values)),
                 median_total_token_throughput=(None if not token_values else float(median(token_values))),
                 models=tuple(member.model for member in sorted(members, key=lambda item: item.model)),
+                member_labels=tuple(
+                    _model_serving_label(member)
+                    for member in sorted(members, key=lambda item: (item.model, item.experiment_id))
+                ),
             )
         )
     return summaries
@@ -486,6 +490,9 @@ def _build_anomaly(
     return AnomalyCandidate(
         experiment_id=row.experiment_id,
         model=row.model,
+        serving_config_label=_serving_config_label(row),
+        tensor_parallel_size=row.tensor_parallel_size,
+        gpu_count=row.gpu_count,
         mst_rps=float(row.mst_rps or 0.0),
         confidence=row.confidence,
         severity_score=total_score,
@@ -515,6 +522,9 @@ def _build_trace_diagnostic(*, row: MSTRow, hit: _FindingHit) -> TraceDiagnostic
     return TraceDiagnostic(
         experiment_id=row.experiment_id,
         model=row.model,
+        serving_config_label=_serving_config_label(row),
+        tensor_parallel_size=row.tensor_parallel_size,
+        gpu_count=row.gpu_count,
         mst_rps=row.mst_rps,
         confidence=row.confidence,
         reasons=tuple(hit.reasons),
@@ -610,6 +620,9 @@ def _comparator_from_rows(
         comparison_label=comparison_label,
         model=comparator.model,
         experiment_id=comparator.experiment_id,
+        serving_config_label=_serving_config_label(comparator),
+        tensor_parallel_size=comparator.tensor_parallel_size,
+        gpu_count=comparator.gpu_count,
         mst_rps=float(comparator.mst_rps),
         model_size_b=comparator.model_size_b,
         rate_ratio_vs_comparator=(row.mst_rps / comparator.mst_rps if comparator.mst_rps > 0 else 0.0),
@@ -675,6 +688,28 @@ def _scope_label(row: MSTRow) -> str:
         f"seqs={row.max_num_seqs}; batched={row.max_num_batched_tokens}; "
         f"max_model_len={row.max_model_len}; tp={row.tensor_parallel_size}"
     )
+
+
+def _model_serving_label(row: MSTRow) -> str:
+    return f"{row.model} ({_serving_config_label(row)})"
+
+
+def _serving_config_label(row: MSTRow) -> str:
+    parts = [
+        f"tp={row.tensor_parallel_size if row.tensor_parallel_size is not None else '-'}",
+        f"gpus={row.gpu_count if row.gpu_count is not None else '-'}",
+    ]
+    if row.max_model_len is not None:
+        parts.append(f"max_model_len={row.max_model_len}")
+    if row.max_num_seqs is not None:
+        parts.append(f"seqs={row.max_num_seqs:g}")
+    if row.max_num_batched_tokens is not None:
+        parts.append(f"batched={row.max_num_batched_tokens:g}")
+    if row.dtype:
+        parts.append(f"dtype={row.dtype}")
+    if row.quantization:
+        parts.append(f"quant={row.quantization}")
+    return ", ".join(parts)
 
 
 def _variant_mismatch(left: MSTRow, right: MSTRow) -> bool:

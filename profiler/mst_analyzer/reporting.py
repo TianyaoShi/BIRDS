@@ -132,13 +132,13 @@ def _render_markdown(report_payload: Mapping[str, Any]) -> str:
         anomaly_mapping = _require_mapping(anomaly, "report.anomalies[]")
         comparators = _require_list(anomaly_mapping.get("comparators"), "report.anomalies[].comparators")
         comparator_text = ", ".join(
-            _require_mapping(comparator, "report.anomalies[].comparators[]")["model"]
+            _display_model(_require_mapping(comparator, "report.anomalies[].comparators[]"))
             for comparator in comparators[:3]
         ) or "-"
         lines.append(
             "| "
             f"{anomaly_mapping['severity']} ({anomaly_mapping['severity_score']}) | "
-            f"{anomaly_mapping['model']} | "
+            f"{_display_model(anomaly_mapping)} | "
             f"{anomaly_mapping['mst_rps']:.2f} | "
             f"{', '.join(anomaly_mapping['families'])} | "
             f"{comparator_text} |"
@@ -155,6 +155,7 @@ def _render_markdown(report_payload: Mapping[str, Any]) -> str:
     )
     for bucket in buckets:
         bucket_mapping = _require_mapping(bucket, "report.buckets[]")
+        members = bucket_mapping.get("member_labels") or bucket_mapping["models"]
         lines.append(
             "| "
             f"{bucket_mapping['bucket_name']} | "
@@ -162,7 +163,7 @@ def _render_markdown(report_payload: Mapping[str, Any]) -> str:
             f"{bucket_mapping['model_count']} | "
             f"{bucket_mapping['median_mst_rps']:.2f} | "
             f"{_format_optional_float(bucket_mapping.get('median_total_token_throughput'))} | "
-            f"{', '.join(bucket_mapping['models'])} |"
+            f"{', '.join(members)} |"
         )
 
     lines.extend(
@@ -184,9 +185,9 @@ def _render_markdown(report_payload: Mapping[str, Any]) -> str:
             continue
         lines.append(
             "| "
-            f"{anomaly_mapping['model']} | "
+            f"{_display_model(anomaly_mapping)} | "
             f"{anomaly_mapping['mst_rps']:.2f} | "
-            f"{comparator['model']} | "
+            f"{_display_model(comparator)} | "
             f"{comparator['mst_rps']:.2f} | "
             f"{comparator['comparison_label']} | "
             f"{comparator['reason']} |"
@@ -217,7 +218,7 @@ def _render_markdown(report_payload: Mapping[str, Any]) -> str:
         reason = "; ".join(trace_reasons[:2])
         lines.append(
             "| "
-            f"{anomaly_mapping['model']} | "
+            f"{_display_model(anomaly_mapping)} | "
             f"{anomaly_mapping['mst_rps']:.2f} | "
             f"{anomaly_mapping.get('confidence') or '-'} | "
             f"{anomaly_mapping.get('confirmation_trial_id') or '-'} | "
@@ -239,7 +240,7 @@ def _render_markdown(report_payload: Mapping[str, Any]) -> str:
         reason_list = _require_list(diagnostic_mapping.get("reasons"), "report.trace_diagnostics[].reasons")
         lines.append(
             "| "
-            f"{diagnostic_mapping['model']} | "
+            f"{_display_model(diagnostic_mapping)} | "
             f"{_format_optional_float(diagnostic_mapping.get('mst_rps'))} | "
             f"{diagnostic_mapping.get('confidence') or '-'} | "
             f"{diagnostic_mapping.get('confirmation_trial_id') or '-'} | "
@@ -250,7 +251,7 @@ def _render_markdown(report_payload: Mapping[str, Any]) -> str:
     lines.extend(["", "## Findings", ""])
     for anomaly in anomalies:
         anomaly_mapping = _require_mapping(anomaly, "report.anomalies[]")
-        lines.append(f"### {anomaly_mapping['severity'].title()}: {anomaly_mapping['model']}")
+        lines.append(f"### {anomaly_mapping['severity'].title()}: {_display_model(anomaly_mapping)}")
         lines.append("")
         lines.append(f"- Summary: {anomaly_mapping['summary']}")
         lines.append(f"- Suggested action: {anomaly_mapping['suggested_action']}")
@@ -262,7 +263,7 @@ def _render_markdown(report_payload: Mapping[str, Any]) -> str:
             comparator_mapping = _require_mapping(comparator, "report.anomalies[].comparators[]")
             lines.append(
                 "- Comparator: "
-                f"{comparator_mapping['model']} ({comparator_mapping['mst_rps']:.2f} rps, "
+                f"{_display_model(comparator_mapping)} ({comparator_mapping['mst_rps']:.2f} rps, "
                 f"{comparator_mapping['comparison_label']}, "
                 f"ratio={comparator_mapping['rate_ratio_vs_comparator']:.2f}, "
                 f"delta={comparator_mapping['absolute_delta_rps']:.2f} rps)"
@@ -364,7 +365,7 @@ def _write_suggested_rerun_manifest(
         raise RuntimeError("manifest.experiments must be a list")
 
     filtered_experiments: list[dict[str, Any]] = []
-    for raw_experiment in experiments:
+    for source_index, raw_experiment in enumerate(experiments):
         if not isinstance(raw_experiment, Mapping):
             raise RuntimeError("manifest experiments[] entries must be mappings")
         experiment = dict(raw_experiment)
@@ -386,6 +387,7 @@ def _write_suggested_rerun_manifest(
         matched_rows = [
             row
             for row in extracted.rows
+            if extracted.expanded_jobs[row.experiment_id].source_index == source_index
             if row.experiment_id in selected_experiment_set
             and row.model in selected_model_set
             and row.workload_path in selected_workload_set
@@ -515,3 +517,20 @@ def _format_optional_float(value: object) -> str:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return "-"
     return f"{float(value):.2f}"
+
+
+def _display_model(item: Mapping[str, Any]) -> str:
+    model = str(item.get("model") or "unknown")
+    serving_label = item.get("serving_config_label")
+    if not isinstance(serving_label, str) or not serving_label:
+        tp = item.get("tensor_parallel_size")
+        gpu_count = item.get("gpu_count")
+        parts = []
+        if tp is not None:
+            parts.append(f"tp={tp}")
+        if gpu_count is not None:
+            parts.append(f"gpus={gpu_count}")
+        serving_label = ", ".join(parts)
+    if serving_label:
+        return f"{model} ({serving_label})"
+    return model

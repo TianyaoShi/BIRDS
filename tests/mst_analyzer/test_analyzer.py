@@ -12,7 +12,7 @@ from mst_analyzer.config import AnalyzerSettings, load_settings
 from mst_analyzer.extract import extract_run
 from mst_analyzer.models import MSTRow, TraceInstabilityEvidence, TrialArtifactRef
 from mst_analyzer.reporting import analyze_orchestrator_run
-from mst_analyzer.rules import analyze_rows, analyze_rows_with_diagnostics
+from mst_analyzer.rules import analyze_rows, analyze_rows_with_diagnostics, build_bucket_summaries
 from slurm_orchestrator.planning import deserialize_expanded_job, materialize_run_plan
 from slurm_orchestrator.state import collect_run, finalize_task
 
@@ -382,6 +382,8 @@ def _row(
     max_num_batched_tokens: int,
     confidence: str = "high",
     trace_instability: TraceInstabilityEvidence | None = None,
+    tensor_parallel_size: int = 1,
+    gpu_count: int = 1,
 ) -> MSTRow:
     result_dir = tmp_path / "results" / experiment_id
     result_dir.mkdir(parents=True, exist_ok=True)
@@ -409,8 +411,8 @@ def _row(
         max_num_seqs=float(max_num_seqs),
         max_num_batched_tokens=float(max_num_batched_tokens),
         max_model_len=32768,
-        tensor_parallel_size=1,
-        gpu_count=1,
+        tensor_parallel_size=tensor_parallel_size,
+        gpu_count=gpu_count,
         dtype="float16",
         quantization=None,
         is_quantized=False,
@@ -655,6 +657,69 @@ def test_rules_do_not_over_alert_for_sub_one_rps_models(tmp_path: Path) -> None:
 
     anomalies, _ = analyze_rows([llama13, qwen14])
     assert anomalies == []
+
+
+def test_rules_keep_tensor_parallel_scopes_separate(tmp_path: Path) -> None:
+    qwen32_tp1 = _row(
+        tmp_path,
+        experiment_id="qwen32-tp1",
+        model="Qwen/Qwen3-32B",
+        family="qwen3",
+        variant=None,
+        size_b=32.0,
+        bucket="giant",
+        mst_rps=2.0,
+        ttft_slo_ms=1000,
+        tpot_slo_ms=150,
+        max_num_seqs=128,
+        max_num_batched_tokens=4096,
+        tensor_parallel_size=1,
+        gpu_count=1,
+    )
+    qwen32_tp2 = _row(
+        tmp_path,
+        experiment_id="qwen32-tp2",
+        model="Qwen/Qwen3-32B",
+        family="qwen3",
+        variant=None,
+        size_b=32.0,
+        bucket="giant",
+        mst_rps=9.0,
+        ttft_slo_ms=1000,
+        tpot_slo_ms=150,
+        max_num_seqs=128,
+        max_num_batched_tokens=4096,
+        tensor_parallel_size=2,
+        gpu_count=2,
+    )
+    gpt_oss_tp2 = _row(
+        tmp_path,
+        experiment_id="gpt-oss-tp2",
+        model="openai/gpt-oss-120b",
+        family="gpt",
+        variant=None,
+        size_b=120.0,
+        bucket="giant",
+        mst_rps=10.0,
+        ttft_slo_ms=1000,
+        tpot_slo_ms=150,
+        max_num_seqs=128,
+        max_num_batched_tokens=4096,
+        tensor_parallel_size=2,
+        gpu_count=2,
+    )
+
+    rows = [qwen32_tp1, qwen32_tp2, gpt_oss_tp2]
+    buckets = build_bucket_summaries(rows)
+    anomalies, _ = analyze_rows(rows)
+
+    assert len(buckets) == 1
+    assert buckets[0].model_count == 2
+    assert buckets[0].median_mst_rps == pytest.approx(9.5)
+    assert "tp=2" in buckets[0].comparable_group
+    assert all("tp=2" in label for label in buckets[0].member_labels)
+    assert all("tp=1" not in label for label in buckets[0].member_labels)
+    assert not any(anomaly.experiment_id == "qwen32-tp1" for anomaly in anomalies)
 
 
 def test_rules_do_not_flag_moderate_cross_family_larger_model_gap(tmp_path: Path) -> None:
@@ -952,6 +1017,10 @@ def test_report_includes_evidence_paths_and_rerun_manifest_uses_distinct_workloa
     report_payload = json.loads(artifacts.report_json_path.read_text(encoding="utf-8"))
     assert report_payload["anomalies"]
     first_anomaly = report_payload["anomalies"][0]
+    assert first_anomaly["tensor_parallel_size"] == 1
+    assert first_anomaly["serving_config_label"].startswith("tp=1")
+    report_markdown = artifacts.report_md_path.read_text(encoding="utf-8")
+    assert "tp=1" in report_markdown
     evidence_paths = first_anomaly["evidence_paths"]
     assert any(path.endswith("search_trace.json") for path in evidence_paths)
     assert any(path.endswith("summary.json") for path in evidence_paths)
@@ -965,6 +1034,114 @@ def test_report_includes_evidence_paths_and_rerun_manifest_uses_distinct_workloa
     assert rerun_workload_path.stem.endswith("_mst_anomaly_rerun")
     rerun_workload_payload = yaml.safe_load(rerun_workload_path.read_text(encoding="utf-8"))
     assert rerun_workload_payload["name"].endswith("_mst_anomaly_rerun")
+
+
+def test_rerun_manifest_keeps_duplicate_model_tensor_parallel_experiment_precise(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    workload = _write_workload(tmp_path)
+    manifest_path = tmp_path / "experiments" / "manifest.yaml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        yaml.safe_dump(
+            {
+                "run": {
+                    "run_id": "fixture-run",
+                    "output_root": "results/orchestrator",
+                    "python_executable": "python",
+                },
+                "probe": {"enabled": False},
+                "launch": {
+                    "gpu_count": 1,
+                    "tensor_parallel_size": 1,
+                    "dtype": "float16",
+                    "max_model_len": 32768,
+                },
+                "search": {
+                    "search_mode": "open-loop",
+                    "trial_min_duration_s": 120,
+                    "trial_max_duration_s": 240,
+                    "final_confirmation_duration_s": 240,
+                    "rate_precision": 0.1,
+                    "ttft_slo_ms": 250,
+                    "tpot_slo_ms": 50,
+                    "max_num_seqs": 1024,
+                    "max_num_batched_tokens": 8192,
+                },
+                "experiments": [
+                    {
+                        "id": "qwen32-tp1",
+                        "model": "Qwen/Qwen3-32B",
+                        "workload": str(workload),
+                    },
+                    {
+                        "id": "qwen32-tp2",
+                        "model": "Qwen/Qwen3-32B",
+                        "workload": str(workload),
+                        "launch": {"gpu_count": 2, "tensor_parallel_size": 2},
+                    },
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    jobs = {job.experiment_id: job for job in expand_manifest(load_manifest(manifest_path))}
+    job = jobs["qwen32-tp2"]
+    _write_result_bundle(
+        job,
+        workload_path=workload,
+        mst_rps=4.0,
+        high_bound_rate=4.5,
+        ttft_slo_ms=250,
+        tpot_slo_ms=50,
+        max_num_seqs=1024,
+        max_num_batched_tokens=8192,
+        confidence="low",
+        include_majority_conflict=True,
+    )
+    result_dir = Path(job.result_dir)
+    run_root = tmp_path / "results" / "orchestrator" / "fixture-run"
+    run_root.mkdir(parents=True, exist_ok=True)
+    (run_root / "state.json").write_text(
+        json.dumps({"manifest_path": str(manifest_path)}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (run_root / "summary.json").write_text(
+        json.dumps(
+            {
+                "jobs": [
+                    {
+                        "experiment_id": job.experiment_id,
+                        "status": "succeeded",
+                        "result_dir": str(result_dir),
+                        "artifacts": {
+                            "search_trace": str(result_dir / "search_trace.json"),
+                            "final_report_json": str(result_dir / "final_report.json"),
+                        },
+                    }
+                ]
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    artifacts = analyze_orchestrator_run(
+        orchestrator_run_root=run_root,
+        output_dir=tmp_path / "results" / "analysis" / "fixture-run",
+        emit_rerun_manifest=True,
+        settings=AnalyzerSettings.from_dict({"include_trace_only_findings": True}),
+    )
+
+    assert artifacts.rerun_manifest_path is not None
+    rerun_manifest = yaml.safe_load(artifacts.rerun_manifest_path.read_text(encoding="utf-8"))
+    assert [experiment["id"] for experiment in rerun_manifest["experiments"]] == ["qwen32-tp2"]
+    assert rerun_manifest["experiments"][0]["launch"]["tensor_parallel_size"] == 2
 
 
 def test_report_keeps_trace_only_findings_as_diagnostics_by_default(

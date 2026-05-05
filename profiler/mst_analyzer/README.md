@@ -117,6 +117,8 @@ Primary comparisons require matching:
 - tensor parallel size
 - dtype / quantization
 
+When the same model appears multiple times with different tensor parallel sizes, each serving configuration is treated as a distinct result. Bucket summaries, anomaly comparators, Markdown tables, JSON report entries, rerun manifests, and plot annotations include the TP/GPU serving label so TP1, TP2, and TP4 MSTs are not visually collapsed under one model name.
+
 SLO mismatches are still allowed for contextual comparisons, but they are penalized in severity and labeled accordingly.
 
 Quantized and MoE models are suppressed from bucket summaries by default unless you relax those suppressions in settings. They are not globally removed from all comparison rules; if a comparison is otherwise compatible, the report can still use it with quantization/MoE metadata visible in the extracted rows.

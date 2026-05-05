@@ -110,6 +110,9 @@ class ComparatorEvidence:
     comparison_label: ComparabilityLabel
     model: str
     experiment_id: str
+    serving_config_label: str
+    tensor_parallel_size: int | None
+    gpu_count: int | None
     mst_rps: float
     model_size_b: float | None
     rate_ratio_vs_comparator: float
@@ -131,6 +134,9 @@ class ComparatorEvidence:
 class AnomalyCandidate:
     experiment_id: str
     model: str
+    serving_config_label: str
+    tensor_parallel_size: int | None
+    gpu_count: int | None
     mst_rps: float
     confidence: Confidence | None
     severity_score: int
@@ -155,6 +161,9 @@ class AnomalyCandidate:
 class TraceDiagnostic:
     experiment_id: str
     model: str
+    serving_config_label: str
+    tensor_parallel_size: int | None
+    gpu_count: int | None
     mst_rps: float | None
     confidence: Confidence | None
     reasons: tuple[str, ...]
@@ -175,6 +184,7 @@ class BucketSummary:
     median_mst_rps: float
     median_total_token_throughput: float | None
     models: tuple[str, ...]
+    member_labels: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return _serialize(asdict(self))

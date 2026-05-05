@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import Counter
 from itertools import cycle
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -70,6 +71,7 @@ def plot_model_size_vs_mst(
     )
 
     if annotate:
+        model_counts = Counter(str(point["model"]) for point in points)
         offsets = (
             (0, 10),
             (10, 6),
@@ -80,7 +82,7 @@ def plot_model_size_vs_mst(
         )
         for index, point in enumerate(points):
             dx, dy = offsets[index % len(offsets)]
-            label = _default_annotation_label(point)
+            label = _default_annotation_label(point, duplicate_model=model_counts[str(point["model"])] > 1)
             axis.annotate(
                 label,
                 xy=(float(point["model_size_b"]), float(point["mst_rps"])),
@@ -180,23 +182,32 @@ def _coerce_point(row: MSTRow | Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(row, MSTRow):
         return {
             "model": row.model,
+            "experiment_id": row.experiment_id,
             "model_size_b": _maybe_float(row.model_size_b),
             "mst_rps": _maybe_float(row.mst_rps),
             "bottleneck_class": row.bottleneck_class,
+            "tensor_parallel_size": row.tensor_parallel_size,
+            "gpu_count": row.gpu_count,
         }
     if isinstance(row, Mapping):
         return {
             "model": row.get("model"),
+            "experiment_id": row.get("experiment_id"),
             "model_size_b": _maybe_float(row.get("model_size_b")),
             "mst_rps": _maybe_float(row.get("mst_rps")),
             "bottleneck_class": row.get("bottleneck_class"),
+            "tensor_parallel_size": row.get("tensor_parallel_size"),
+            "gpu_count": row.get("gpu_count"),
         }
     raise TypeError(f"unsupported row type for plotting: {type(row)!r}")
 
 
-def _default_annotation_label(point: Mapping[str, Any]) -> str:
+def _default_annotation_label(point: Mapping[str, Any], *, duplicate_model: bool) -> str:
     model = str(point.get("model") or "unknown")
     short_model = model.split("/")[-1]
+    tp = point.get("tensor_parallel_size")
+    if duplicate_model or (tp is not None and tp != 1):
+        return f"{short_model}\ntp={tp if tp is not None else '-'}"
     return short_model
 
 
