@@ -26,6 +26,9 @@ experiments/energy/synthetic*
 experiments/dataset_inspections/
 experiments/debug/
 experiments/code_workloads/*/
+experiments/workloads/*4096*
+experiments/workloads/*8192*
+experiments/workloads/*16384*
 
 # Environment and local overrides
 .env
