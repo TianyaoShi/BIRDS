@@ -107,3 +107,72 @@ The adapter intentionally avoids one shared `state.json` while Slurm tasks are r
 - Probe output from manifest expansion is preserved in the per-job payloads and state files.
 
 This adapter assumes one vLLM server per Slurm task and does not implement cross-node tensor parallelism.
+
+## Milestone: Slurm Energy Profiling
+
+The current Slurm adapter submits MST search/report work only. `energy_profiler`
+can consume completed orchestrator outputs and run fixed-rate energy profiling
+locally, but there is not yet a Slurm backend for executing `EnergyPlanJob`
+arrays on the cluster.
+
+Target capability:
+
+```bash
+PYTHONPATH=/path/to/BioLLM/profiler \
+  /path/to/venv/bin/python -m slurm_orchestrator.cli energy-submit \
+  --plan /path/to/experiments/energy/<plan_id>.yaml
+```
+
+Planned implementation steps:
+
+1. Make Slurm MST runs first-class inputs to `energy_profiler` plan generation.
+   `slurm_orchestrator.collect_run()` should persist the aggregate state to
+   `state.json` in addition to `summary.json` and `summary.md`, so
+   `energy_profiler.planning` can read the source `manifest_path` through the
+   same contract it already uses for `local_orchestrator` roots. A compatible
+   fallback to `plan.json` is acceptable, but the preferred output contract is
+   to write `state.json` after collection.
+
+2. Add an `energy-submit --plan ...` Slurm command. This command should load an
+   `EnergyPlan`, materialize `EnergyPlanJob` entries into Slurm array groups,
+   and submit them with the same run-root structure, per-job JSON state,
+   resume/collect semantics, module setup, venv setup, and diagnostic logging
+   style used by MST Slurm jobs.
+
+3. Reuse existing `energy_profiler` logic where possible. The Slurm array task
+   should still run one energy profiling job per task: start one vLLM server,
+   collect an idle power baseline, run one fixed-rate open-loop
+   `llm_mst_finder.cli run-trial`, collect traffic power, write
+   `gpu_power.json`, compute `energy_summary.json`, finalize state, and tear
+   down the server. Avoid local GPU leasing inside a Slurm task; Slurm owns GPU
+   allocation and the task should monitor the GPU IDs exposed to that task.
+
+Open design questions before implementation:
+
+- Should energy Slurm runs live under `results/energy/<plan_id>` to match
+  `energy_profiler`, or under `results/orchestrator/<energy_run_id>` to match
+  Slurm submission bookkeeping?
+  A: `results/energy/<plan_id>/<energy_slurm_run_id>`
+- Should the energy Slurm CLI be part of `slurm_orchestrator.cli` as
+  `energy-submit` / `energy-collect` / `energy-resume`, or should it become a
+  separate package/CLI such as `energy_slurm_orchestrator`?
+  A: part of `slurm_orchestrator.cli` as `energy-submit` / `energy-collect` / `energy-resume`
+- Should energy jobs group by `launch.gpu_count`, by server signature, or both?
+  Grouping by server signature helps reason about repeated sweep rates, but
+  one Slurm task per fixed-rate job is simpler and more failure-isolated.
+  A: one Slurm task per fixed-rate job
+- Should Slurm energy jobs restart vLLM for every fixed-rate point, or support
+  an optional mode that runs multiple rates for the same server signature in
+  one allocation to reduce startup overhead?
+  A: For normal use case (mst_rounded), since we just do energy profiling on each model-workload pair's MST, there's no need to restart vLLM at all; there's only one fixed-rate point per job. For other use cases (sweep, explicit), we can consider an optional mode that runs multiple rates for the same server signature in one allocation with no restart, but only sleep between trials. The priority is to support mst_rounded first.
+- Which GPU identifier should power monitoring use on this cluster:
+  physical IDs from `nvidia-smi`, CUDA-local IDs after `CUDA_VISIBLE_DEVICES`,
+  or `SLURM_JOB_GPUS` translated to physical IDs?
+  A: `nvidia-smi` physical IDs
+- Should energy plans carry Slurm fields directly, or should `energy-submit`
+  accept `--manifest` / `--slurm-config` to reuse account, partition, qos,
+  modules, setup commands, and time limits from the MST manifest?
+  A: we will need a configurable time limit for energy jobs, but other Slurm fields can be inherited from the MST manifest. The cleanest way is still to keep everything in the energy plan, so we can have a self-contained plan that can be submitted without needing to reference the original MST manifest.
+- What default Slurm time limit should a single energy job request? It should
+  account for vLLM startup, idle baseline, trial duration, cooldown, and cleanup.
+  A: 30 minutes for mst_rounded mode, which runs one trial per job. For sweep and explicit modes, we can consider a longer time limit or a configurable time limit that scales with the number of rates per job.
