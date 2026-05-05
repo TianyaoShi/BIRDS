@@ -42,8 +42,8 @@ search:
   max_binary_steps: 8
   max_bracket_trials: 14
   metrics_interval_s: 1.0
-  window_s: 10.0
-  ttft_slo_ms: 2000
+  window_s: 30.0
+  ttft_slo_ms: 15000
   tpot_slo_ms: 150
   ttft_slo_field: ttft_p90_ms
   tpot_slo_field: tpot_p90_ms
@@ -69,8 +69,7 @@ overrides:
       max_request_rate: 16
       max_binary_steps: 10
       max_bracket_trials: 18
-      ttft_slo_ms: 1000
-      tpot_slo_ms: 50
+      ttft_slo_ms: 5000
 
   - match:
       models:
@@ -84,8 +83,7 @@ overrides:
       max_request_rate: 8
       max_binary_steps: 9
       max_bracket_trials: 16
-      ttft_slo_ms: 1500
-      tpot_slo_ms: 100
+      ttft_slo_ms: 10000
 
   - match:
       models:
