@@ -11,8 +11,8 @@ set -euo pipefail
 #   HF_IMPORT_REVISION=main   # add --revision <value>
 
 # ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ROOT_DIR="/scratch/gautschi/shi676/BioLLM"
-VENV_ACTIVATE="$ROOT_DIR/.venv/bin/activate"
+ROOT_DIR="/anvil/projects/x-cis250584/BioLLM"
+VENV_ACTIVATE="$ROOT_DIR/.venv-a100/bin/activate"
 LIST_FILE="${1:-}"
 
 if [[ -z "$LIST_FILE" ]]; then
