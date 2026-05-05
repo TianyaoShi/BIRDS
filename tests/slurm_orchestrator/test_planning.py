@@ -180,6 +180,7 @@ def test_collect_run_aggregates_succeeded_and_failed_jobs(tmp_path: Path) -> Non
     assert collected["summary"]["counts"]["succeeded"] == 1
     assert collected["summary"]["counts"]["failed"] == 1
     assert collected["summary"]["status"] == "failed"
+    assert (tmp_path / "runs" / "run-c" / "state.json").is_file()
     assert (tmp_path / "runs" / "run-c" / "summary.json").is_file()
     assert (tmp_path / "runs" / "run-c" / "summary.md").is_file()
 

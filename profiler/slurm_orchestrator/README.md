@@ -92,9 +92,9 @@ The run root contains:
 - `logs/*.mst.stderr.log`
 - `logs/slurm-<group>-%A_%a.out`
 - `logs/slurm-<group>-%A_%a.err`
-- `summary.json` / `summary.md` after `collect`
+- `state.json` / `summary.json` / `summary.md` after `collect`
 
-The adapter intentionally avoids one shared `state.json` while Slurm tasks are running.
+The adapter intentionally avoids one shared `state.json` while Slurm tasks are running. `collect` writes the aggregate `state.json` after reading per-job state files so downstream tools such as `mst_analyzer` and `energy_profiler` can consume Slurm runs through the same run-root contract as local orchestrator runs.
 
 ## Operational Notes
 

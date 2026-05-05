@@ -13,6 +13,8 @@ from mst_analyzer.extract import extract_run
 from mst_analyzer.models import MSTRow, TraceInstabilityEvidence, TrialArtifactRef
 from mst_analyzer.reporting import analyze_orchestrator_run
 from mst_analyzer.rules import analyze_rows, analyze_rows_with_diagnostics
+from slurm_orchestrator.planning import deserialize_expanded_job, materialize_run_plan
+from slurm_orchestrator.state import collect_run, finalize_task
 
 
 def _write_workload(tmp_path: Path, *, name: str = "live_sharegpt_workload_context") -> Path:
@@ -463,6 +465,36 @@ def test_extract_infers_common_model_sizes(tmp_path: Path, monkeypatch: pytest.M
     assert sizes["google/gemma-4-E4B-it"] == pytest.approx(4.0)
     assert sizes["meta-llama/Llama-2-13b-chat-hf"] == pytest.approx(13.0)
     assert sizes["Qwen/Qwen3-14B"] == pytest.approx(14.0)
+
+
+def test_extract_run_accepts_collected_slurm_orchestrator_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    workload = _write_workload(tmp_path)
+    manifest_path = _write_manifest(tmp_path, workload, models=["Qwen/Qwen3-8B"])
+    plan = materialize_run_plan(load_manifest(manifest_path), "slurm-fixture-run")
+    group_plan_path = Path(plan["groups"][0]["plan_path"])
+    group_payload = json.loads(group_plan_path.read_text(encoding="utf-8"))
+    job = deserialize_expanded_job(group_payload["jobs"][0]["job"])
+
+    _write_result_bundle(
+        job,
+        workload_path=workload,
+        mst_rps=4.0,
+        high_bound_rate=4.5,
+        ttft_slo_ms=250,
+        tpot_slo_ms=50,
+        max_num_seqs=1024,
+        max_num_batched_tokens=8192,
+    )
+    finalize_task(group_plan_path, 0, exit_code=0, search_started=True)
+    collect_run(Path(plan["run_root"]))
+
+    extracted = extract_run(Path(plan["run_root"]))
+
+    assert (Path(plan["run_root"]) / "state.json").is_file()
+    assert len(extracted.rows) == 1
+    assert extracted.rows[0].experiment_id == job.experiment_id
+    assert extracted.rows[0].mst_rps == pytest.approx(4.0)
 
 
 def test_rules_flag_expected_anomalies_and_contextual_slo_mismatch(tmp_path: Path) -> None:

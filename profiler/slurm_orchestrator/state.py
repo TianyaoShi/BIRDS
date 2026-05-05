@@ -93,7 +93,9 @@ def collect_run(run_root: str | Path) -> dict[str, Any]:
         "updated_at": latest_update,
         "jobs": jobs,
     }
-    store = RunStateStore(Path(str(plan["run_root"])))
+    run_root_path = Path(str(plan["run_root"]))
+    store = RunStateStore(run_root_path)
+    store.save(aggregate_state)
     summary = store.write_summary_files(aggregate_state)
     return {
         "run_root": str(plan["run_root"]),
