@@ -105,6 +105,155 @@ Recent real materialization counts:
 - CrossCodeEval RG1 UnixCoder: 9,927 samples, 2 shards.
 - RepoBench Python+Java aggregate: 46,781 samples, 6 shards.
 
+## Length Statistics
+
+The materialized rows record whitespace-tokenized prompt and target lengths in
+`metadata.prompt_token_count` and `metadata.target_token_count`. These are the
+dataset/materializer token counts used by the generated workload YAMLs.
+
+Tracked real workload summaries:
+
+| Workload | Samples | Input mean | Input p50 | Input p90 | Input p95 | Input p99 | Input max | Output mean | Output p50 | Output p90 | Output p95 | Output p99 | Output max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| CrossCodeEval RG1 UnixCoder | 9,927 | 583.5 | 490 | 963.4 | 1,221.4 | 1,842.4 | 4,517 | 4.0 | 3 | 8 | 10 | 14.7 | 37 |
+| RepoBench Python+Java aggregate | 46,781 | 2,910.6 | 1,010 | 8,308 | 10,880 | 16,519 | 19,999 | 4.0 | 3 | 7 | 9 | 14 | 113 |
+
+RepoBench aggregate includes three task shapes:
+
+| RepoBench task | Samples | Input mean | Input p50 | Input p90 | Input p95 | Input p99 | Output mean | Output p50 | Output p90 | Output p95 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `in_file` | 15,980 | 302.6 | 285 | 526 | 607 | 895.6 | 3.5 | 3 | 7 | 9 |
+| `cross_file_first` | 15,768 | 4,357.4 | 3,196 | 10,269.7 | 12,702.9 | 18,589.9 | 4.2 | 4 | 7 | 9 |
+| `cross_file_random` | 15,033 | 4,165.4 | 3,079 | 9,686.8 | 12,348.6 | 17,589.1 | 4.5 | 4 | 8 | 10 |
+
+The important profiling consequence is that code-completion outputs are tiny:
+p90 output is only 7-8 tokens and p95 is 9-10 tokens. Compared with WildChat,
+TPOT is less informative than TTFT/prefill behavior. CrossCodeEval is a
+moderate-input workload; RepoBench aggregate is dominated by cross-file prompt
+prefill and has a long input tail.
+
+### LongBench Comparison
+
+LongBench-style serving papers commonly use a much looser summarization SLO
+than interactive code completion. DistServe and GreenLLM both report LongBench
+summarization with TTFT SLO 15s and TPOT SLO 150ms; DistServe also reports a
+separate code-completion SLO of TTFT 125ms and TPOT 200ms. That 15s target is a
+reasonable long-document summarization reference point, but it should not be
+copied onto RepoBench: RepoBench prompts can be long, but the expected output is
+still a single-line completion with p90/p95 around 7/9 tokens.
+
+Reference points:
+
+- DistServe: https://arxiv.org/abs/2401.09670
+- GreenLLM: https://arxiv.org/abs/2412.20322
+
+The local `llm_mst_finder` LongBench workload caches show the same split. The
+NL workload is long-context and often long-output summarization:
+
+| LongBench-NL task | Samples | Input p50 | Input p90 | Input p95 | Output p50 | Output p90 | Output p95 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `2wikimqa` | 95 | 6,733 | 13,567 | 15,504 | 4 | 8 | 9 |
+| `2wikimqa_e` | 128 | 8,427 | 16,041 | 16,667 | 4 | 7 | 8 |
+| `dureader` | 92 | 10,575 | 14,275 | 16,289 | 60 | 202 | 259 |
+| `gov_report` | 85 | 8,055 | 16,844 | 18,418 | 731 | 934 | 975 |
+| `gov_report_e` | 128 | 7,533 | 15,773 | 19,130 | 757 | 927 | 975 |
+| `hotpotqa` | 91 | 14,490 | 17,065 | 17,161 | 4 | 6 | 9 |
+| `hotpotqa_e` | 139 | 9,720 | 16,406 | 16,718 | 4 | 9 | 10 |
+| `lsht` | 84 | 13,442 | 21,963 | 23,028 | 3 | 5 | 5 |
+| `multi_news` | 98 | 2,203 | 4,812 | 6,211 | 300 | 402 | 420 |
+| `multi_news_e` | 122 | 7,644 | 16,711 | 18,603 | 334 | 480 | 537 |
+| `multifieldqa_en` | 60 | 6,948 | 10,462 | 11,483 | 15 | 31 | 37 |
+| `multifieldqa_en_e` | 73 | 7,468 | 13,233 | 13,723 | 15 | 29 | 36 |
+| `multifieldqa_zh` | 84 | 3,958 | 7,568 | 8,520 | 10 | 25 | 35 |
+| `musique` | 81 | 16,788 | 17,209 | 17,356 | 4 | 8 | 9 |
+| `narrativeqa` | 71 | 31,315 | 46,729 | 64,142 | 5 | 12 | 14 |
+| `passage_count` | 84 | 15,545 | 21,073 | 23,242 | 2 | 2 | 2 |
+| `passage_count_e` | 132 | 8,142 | 13,153 | 13,736 | 1 | 2 | 2 |
+| `passage_retrieval_en` | 77 | 12,875 | 14,545 | 15,006 | 4 | 4 | 4 |
+| `passage_retrieval_en_e` | 136 | 7,677 | 12,891 | 13,301 | 3 | 4 | 4 |
+| `passage_retrieval_zh` | 78 | 4,614 | 5,281 | 5,525 | 4 | 4 | 4 |
+| `qasper` | 89 | 4,367 | 6,680 | 7,486 | 16 | 53 | 90 |
+| `qasper_e` | 94 | 5,473 | 7,603 | 10,678 | 18 | 61 | 76 |
+| `qmsum` | 104 | 13,009 | 23,456 | 29,670 | 78 | 130 | 151 |
+| `samsum` | 89 | 9,670 | 15,897 | 16,490 | 25 | 49 | 52 |
+| `samsum_e` | 131 | 9,256 | 15,372 | 16,283 | 23 | 41 | 51 |
+| `trec` | 89 | 6,445 | 10,802 | 11,158 | 2 | 3 | 4 |
+| `trec_e` | 135 | 8,612 | 15,309 | 16,759 | 2 | 3 | 4 |
+| `triviaqa` | 90 | 11,130 | 20,299 | 22,045 | 6 | 9 | 11 |
+| `triviaqa_e` | 146 | 9,982 | 18,628 | 20,267 | 6 | 10 | 11 |
+| `vcsum` | 95 | 7,385 | 15,577 | 17,456 | 144 | 174 | 181 |
+
+LongBench-code is closer to RepoBench in output length, but it is still a
+benchmark workload rather than an IDE latency target:
+
+| LongBench-code task | Samples | Input p50 | Input p90 | Input p95 | Output p50 | Output p90 | Output p95 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `lcc` | 500 | 883 | 2,181 | 2,864 | 4 | 7 | 9 |
+| `lcc_e` | 300 | 5,064 | 10,378 | 11,925 | 4 | 7 | 8 |
+| `repobench-p` | 500 | 3,507 | 7,578 | 9,051 | 3 | 7 | 8 |
+| `repobench-p_e` | 300 | 5,252 | 10,892 | 12,663 | 3 | 7 | 8 |
+
+Because of this, the code-workload manifest caps RepoBench TTFT at 5s. This is
+still slow for a one-line IDE completion, but it avoids treating a 12-15s
+first-token delay as acceptable just because the prompt has a long retrieved
+context tail.
+
+### RepoBench Context Limits
+
+The cleanest place to enforce a 4k/8k RepoBench prompt budget is the code
+workload materializer, before shard writing. The materializer is where
+dataset-specific semantics live, and it can apply an IDE-realistic retrieval
+budget while preserving the current-file prefix and dropping or shortening
+retrieved cross-file context. The `llm_mst_finder` workload path should remain a
+generic runner over already-materialized JSONL rows.
+
+The immediate drop-overlength option is config-only: lower
+`filtering.max_prompt_tokens` in
+`experiments/code_workloads/repobench_python_java_aggregate_cache_realistic.yaml`
+from its current 20k ceiling to 8k or 4k and rematerialize. That gives a strict,
+fail-fast dataset slice without adding dataset logic to sampling or request
+execution. A smarter future option is a materializer-side truncation policy that
+keeps the current file and cursor-near prefix intact, then truncates retrieved
+context blocks to a configured token budget before final token counting.
+
+## Experiment Manifest
+
+The L40 single-GPU manifest for these workloads is:
+
+```text
+experiments/single_gpu_cached_models_l40_code_workloads.yaml
+```
+
+It uses `/v1/completions`, not chat completions, and runs one representative
+materialized shard per dataset:
+
+```text
+experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
+experiments/code_workloads/repobench_python_java_aggregate_cache_realistic/workload_yamls/shard_000.yaml
+```
+
+The manifest intentionally does not expand over every RepoBench shard. RepoBench
+is already aggregated across Python, Java, and the supported task modes before
+sharding. `shard_000` is therefore a representative profiling slice used to
+avoid multiplying each model by every shard. This is a throughput/goodput probe,
+not full-dataset evaluation; if representativeness becomes critical, the next
+step is to have the materializer emit a dedicated sampled profiling shard rather
+than launching every physical shard.
+
+SLOs are tuned around the measured input/output profile:
+
+- CrossCodeEval: moderate prompts, p90 output 8 tokens. TTFT targets stay
+  interactive-code oriented, with tighter SLOs for smaller models.
+- RepoBench aggregate: p90 input 8.3k tokens and p95 input 10.9k tokens, but
+  p90 output only 7 tokens. TTFT is prefill-oriented but capped at 5s because
+  this is still an IDE completion workload; TPOT remains relatively tight
+  because completions are short.
+
+`openai/gpt-oss-20b` is omitted from this manifest because the live probes showed
+it is not a useful `/v1/completions` code-completion model in this setup.
+Llama-2 models are also omitted because their shorter context window is a poor
+fit for the RepoBench aggregate input tail.
+
 ## `llm_mst_finder` Integration
 
 Generated YAMLs are ordinary workload YAMLs. Example:
@@ -178,4 +327,3 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 /local/scratch/a/shi676/.venv/bin/python -m pytest \
   tests/code_workload_materializer/test_live_code_workloads.py -q -s
 ```
-
