@@ -10,7 +10,7 @@ from .materialize import materialize_from_config
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="code_workload_materializer.cli",
+        prog="dataset_workload_materializer.cli",
         description="Materialize dataset-specific offline JSONL shards and llm_mst_finder workload YAMLs.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)

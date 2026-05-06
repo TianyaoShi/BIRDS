@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from code_workload_materializer.materialize import materialize_from_config
+from dataset_workload_materializer.materialize import materialize_from_config
 from llm_mst_finder.workload import prepare_workload_for_trial
 
 

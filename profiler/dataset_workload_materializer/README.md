@@ -4,10 +4,9 @@ This package prepares dataset-specific profiling workloads for
 `llm_mst_finder` without adding dataset-specific behavior to the request client,
 trial runner, search loop, or profiler paths.
 
-The package path is still `code_workload_materializer` for compatibility with
-the code-completion materialization work that introduced it. Treat it as the
-dataset materialization boundary: raw dataset artifacts go in, offline JSONL
-shards and ordinary `llm_mst_finder` workload YAMLs come out.
+The import path is `dataset_workload_materializer`. Treat it as the dataset
+materialization boundary: raw dataset artifacts go in, offline JSONL shards and
+ordinary `llm_mst_finder` workload YAMLs come out.
 
 The materializer produces offline JSONL shards plus ordinary
 `llm_mst_finder` workload YAMLs. The generated workload YAMLs use
@@ -92,14 +91,14 @@ Run from the repository root with the project environment:
 ```bash
 PYTHONDONTWRITEBYTECODE=1 \
 PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m code_workload_materializer.cli prepare \
+/local/scratch/a/shi676/.venv/bin/python -m dataset_workload_materializer.cli prepare \
   --config experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic.yaml
 ```
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 \
 PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m code_workload_materializer.cli prepare \
+/local/scratch/a/shi676/.venv/bin/python -m dataset_workload_materializer.cli prepare \
   --config experiments/code_workloads/repobench_python_java_aggregate_cache_realistic.yaml
 ```
 
@@ -302,7 +301,7 @@ Example single-model probe on GPU 0:
 
 ```bash
 PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m code_workload_materializer.live_model_prompt_loop \
+/local/scratch/a/shi676/.venv/bin/python -m dataset_workload_materializer.live_model_prompt_loop \
   --model Qwen/Qwen3-8B \
   --samples-per-workload 8 \
   --max-output-tokens 64 \
@@ -333,20 +332,20 @@ PYTHONDONTWRITEBYTECODE=1 \
 PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 /local/scratch/a/shi676/.venv/bin/python -m pytest \
   tests/llm_mst_finder/test_workload.py \
-  tests/code_workload_materializer/test_materialize.py \
-  tests/code_workload_materializer/test_live_code_workloads.py \
+  tests/dataset_workload_materializer/test_materialize.py \
+  tests/dataset_workload_materializer/test_live_code_workloads.py \
   -q
 ```
 
 The live test is opt-in:
 
 ```bash
-CODE_WORKLOAD_MATERIALIZER_RUN_LIVE=1 \
+DATASET_WORKLOAD_MATERIALIZER_RUN_LIVE=1 \
 CODE_WORKLOAD_LIVE_MODEL=google/gemma-4-E4B-it \
 CODE_WORKLOAD_LIVE_BASE_URL=http://127.0.0.1:8000 \
 CODE_WORKLOAD_LIVE_LOG_PATH=results/live_code_workload_smoke/decoded_responses.jsonl \
 PYTHONDONTWRITEBYTECODE=1 \
 PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 /local/scratch/a/shi676/.venv/bin/python -m pytest \
-  tests/code_workload_materializer/test_live_code_workloads.py -q -s
+  tests/dataset_workload_materializer/test_live_code_workloads.py -q -s
 ```

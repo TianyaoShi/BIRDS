@@ -31,7 +31,10 @@ from local_orchestrator.utils import runtime_server_signature
 DEFAULT_MANIFEST = Path("experiments/single_gpu_cached_models_l40.yaml")
 DEFAULT_WORKLOADS = (
     Path("experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml"),
-    Path("experiments/code_workloads/repobench_python_java_aggregate_cache_realistic/workload_yamls/shard_000.yaml"),
+    Path(
+        "experiments/code_workloads/"
+        "repobench_python_java_aggregate_cache_realistic_8k_drop/workload_yamls/shard_000.yaml"
+    ),
 )
 BOUNDARY_RE = re.compile(r"^(```)?\s*</?(CURRENT_FILE_PREFIX|REPOSITORY_CONTEXT|IMPORTS|END_FILE_PREFIX)", re.I)
 
@@ -43,7 +46,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="code_workload_materializer.live_model_prompt_loop")
+    parser = argparse.ArgumentParser(prog="dataset_workload_materializer.live_model_prompt_loop")
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--workload", action="append", type=Path, default=None)
     parser.add_argument("--output-dir", type=Path, default=Path("results/live_code_model_prompt_loop"))

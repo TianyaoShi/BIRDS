@@ -16,9 +16,8 @@ the repo-aware boundary and the shape of the future work.
 
 ## Boundary
 
-Use `profiler/code_workload_materializer` as the dataset preparation module. The
-package name is historical from the code-completion work, but the abstraction is
-now:
+Use `profiler/dataset_workload_materializer` as the dataset preparation module.
+The abstraction is:
 
 ```text
 dataset-specific raw artifacts

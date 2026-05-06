@@ -21,7 +21,7 @@ from llm_mst_finder.vllm_compat import (
 from llm_mst_finder.workload import prepare_workload_for_trial
 
 
-LIVE_ENV = "CODE_WORKLOAD_MATERIALIZER_RUN_LIVE"
+LIVE_ENV = "DATASET_WORKLOAD_MATERIALIZER_RUN_LIVE"
 MODEL_ENV = "CODE_WORKLOAD_LIVE_MODEL"
 BASE_URL_ENV = "CODE_WORKLOAD_LIVE_BASE_URL"
 LOG_PATH_ENV = "CODE_WORKLOAD_LIVE_LOG_PATH"
@@ -36,7 +36,7 @@ WORKLOADS = {
     ),
     "repobench_aggregate": Path(
         "experiments/code_workloads/"
-        "repobench_python_java_aggregate_cache_realistic/workload_yamls/shard_000.yaml"
+        "repobench_python_java_aggregate_cache_realistic_8k_drop/workload_yamls/shard_000.yaml"
     ),
 }
 

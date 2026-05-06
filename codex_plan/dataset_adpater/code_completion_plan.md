@@ -31,7 +31,7 @@ Create a small package outside `llm_mst_finder`:
 
 ```text
 profiler/
-  code_workload_materializer/
+  dataset_workload_materializer/
     __init__.py
     cli.py
     materialize.py
@@ -382,7 +382,7 @@ Keep one command:
 
 ```bash
 PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m code_workload_materializer.cli prepare \
+/local/scratch/a/shi676/.venv/bin/python -m dataset_workload_materializer.cli prepare \
   --config experiments/code_workloads/crosscodeeval_cache_realistic.yaml
 ```
 
@@ -443,7 +443,7 @@ workload_yaml:
 
 ## 10. MVP Implementation Order
 
-1. Implement `code_workload_materializer` with local JSONL/directory input,
+1. Implement `dataset_workload_materializer` with local JSONL/directory input,
    filtering, reports, sharding, and generated workload YAMLs.
 2. Add `sampling.entry_selection` to `llm_mst_finder.workload`.
 3. Materialize and run one CrossCodeEval-like shard through a short live MST
