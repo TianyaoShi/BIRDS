@@ -13,7 +13,12 @@ import yaml
 from llm_mst_finder.workload import PromptTokenizer, resolve_tokenizer
 
 
-DEFAULT_FIELD_ALIASES: dict[str, list[str]] = {
+SUPPORTED_DATASET_KINDS: dict[str, str] = {
+    "crosscodeeval": "code_completion",
+    "repobench": "code_completion",
+}
+
+DEFAULT_CROSSCODEEVAL_FIELD_ALIASES: dict[str, list[str]] = {
     "prompt": ["prompt", "input", "code_context", "current_file_prefix"],
     "target": ["target", "completion", "reference", "groundtruth"],
     "language": ["language", "lang"],
@@ -53,8 +58,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
     name = _required_string(config, "name")
     dataset = _required_mapping(config, "dataset")
     dataset_name = _optional_string(dataset.get("name"), "dataset.name") or "crosscodeeval"
-    if dataset_name not in {"crosscodeeval", "repobench"}:
-        raise ValueError("supported dataset.name values: crosscodeeval, repobench")
+    dataset_kind = _dataset_kind(dataset_name)
     base_dir = config_source.parent if config_source is not None else Path.cwd()
     raw_path = _config_raw_path(dataset, base_dir=base_dir)
     split = _optional_string(dataset.get("split"), "dataset.split") or "unspecified"
@@ -101,6 +105,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
             raw_path,
             aliases=aliases,
             dataset_name=dataset_name,
+            dataset_kind=dataset_kind,
             split=split,
             task=task,
             prompt_template=prompt_template,
@@ -117,6 +122,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
         samples = _load_repobench_samples(
             raw_path,
             dataset_name=dataset_name,
+            dataset_kind=dataset_kind,
             split=split,
             task=task,
             prompt_template=prompt_template,
@@ -163,6 +169,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
     manifest = _build_manifest(
         name=name,
         dataset_name=dataset_name,
+        dataset_kind=dataset_kind,
         task=task,
         prompt_template=prompt_template,
         shards=shards,
@@ -172,6 +179,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
     report = _build_report(
         name=name,
         dataset_name=dataset_name,
+        dataset_kind=dataset_kind,
         task=task,
         prompt_template=prompt_template,
         raw_path=raw_path,
@@ -196,6 +204,7 @@ def _load_crosscodeeval_samples(
     *,
     aliases: dict[str, list[str]],
     dataset_name: str,
+    dataset_kind: str,
     split: str,
     task: str,
     prompt_template: str,
@@ -222,12 +231,13 @@ def _load_crosscodeeval_samples(
                 row = json.loads(stripped)
                 if not isinstance(row, dict):
                     raise ValueError(f"{file_path}:{line_index + 1} must be a JSON object")
-                sample = _row_to_sample(
+                sample = _crosscodeeval_row_to_sample(
                     row,
                     row_index=global_index,
                     input_path=file_path,
                     aliases=aliases,
                     dataset_name=dataset_name,
+                    dataset_kind=dataset_kind,
                     split=split,
                     task=task,
                     prompt_template=prompt_template,
@@ -253,6 +263,7 @@ def _load_repobench_samples(
     raw_path: Path | None,
     *,
     dataset_name: str,
+    dataset_kind: str,
     split: str,
     task: str,
     prompt_template: str,
@@ -297,6 +308,7 @@ def _load_repobench_samples(
                     row,
                     row_index=global_index,
                     dataset_name=dataset_name,
+                    dataset_kind=dataset_kind,
                     split=split,
                     task=source_task,
                     prompt_template=prompt_template,
@@ -323,6 +335,7 @@ def _repobench_row_to_sample(
     *,
     row_index: int,
     dataset_name: str,
+    dataset_kind: str,
     split: str,
     task: str,
     prompt_template: str,
@@ -379,6 +392,7 @@ def _repobench_row_to_sample(
     sample_id = f"{dataset_name}-{language}-{row_index:06d}"
     metadata = {
         "dataset": dataset_name,
+        "dataset_kind": dataset_kind,
         "task": task,
         "prompt_template": prompt_template,
         "split": split,
@@ -407,13 +421,14 @@ def _repobench_row_to_sample(
     )
 
 
-def _row_to_sample(
+def _crosscodeeval_row_to_sample(
     row: dict[str, Any],
     *,
     row_index: int,
     input_path: Path,
     aliases: dict[str, list[str]],
     dataset_name: str,
+    dataset_kind: str,
     split: str,
     task: str,
     prompt_template: str,
@@ -443,7 +458,11 @@ def _row_to_sample(
         source=source,
         required=False,
     )
-    prompt = _render_code_prompt(current_file_prefix, cross_file_context, prompt_template=prompt_template)
+    prompt = _render_crosscodeeval_prompt(
+        current_file_prefix,
+        cross_file_context,
+        prompt_template=prompt_template,
+    )
     prompt_token_count = len(tokenizer.encode(prompt))
     target_token_count = len(tokenizer.encode(target))
     if prompt_token_count < min_prompt_tokens:
@@ -477,6 +496,7 @@ def _row_to_sample(
     sample_id = f"{dataset_name}-{language}-{row_index:06d}"
     metadata = {
         "dataset": dataset_name,
+        "dataset_kind": dataset_kind,
         "task": task,
         "prompt_template": prompt_template,
         "split": split,
@@ -501,7 +521,7 @@ def _row_to_sample(
     )
 
 
-def _render_code_prompt(
+def _render_crosscodeeval_prompt(
     current_file_prefix: str,
     cross_file_context: str | None,
     *,
@@ -733,6 +753,7 @@ def _build_manifest(
     *,
     name: str,
     dataset_name: str,
+    dataset_kind: str,
     task: str,
     prompt_template: str,
     shards: list[list[MaterializedSample]],
@@ -743,6 +764,7 @@ def _build_manifest(
     return {
         "workload_name": name,
         "dataset": dataset_name,
+        "dataset_kind": dataset_kind,
         "task": task,
         "prompt_template": prompt_template,
         "num_shards": len(shards),
@@ -759,6 +781,7 @@ def _build_report(
     *,
     name: str,
     dataset_name: str,
+    dataset_kind: str,
     task: str,
     prompt_template: str,
     raw_path: Path | None,
@@ -770,6 +793,7 @@ def _build_report(
     return {
         "workload_name": name,
         "dataset": dataset_name,
+        "dataset_kind": dataset_kind,
         "task": task,
         "prompt_template": prompt_template,
         "raw_path": str(raw_path) if raw_path is not None else None,
@@ -833,7 +857,7 @@ def _read_parquet_rows(path: Path) -> list[dict[str, Any]]:
 
 
 def _field_aliases(payload: Any) -> dict[str, list[str]]:
-    aliases = {key: list(value) for key, value in DEFAULT_FIELD_ALIASES.items()}
+    aliases = {key: list(value) for key, value in DEFAULT_CROSSCODEEVAL_FIELD_ALIASES.items()}
     overrides = _optional_mapping(payload, "dataset.field_aliases")
     for key, value in overrides.items():
         if key not in aliases:
@@ -842,6 +866,14 @@ def _field_aliases(payload: Any) -> dict[str, list[str]]:
             raise ValueError(f"dataset.field_aliases.{key} must be a non-empty list")
         aliases[key] = [_expect_string(item, f"dataset.field_aliases.{key}[]") for item in value]
     return aliases
+
+
+def _dataset_kind(dataset_name: str) -> str:
+    try:
+        return SUPPORTED_DATASET_KINDS[dataset_name]
+    except KeyError as exc:
+        supported = ", ".join(sorted(SUPPORTED_DATASET_KINDS))
+        raise ValueError(f"supported dataset.name values: {supported}") from exc
 
 
 def _string_alias(

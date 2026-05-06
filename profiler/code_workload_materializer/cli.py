@@ -9,7 +9,10 @@ from .materialize import materialize_from_config
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="code_workload_materializer.cli")
+    parser = argparse.ArgumentParser(
+        prog="code_workload_materializer.cli",
+        description="Materialize dataset-specific offline JSONL shards and llm_mst_finder workload YAMLs.",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
     prepare_parser = subparsers.add_parser("prepare")
     prepare_parser.add_argument("--config", type=Path, required=True)

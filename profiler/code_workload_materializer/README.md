@@ -1,8 +1,13 @@
-# Code Workload Materializer
+# Dataset Workload Materializer
 
-This package prepares code-completion datasets for `llm_mst_finder` without adding
-dataset-specific behavior to the request client, trial runner, search loop,
-or profiler paths.
+This package prepares dataset-specific profiling workloads for
+`llm_mst_finder` without adding dataset-specific behavior to the request client,
+trial runner, search loop, or profiler paths.
+
+The package path is still `code_workload_materializer` for compatibility with
+the code-completion materialization work that introduced it. Treat it as the
+dataset materialization boundary: raw dataset artifacts go in, offline JSONL
+shards and ordinary `llm_mst_finder` workload YAMLs come out.
 
 The materializer produces offline JSONL shards plus ordinary
 `llm_mst_finder` workload YAMLs. The generated workload YAMLs use
@@ -11,9 +16,16 @@ consumes exactly the materialized shard order.
 
 ## Supported Inputs
 
+Implemented today:
+
 - CrossCodeEval-like local JSONL files or directories of JSONL files.
 - RepoBench local parquet artifacts, including aggregate mode across languages
   and tasks.
+
+Planned:
+
+- LongBench refinement through materialized profile shards rather than direct
+  whole-LongBench runtime sampling.
 
 CrossCodeEval-like JSONL supports field aliases configured under
 `dataset.field_aliases`. The default logical fields are:
@@ -26,10 +38,12 @@ CrossCodeEval-like JSONL supports field aliases configured under
 - `cross_file_context`
 - `sequence_index`
 
-RepoBench support is intentionally compact and stays in `materialize.py`; there
-is no one-file-per-dataset split.
+Dataset-specific support is intentionally compact and stays in `materialize.py`;
+there is no one-file-per-dataset split. Reports, manifests, and row metadata now
+include `dataset_kind` so future non-code profiles can be distinguished without
+changing the runner contract.
 
-## Prompt Format
+## Code Prompt Format
 
 The default prompt template is `plain_prefix`.
 
@@ -55,7 +69,8 @@ plain-prefix probe.
 
 ## Configs
 
-Current real-dataset configs live under `experiments/code_workloads/`:
+Current code-completion real-dataset configs live under
+`experiments/code_workloads/`:
 
 ```text
 experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic.yaml
@@ -63,7 +78,7 @@ experiments/code_workloads/repobench_python_java_aggregate_cache_realistic.yaml
 experiments/code_workloads/repobench_python_java_aggregate_cache_realistic_8k_drop.yaml
 ```
 
-Both explicitly set:
+These code-completion configs explicitly set:
 
 ```yaml
 dataset:

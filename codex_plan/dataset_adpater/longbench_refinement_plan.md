@@ -1,34 +1,119 @@
-Below is a compact coding plan you can hand to an implementation agent.
+# LongBench Refinement Plan
 
----
+## Current Decision
 
-# Coding Plan: Refined LongBench Natural-Language Workload Sampler
+LongBench should be refined through the dataset materialization path, not by
+adding LongBench-specific behavior to `llm_mst_finder`.
 
-## Objective
+The serving problem is that a single coarse LongBench workload mixes tasks with
+very different intent, prompt length, and output length. Random sampling across
+that pool can move the observed MST substantially between runs, even when SLOs
+are lifted. The fix is to prepare deterministic, auditable LongBench shards with
+clear profiles before profiling starts.
 
-The current workload generator samples uniformly or globally from the entire LongBench task pool. Refine it into a **realistic natural-language long-text workload sampler** by:
+This plan intentionally does not implement LongBench refinement yet. It defines
+the repo-aware boundary and the shape of the future work.
 
-1. Excluding synthetic, few-shot classification, trivia/multi-hop exam-style QA, code tasks, and `narrativeqa`.
-2. Keeping only tasks that resemble real long-text NLP service requests.
-3. Grouping retained tasks into workload buckets according to task type and output-length regime.
-4. Supporting both bucket-level sampling and task-level sampling within each bucket.
+## Boundary
 
-The goal is not to evaluate all LongBench capabilities, but to generate realistic serving workloads for long-context natural-language processing.
+Use `profiler/code_workload_materializer` as the dataset preparation module. The
+package name is historical from the code-completion work, but the abstraction is
+now:
 
----
+```text
+dataset-specific raw artifacts
+  -> materialized offline JSONL shards
+  -> ordinary llm_mst_finder workload YAMLs
+  -> sequential profiling over those shards
+```
 
-## Tasks to Include
+Keep these components dataset-agnostic:
 
-Retain the following LongBench-NL tasks only:
+- `request_client`
+- `trial_runner`
+- `search`
+- orchestrators
+- energy profiler
+- GPU monitor
+
+Do not add a new `llm_mst_finder` workload type for refined LongBench. The
+generated YAMLs should use the existing `dataset.type: jsonl` path with
+`sampling.entry_selection: sequential`.
+
+## Existing Infrastructure To Reuse
+
+The materializer already writes:
+
+- `materialization_config.yaml`
+- `materialization_report.json`
+- `shards_manifest.json`
+- `shards/*.runner.jsonl`
+- `workload_yamls/*.yaml`
+
+It already supports fail-fast filtering, deterministic shard ordering, row-level
+metadata, and ordinary workload YAML generation. LongBench should reuse this
+contract instead of inventing a second workload generator.
+
+## LongBench Problem Shape
+
+The current LongBench-NL workload is too broad for one MST number. It includes:
+
+- long-output summarization tasks
+- medium-output synthesis tasks
+- document QA tasks
+- short-answer benchmark QA
+- synthetic retrieval/counting tasks
+- few-shot classification tasks
+- few-shot dialogue summarization
+- extreme reading-comprehension stress cases
+
+Those categories stress different parts of serving. Mixing them by random draw
+makes the profile unstable and makes the final MST hard to interpret.
+
+## Candidate Realistic-NL Profiles
+
+The future materializer support should expose task profiles in config, not hard
+code one universal LongBench mix.
+
+### Long-Output Summarization
 
 ```text
 gov_report
 gov_report_e
+```
+
+Shape: long report/document to long summary.
+
+This is decode-heavy compared with most LongBench tasks and should have its own
+SLO/goodput interpretation.
+
+### Medium-Output Summarization / Synthesis
+
+```text
 multi_news
 multi_news_e
 qmsum
 vcsum
+```
+
+Shape: multiple documents or meeting transcript to medium-length summary.
+
+This profile is still generation-heavy, but less extreme than `gov_report`.
+
+### Medium-Answer RAG-Style QA
+
+```text
 dureader
+```
+
+Shape: retrieved documents to answer paragraph.
+
+This is a mixed prefill/decode workload and should not be averaged with
+long-output summarization.
+
+### Short-Answer Document QA
+
+```text
 multifieldqa_en
 multifieldqa_en_e
 multifieldqa_zh
@@ -36,13 +121,14 @@ qasper
 qasper_e
 ```
 
-Exclude all code tasks and all other LongBench-NL tasks.
+Shape: long document or paper-like text to short factual answer.
 
----
+This is mostly prefill-dominated. It can be useful, but it should be reported as
+document QA rather than natural-language summarization.
 
-## Tasks to Exclude
+## Tasks To Exclude From Realistic-NL Profiles
 
-Explicitly exclude:
+Exclude these from the default realistic-NL profiles:
 
 ```text
 2wikimqa
@@ -67,363 +153,117 @@ narrativeqa
 
 Rationale:
 
-* `passage_count*` and `passage_retrieval*`: synthetic retrieval/counting tests.
-* `2wikimqa*`, `hotpotqa*`, `musique`, `triviaqa*`: benchmark-style QA with very short answers.
-* `trec*`, `lsht`: few-shot classification, not natural long-document processing.
-* `samsum*`: dialogue summarization is realistic in principle, but LongBench’s version is few-shot formatted; the long input mostly comes from concatenated examples.
-* `narrativeqa`: very long input but extremely short output; closer to reading-comprehension stress testing than realistic production long-text processing.
-* Code tasks: outside the natural-language workload scope.
+- `passage_count*` and `passage_retrieval*` are synthetic retrieval/counting
+  tests.
+- `2wikimqa*`, `hotpotqa*`, `musique`, and `triviaqa*` are benchmark-style
+  short-answer QA.
+- `trec*` and `lsht` are classification-style workloads.
+- `samsum*` is realistic in principle, but this LongBench version is few-shot
+  formatted; much of the prompt is examples rather than the target request.
+- `narrativeqa` is an extreme long-input, very-short-output stress case.
+- LongBench code tasks belong with code-completion workloads, not realistic-NL.
 
----
+## Future Config Shape
 
-## Workload Buckets
+Keep this in a materializer config, for example:
 
-Implement four buckets.
+```yaml
+name: longbench_realistic_nl_summarization
+dataset:
+  name: longbench
+  raw_path: ../../data/raw/longbench
+  split: test
+  profile: medium_output_summarization
+  configs:
+    - multi_news
+    - multi_news_e
+    - qmsum
+    - vcsum
 
-### Bucket 1: Long-output summarization
+tokenization:
+  tokenizer: Qwen/Qwen3-8B
 
-```text
-gov_report
-gov_report_e
+filtering:
+  min_prompt_tokens: 128
+  max_prompt_tokens: 32768
+  min_target_tokens: 1
+  max_target_tokens: 2048
+
+sampling:
+  seed: 23
+  policy: task_uniform
+  samples_per_task: 256
+
+sharding:
+  output_dir: longbench_realistic_nl_summarization_qwen3_8b
+  samples_per_shard: 1024
 ```
 
-Workload shape:
+The exact raw path format can be decided during implementation. If we reuse the
+Hugging Face cache, the materializer should fail clearly when the needed
+LongBench artifacts are missing locally.
 
-```text
-long report/document -> long summary
-```
+## Sampling Rules
 
-Expected profile:
+Sampling randomness should end at materialization time.
 
-* Long input.
-* Very long output, typically hundreds to about one thousand tokens.
-* Decode-heavy compared with most LongBench tasks.
-* Useful for stressing sustained generation throughput, TPOT, KV-cache residency, and decode-side batching.
+The generated profiling YAMLs should remain sequential. Supported materializer
+sampling policies can be added later, but they should produce explicit shard
+contents and summary counts:
 
-Suggested bucket name:
+- `task_uniform`: fixed or equal sample count per task.
+- `bucket_uniform`: equal representation per profile bucket, then per task.
+- `bucket_weighted`: explicit user-provided bucket weights.
 
-```python
-"long_output_summarization"
-```
+Do not hide a broad randomized LongBench draw behind runtime sampling.
 
----
+## Metadata
 
-### Bucket 2: Medium-output summarization / synthesis
+Each materialized LongBench row should carry enough metadata to audit the
+profile:
 
-```text
-multi_news
-multi_news_e
-qmsum
-vcsum
-```
-
-Workload shape:
-
-```text
-multiple documents / meeting transcript -> medium-length summary
-```
-
-Expected profile:
-
-* Medium-to-long input.
-* Medium-length output.
-* Represents practical summarization workloads such as news synthesis and meeting summarization.
-* Less decode-heavy than `gov_report`, but much more realistic than short-answer QA for long-text generation.
-
-Suggested bucket name:
-
-```python
-"medium_output_summarization"
-```
-
----
-
-### Bucket 3: Medium-answer RAG-style QA
-
-```text
-dureader
-```
-
-Workload shape:
-
-```text
-retrieved documents -> answer paragraph
-```
-
-Expected profile:
-
-* Long input.
-* Medium-length output.
-* Closer to search assistant, enterprise RAG, or document-grounded answer generation.
-* Useful for evaluating mixed prefill/decode behavior.
-
-Suggested bucket name:
-
-```python
-"medium_answer_rag_qa"
-```
-
----
-
-### Bucket 4: Short-answer document QA
-
-```text
-multifieldqa_en
-multifieldqa_en_e
-multifieldqa_zh
-qasper
-qasper_e
-```
-
-Workload shape:
-
-```text
-long document / paper / PDF-like text -> short factual answer
-```
-
-Expected profile:
-
-* Medium-to-long input.
-* Short output.
-* Mostly prefill-dominated.
-* Useful for long-context document-reading workloads, but should not be mixed directly with summarization workloads when reporting serving performance.
-
-Suggested bucket name:
-
-```python
-"short_answer_document_qa"
-```
-
----
-
-## Recommended Configuration Structure
-
-Add a workload configuration similar to:
-
-```python
-REALISTIC_LONGBENCH_BUCKETS = {
-    "long_output_summarization": [
-        "gov_report",
-        "gov_report_e",
-    ],
-    "medium_output_summarization": [
-        "multi_news",
-        "multi_news_e",
-        "qmsum",
-        "vcsum",
-    ],
-    "medium_answer_rag_qa": [
-        "dureader",
-    ],
-    "short_answer_document_qa": [
-        "multifieldqa_en",
-        "multifieldqa_en_e",
-        "multifieldqa_zh",
-        "qasper",
-        "qasper_e",
-    ],
-}
-```
-
-Also define the explicit exclusion list:
-
-```python
-EXCLUDED_LONGBENCH_TASKS = {
-    "2wikimqa",
-    "2wikimqa_e",
-    "hotpotqa",
-    "hotpotqa_e",
-    "musique",
-    "triviaqa",
-    "triviaqa_e",
-    "trec",
-    "trec_e",
-    "lsht",
-    "samsum",
-    "samsum_e",
-    "passage_count",
-    "passage_count_e",
-    "passage_retrieval_en",
-    "passage_retrieval_en_e",
-    "passage_retrieval_zh",
-    "narrativeqa",
-}
-```
-
----
-
-## Sampling Modes to Implement
-
-### 1. Bucket-uniform sampling
-
-Sample a bucket uniformly, then sample a task within that bucket.
-
-```text
-bucket ~ Uniform(realistic_buckets)
-task   ~ Uniform(tasks_in_bucket)
-sample ~ Uniform(samples_in_task)
-```
-
-Use this when the goal is to give each workload class equal representation.
-
----
-
-### 2. Task-uniform sampling
-
-Sample uniformly from all included tasks.
-
-```text
-task   ~ Uniform(all_included_tasks)
-sample ~ Uniform(samples_in_task)
-```
-
-Use this when the goal is to avoid overrepresenting buckets with fewer tasks, such as `dureader`.
-
----
-
-### 3. Weighted bucket sampling
-
-Allow user-configurable bucket weights, for example:
-
-```python
-bucket_weights = {
-    "long_output_summarization": 0.25,
-    "medium_output_summarization": 0.35,
-    "medium_answer_rag_qa": 0.20,
-    "short_answer_document_qa": 0.20,
-}
-```
-
-Then:
-
-```text
-bucket ~ Categorical(bucket_weights)
-task   ~ Uniform(tasks_in_bucket)
-sample ~ Uniform(samples_in_task)
-```
-
-This should be the default for production-like workload generation, because different workload classes have very different prefill/decode ratios.
-
----
-
-## Metadata to Attach to Each Generated Request
-
-Each sampled request should carry at least:
-
-```python
+```json
 {
-    "task": task_name,
-    "bucket": bucket_name,
-    "input_tokens": input_length,
-    "output_tokens": output_length,
-    "language": "en" | "zh" | "mixed_or_unknown",
-    "workload_type": "summarization" | "qa",
-    "output_regime": "long" | "medium" | "short",
+  "dataset": "longbench",
+  "dataset_kind": "long_context_nlp",
+  "task": "qmsum",
+  "profile": "medium_output_summarization",
+  "workload_type": "summarization",
+  "output_regime": "medium",
+  "language": "en",
+  "prompt_token_count": 13009,
+  "target_token_count": 78
 }
 ```
 
-Recommended mapping:
+Reports and manifests should include per-profile and per-task sample counts plus
+prompt/target length summaries.
 
-```python
-BUCKET_METADATA = {
-    "long_output_summarization": {
-        "workload_type": "summarization",
-        "output_regime": "long",
-    },
-    "medium_output_summarization": {
-        "workload_type": "summarization",
-        "output_regime": "medium",
-    },
-    "medium_answer_rag_qa": {
-        "workload_type": "qa",
-        "output_regime": "medium",
-    },
-    "short_answer_document_qa": {
-        "workload_type": "qa",
-        "output_regime": "short",
-    },
-}
-```
+## SLO Guidance
 
-Language can be inferred from task name:
+Do not use one canonical LongBench SLO across all refined profiles.
 
-```python
-zh_tasks = {"vcsum", "dureader", "multifieldqa_zh"}
-```
+Summarization profiles can inherit the literature-style LongBench reference
+point as a baseline, but document-QA profiles should be interpreted separately
+because their outputs are short and their serving behavior is prefill-dominated.
+The experiment manifests should set SLOs per materialized LongBench profile.
 
-Everything else can be treated as English unless the dataset metadata says otherwise.
+## Implementation Phases
 
----
+1. Keep the current materializer boundary generic and documented.
+2. Add an inspection-only script or materializer dry-run that reports LongBench
+   task statistics from local artifacts.
+3. Add LongBench materialization support that emits JSONL shards and ordinary
+   workload YAMLs.
+4. Add profile configs for the realistic-NL buckets above.
+5. Add focused tests for task filtering, deterministic sampling, metadata, and
+   YAML loading through `llm_mst_finder`.
+6. Add experiment manifests that profile separate LongBench profiles rather
+   than the whole LongBench-NL pool.
 
-## Implementation Steps
+## Non-Goals
 
-1. Add a new workload profile, for example:
-
-```text
-longbench_realistic_nl
-```
-
-2. Define the retained task set from `REALISTIC_LONGBENCH_BUCKETS`.
-
-3. During dataset loading, filter out all tasks not in the retained set.
-
-4. Implement three sampling policies:
-
-```text
-bucket_uniform
-task_uniform
-bucket_weighted
-```
-
-5. Make `bucket_weighted` the default policy.
-
-6. Add CLI/config options:
-
-```text
---longbench-profile realistic_nl
---sampling-policy bucket_weighted
---bucket-weights path/to/weights.json
---include-longbench-e true/false
-```
-
-7. If `--include-longbench-e false`, remove tasks ending with `_e`.
-
-8. Attach bucket metadata to each generated request.
-
-9. Log per-bucket and per-task sample counts after workload generation.
-
-10. Add validation checks:
-
-```text
-- No excluded task appears in generated requests.
-- Every included task belongs to exactly one bucket.
-- Bucket weights sum to 1.0 if weighted sampling is used.
-- Empty buckets raise a clear error.
-```
-
----
-
-## Expected Output Summary
-
-At the end of generation, print or save a workload summary like:
-
-```text
-Generated LongBench realistic-NL workload:
-- total requests: N
-- sampling policy: bucket_weighted
-- included tasks: 12
-- excluded tasks: 18+
-
-Bucket distribution:
-- long_output_summarization: x requests
-- medium_output_summarization: y requests
-- medium_answer_rag_qa: z requests
-- short_answer_document_qa: w requests
-
-Task distribution:
-- gov_report: ...
-- gov_report_e: ...
-- ...
-```
-
-This makes the generated workload auditable and prevents accidental regression back to whole-LongBench averaging.
+- No LongBench-specific request formatting inside `request_client`.
+- No LongBench-specific runtime sampling inside `trial_runner` or `search`.
+- No new profiler/orchestrator concept for LongBench.
+- No implementation of the refined LongBench loader in this cleanup step.
