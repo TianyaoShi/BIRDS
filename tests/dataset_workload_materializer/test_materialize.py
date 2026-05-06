@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from pathlib import Path
 
+import pytest
 import yaml
 
 from dataset_workload_materializer.materialize import materialize_from_config
@@ -112,6 +114,142 @@ def test_generated_workload_yaml_loads_through_llm_mst_finder(tmp_path: Path) ->
     assert prepared.samples[0].metadata["shard_id"] == "shard_000"
 
 
+def test_longbench_materialization_rejects_excluded_tasks(tmp_path: Path) -> None:
+    raw_path = _write_longbench_zip(
+        tmp_path,
+        {
+            "multi_news": [_longbench_row("multi-news-0", "multi_news", "en")],
+            "trec": [_longbench_row("trec-0", "trec", "en")],
+        },
+    )
+    config_path = _write_longbench_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_dir=tmp_path / "out",
+        profile="medium_output_summarization",
+        configs=["multi_news", "trec"],
+        samples_per_task=1,
+    )
+
+    with pytest.raises(ValueError, match="exclude tasks: trec"):
+        materialize_from_config(config_path)
+
+
+def test_longbench_materialization_is_deterministic_and_reports_profile_metadata(tmp_path: Path) -> None:
+    raw_path = _write_longbench_zip(
+        tmp_path,
+        {
+            "multi_news": [
+                _longbench_row("multi-news-0", "multi_news", "en", suffix="alpha"),
+                _longbench_row("multi-news-1", "multi_news", "en", suffix="beta"),
+                _longbench_row("multi-news-2", "multi_news", "en", suffix="gamma"),
+            ],
+            "qmsum": [
+                _longbench_row("qmsum-0", "qmsum", "en", suffix="delta"),
+                _longbench_row("qmsum-1", "qmsum", "en", suffix="epsilon"),
+                _longbench_row("qmsum-2", "qmsum", "en", suffix="zeta"),
+            ],
+        },
+    )
+    config_a = _write_longbench_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_dir=tmp_path / "out_a",
+        profile="medium_output_summarization",
+        configs=["multi_news", "qmsum"],
+        samples_per_task=2,
+        config_name="longbench_a.yaml",
+    )
+    config_b = _write_longbench_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_dir=tmp_path / "out_b",
+        profile="medium_output_summarization",
+        configs=["multi_news", "qmsum"],
+        samples_per_task=2,
+        config_name="longbench_b.yaml",
+    )
+
+    result_a = materialize_from_config(config_a)
+    result_b = materialize_from_config(config_b)
+
+    assert result_a["num_samples"] == 4
+    assert result_b["num_samples"] == 4
+
+    shard_rows_a = [
+        json.loads(line)
+        for line in (tmp_path / "out_a" / "shards" / "shard_000.runner.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    shard_rows_b = [
+        json.loads(line)
+        for line in (tmp_path / "out_b" / "shards" / "shard_000.runner.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    assert shard_rows_a == shard_rows_b
+
+    report = json.loads((tmp_path / "out_a" / "materialization_report.json").read_text(encoding="utf-8"))
+    manifest = json.loads((tmp_path / "out_a" / "shards_manifest.json").read_text(encoding="utf-8"))
+
+    assert report["dataset_kind"] == "long_context_nlp"
+    assert report["profile"] == "medium_output_summarization"
+    assert report["selected_tasks"] == ["multi_news", "qmsum"]
+    assert report["rows"]["drops"]["not_selected_by_sampling"] == 2
+    assert report["profile_summaries"]["medium_output_summarization"]["count"] == 4
+    assert report["profile_summaries"]["medium_output_summarization"]["task_counts"] == {
+        "multi_news": 2,
+        "qmsum": 2,
+    }
+    assert report["task_summaries"]["multi_news"]["count"] == 2
+    assert report["task_summaries"]["multi_news"]["workload_type"] == "summarization"
+    assert report["task_summaries"]["multi_news"]["output_regime"] == "medium"
+    assert manifest["profile_summaries"]["medium_output_summarization"]["count"] == 4
+    assert manifest["task_summaries"]["qmsum"]["count"] == 2
+
+    first_metadata = shard_rows_a[0]["metadata"]
+    assert first_metadata["dataset"] == "longbench"
+    assert first_metadata["dataset_kind"] == "long_context_nlp"
+    assert first_metadata["profile"] == "medium_output_summarization"
+    assert first_metadata["task"] in {"multi_news", "qmsum"}
+    assert first_metadata["workload_type"] == "summarization"
+    assert first_metadata["output_regime"] == "medium"
+    assert first_metadata["language"] == "en"
+    assert first_metadata["prompt_token_count"] >= 4
+    assert first_metadata["target_token_count"] >= 1
+
+
+def test_longbench_generated_workload_yaml_loads_through_llm_mst_finder(tmp_path: Path) -> None:
+    raw_path = _write_longbench_zip(
+        tmp_path,
+        {
+            "qasper": [_longbench_row("qasper-0", "qasper", "en", suffix="paper")],
+        },
+    )
+    config_path = _write_longbench_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_dir=tmp_path / "out",
+        profile="short_answer_document_qa",
+        configs=["qasper"],
+        samples_per_task=1,
+    )
+    materialize_from_config(config_path)
+
+    prepared = prepare_workload_for_trial(
+        tmp_path / "out" / "workload_yamls" / "shard_000.yaml",
+        model_name="fake-model",
+    )
+
+    assert len(prepared.samples) == 1
+    assert prepared.samples[0].metadata["dataset"] == "longbench"
+    assert prepared.samples[0].metadata["profile"] == "short_answer_document_qa"
+    assert prepared.samples[0].metadata["task"] == "qasper"
+    assert prepared.samples[0].metadata["sampling_entry_selection"] == "sequential"
+    assert prepared.samples[0].metadata["shard_id"] == "shard_000"
+
+
 def _write_config(tmp_path: Path, *, raw_path: Path, output_dir: Path) -> Path:
     config = {
         "name": "crosscodeeval_tiny",
@@ -144,3 +282,81 @@ def _write_config(tmp_path: Path, *, raw_path: Path, output_dir: Path) -> Path:
     config_path = tmp_path / "materialize.yaml"
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     return config_path
+
+
+def _write_longbench_config(
+    tmp_path: Path,
+    *,
+    raw_path: Path,
+    output_dir: Path,
+    profile: str,
+    configs: list[str],
+    samples_per_task: int,
+    config_name: str = "longbench_materialize.yaml",
+) -> Path:
+    config = {
+        "name": f"longbench_{profile}",
+        "dataset": {
+            "name": "longbench",
+            "raw_path": str(raw_path),
+            "split": "test",
+            "profile": profile,
+            "configs": configs,
+        },
+        "tokenization": {"tokenizer": "whitespace"},
+        "filtering": {
+            "min_prompt_tokens": 4,
+            "max_prompt_tokens": 512,
+            "min_target_tokens": 1,
+            "max_target_tokens": 64,
+        },
+        "sampling": {
+            "seed": 11,
+            "policy": "task_uniform",
+            "samples_per_task": samples_per_task,
+            "burst_size": 1,
+        },
+        "request": {"temperature": 0.0, "stream": True, "ignore_eos": False},
+        "sharding": {"output_dir": str(output_dir), "samples_per_shard": 8},
+        "workload_yaml": {
+            "context_policy": {
+                "max_model_len": 1024,
+                "tokenizer_source": "workload_tokenizer",
+                "unsafe_allow_workload_tokenizer_for_real_datasets": True,
+                "over_limit": "fail",
+            }
+        },
+    }
+    config_path = tmp_path / config_name
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    return config_path
+
+
+def _write_longbench_zip(tmp_path: Path, rows_by_task: dict[str, list[dict[str, object]]]) -> Path:
+    zip_path = tmp_path / "longbench.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        for task_name, rows in rows_by_task.items():
+            archive.writestr(
+                f"data/{task_name}.jsonl",
+                "\n".join(json.dumps(row) for row in rows) + "\n",
+            )
+    return zip_path
+
+
+def _longbench_row(
+    row_id: str,
+    task_name: str,
+    language: str,
+    *,
+    suffix: str = "sample",
+) -> dict[str, object]:
+    return {
+        "_id": row_id,
+        "dataset": task_name,
+        "input": f"Summarize the material for {suffix}.",
+        "context": f"context tokens for {task_name} {suffix} include several informative words",
+        "answers": [f"reference answer {suffix}", f"longer reference answer {suffix}"],
+        "length": 7,
+        "language": language,
+        "all_classes": [],
+    }

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import zipfile
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +16,7 @@ from llm_mst_finder.workload import PromptTokenizer, resolve_tokenizer
 
 SUPPORTED_DATASET_KINDS: dict[str, str] = {
     "crosscodeeval": "code_completion",
+    "longbench": "long_context_nlp",
     "repobench": "code_completion",
 }
 
@@ -45,6 +47,64 @@ class Counters:
     drops: Counter[str] = field(default_factory=Counter)
 
 
+@dataclass(frozen=True, slots=True)
+class LongBenchProfileSpec:
+    tasks: tuple[str, ...]
+    workload_type: str
+    output_regime: str
+
+
+LONGBENCH_PROFILE_SPECS: dict[str, LongBenchProfileSpec] = {
+    "long_output_summarization": LongBenchProfileSpec(
+        tasks=("gov_report", "gov_report_e"),
+        workload_type="summarization",
+        output_regime="long",
+    ),
+    "medium_output_summarization": LongBenchProfileSpec(
+        tasks=("multi_news", "multi_news_e", "qmsum", "vcsum"),
+        workload_type="summarization",
+        output_regime="medium",
+    ),
+    "medium_answer_rag_qa": LongBenchProfileSpec(
+        tasks=("dureader",),
+        workload_type="rag_qa",
+        output_regime="medium",
+    ),
+    "short_answer_document_qa": LongBenchProfileSpec(
+        tasks=("multifieldqa_en", "multifieldqa_en_e", "multifieldqa_zh", "qasper", "qasper_e"),
+        workload_type="document_qa",
+        output_regime="short",
+    ),
+}
+
+LONGBENCH_EXCLUDED_TASKS: frozenset[str] = frozenset(
+    {
+        "2wikimqa",
+        "2wikimqa_e",
+        "hotpotqa",
+        "hotpotqa_e",
+        "musique",
+        "triviaqa",
+        "triviaqa_e",
+        "trec",
+        "trec_e",
+        "lsht",
+        "samsum",
+        "samsum_e",
+        "passage_count",
+        "passage_count_e",
+        "passage_retrieval_en",
+        "passage_retrieval_en_e",
+        "passage_retrieval_zh",
+        "narrativeqa",
+        "lcc",
+        "lcc_e",
+        "repobench-p",
+        "repobench-p_e",
+    }
+)
+
+
 def materialize_from_config(config_path: str | Path) -> dict[str, Any]:
     path = Path(config_path)
     with path.open("r", encoding="utf-8") as handle:
@@ -61,12 +121,16 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
     dataset_kind = _dataset_kind(dataset_name)
     base_dir = config_source.parent if config_source is not None else Path.cwd()
     raw_path = _config_raw_path(dataset, base_dir=base_dir)
-    split = _optional_string(dataset.get("split"), "dataset.split") or "unspecified"
+    split = _optional_string(dataset.get("split"), "dataset.split") or (
+        "test" if dataset_name == "longbench" else "unspecified"
+    )
     task = _optional_string(dataset.get("mode"), "dataset.mode") or (
         "cross_file_first" if dataset_name == "repobench" else "cross_file_materialized"
     )
-    prompt_template = _prompt_template(
-        dataset.get("prompt_template", config.get("prompt_template", "plain_prefix"))
+    prompt_template = (
+        "longbench_context_task"
+        if dataset_name == "longbench"
+        else _prompt_template(dataset.get("prompt_template", config.get("prompt_template", "plain_prefix")))
     )
     aliases = _field_aliases(dataset.get("field_aliases", {})) if dataset_name == "crosscodeeval" else None
 
@@ -85,6 +149,10 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
     sampling = _optional_mapping(config.get("sampling"), "sampling")
     seed = _int_setting(sampling, "seed", 42)
     burst_size = _int_setting(sampling, "burst_size", 8)
+    sampling_policy = _optional_string(sampling.get("policy"), "sampling.policy")
+    samples_per_task = sampling.get("samples_per_task")
+    if samples_per_task is not None:
+        samples_per_task = _positive_int(samples_per_task, "sampling.samples_per_task")
 
     sharding = _required_mapping(config, "sharding")
     output_dir = _resolve_path(
@@ -97,6 +165,8 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
         requested_num_shards = _positive_int(requested_num_shards, "sharding.num_shards")
 
     counters = Counters()
+    profile: str | None = None
+    selected_tasks: list[str] | None = None
     if dataset_name == "crosscodeeval":
         if raw_path is None:
             raise ValueError("crosscodeeval materialization requires dataset.raw_path")
@@ -117,6 +187,35 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
             language_filter=language_filter,
             dedup_content_hash=dedup_content_hash,
             counters=counters,
+        )
+    elif dataset_name == "longbench":
+        if raw_path is None:
+            raise ValueError("longbench materialization requires dataset.raw_path")
+        effective_policy = sampling_policy or "task_uniform"
+        if effective_policy != "task_uniform":
+            raise ValueError("longbench materialization only supports sampling.policy=task_uniform")
+        if samples_per_task is None:
+            raise ValueError("longbench materialization requires sampling.samples_per_task")
+        profile, profile_spec, selected_tasks = _longbench_selection(dataset)
+        task = profile
+        samples = _load_longbench_samples(
+            raw_path,
+            dataset_name=dataset_name,
+            dataset_kind=dataset_kind,
+            split=split,
+            profile=profile,
+            profile_spec=profile_spec,
+            selected_tasks=selected_tasks,
+            tokenizer=tokenizer,
+            min_prompt_tokens=min_prompt_tokens,
+            max_prompt_tokens=max_prompt_tokens,
+            min_target_tokens=min_target_tokens,
+            max_target_tokens=max_target_tokens,
+            language_filter=language_filter,
+            dedup_content_hash=dedup_content_hash,
+            counters=counters,
+            seed=seed,
+            samples_per_task=samples_per_task,
         )
     else:
         samples = _load_repobench_samples(
@@ -171,22 +270,26 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
         dataset_name=dataset_name,
         dataset_kind=dataset_kind,
         task=task,
+        profile=profile,
         prompt_template=prompt_template,
         shards=shards,
         shard_entries=shard_entries,
         samples_per_shard=samples_per_shard,
+        selected_tasks=selected_tasks,
     )
     report = _build_report(
         name=name,
         dataset_name=dataset_name,
         dataset_kind=dataset_kind,
         task=task,
+        profile=profile,
         prompt_template=prompt_template,
         raw_path=raw_path,
         output_dir=output_dir,
         tokenizer_name=tokenizer_name,
         samples=samples,
         counters=counters,
+        selected_tasks=selected_tasks,
     )
     _write_json(output_dir / "shards_manifest.json", manifest)
     _write_json(output_dir / "materialization_report.json", report)
@@ -328,6 +431,255 @@ def _load_repobench_samples(
                     samples.append(sample)
     counters.materialized_rows = len(samples)
     return samples
+
+
+def _load_longbench_samples(
+    raw_path: Path | None,
+    *,
+    dataset_name: str,
+    dataset_kind: str,
+    split: str,
+    profile: str,
+    profile_spec: LongBenchProfileSpec,
+    selected_tasks: list[str],
+    tokenizer: PromptTokenizer,
+    min_prompt_tokens: int,
+    max_prompt_tokens: int,
+    min_target_tokens: int,
+    max_target_tokens: int,
+    language_filter: dict[str, set[str]],
+    dedup_content_hash: bool,
+    counters: Counters,
+    seed: int,
+    samples_per_task: int,
+) -> list[MaterializedSample]:
+    if raw_path is None:
+        raise ValueError("longbench materialization requires dataset.raw_path")
+    samples: list[MaterializedSample] = []
+    seen_content_hashes: set[str] = set()
+    for task_name in selected_tasks:
+        task_samples: list[MaterializedSample] = []
+        for row_index, row, source in _iter_longbench_rows(raw_path, task_name):
+            counters.total_rows += 1
+            sample = _longbench_row_to_sample(
+                row,
+                row_index=row_index,
+                dataset_name=dataset_name,
+                dataset_kind=dataset_kind,
+                split=split,
+                task=task_name,
+                profile=profile,
+                profile_spec=profile_spec,
+                tokenizer=tokenizer,
+                min_prompt_tokens=min_prompt_tokens,
+                max_prompt_tokens=max_prompt_tokens,
+                min_target_tokens=min_target_tokens,
+                max_target_tokens=max_target_tokens,
+                language_filter=language_filter,
+                seen_content_hashes=seen_content_hashes,
+                dedup_content_hash=dedup_content_hash,
+                counters=counters,
+                source=source,
+            )
+            if sample is not None:
+                task_samples.append(sample)
+        if not task_samples:
+            raise ValueError(f"LongBench task {task_name!r} produced no usable rows from {raw_path}")
+        selected = _select_longbench_task_samples(
+            task_samples,
+            task_name=task_name,
+            seed=seed,
+            limit=samples_per_task,
+        )
+        counters.drops["not_selected_by_sampling"] += len(task_samples) - len(selected)
+        samples.extend(selected)
+    counters.materialized_rows = len(samples)
+    return samples
+
+
+def _iter_longbench_rows(raw_path: Path, task_name: str) -> list[tuple[int, dict[str, Any], str]]:
+    if raw_path.is_file():
+        if raw_path.suffix != ".zip":
+            raise ValueError(f"LongBench raw_path file must be .zip: {raw_path}")
+        member_name = f"data/{task_name}.jsonl"
+        with zipfile.ZipFile(raw_path) as archive:
+            names = set(archive.namelist())
+            if member_name not in names:
+                raise FileNotFoundError(f"LongBench task {task_name!r} not found in {raw_path}")
+            rows: list[tuple[int, dict[str, Any], str]] = []
+            with archive.open(member_name) as handle:
+                for row_index, raw_line in enumerate(handle):
+                    stripped = raw_line.decode("utf-8").strip()
+                    if not stripped:
+                        continue
+                    row = json.loads(stripped)
+                    if not isinstance(row, dict):
+                        raise ValueError(f"{member_name}:{row_index + 1} must be a JSON object")
+                    rows.append((row_index, row, f"{raw_path}:{member_name}:{row_index + 1}"))
+            return rows
+    if raw_path.is_dir():
+        zip_path = raw_path / "data.zip"
+        if zip_path.is_file():
+            return _iter_longbench_rows(zip_path, task_name)
+        candidate_paths = [raw_path / "data" / f"{task_name}.jsonl", raw_path / f"{task_name}.jsonl"]
+        for candidate in candidate_paths:
+            if not candidate.is_file():
+                continue
+            rows = []
+            with candidate.open("r", encoding="utf-8") as handle:
+                for row_index, raw_line in enumerate(handle):
+                    stripped = raw_line.strip()
+                    if not stripped:
+                        continue
+                    row = json.loads(stripped)
+                    if not isinstance(row, dict):
+                        raise ValueError(f"{candidate}:{row_index + 1} must be a JSON object")
+                    rows.append((row_index, row, f"{candidate}:{row_index + 1}"))
+            return rows
+        raise FileNotFoundError(
+            f"LongBench task {task_name!r} not found under {raw_path}; expected data.zip or task jsonl files"
+        )
+    raise FileNotFoundError(f"LongBench raw_path not found: {raw_path}")
+
+
+def _longbench_row_to_sample(
+    row: dict[str, Any],
+    *,
+    row_index: int,
+    dataset_name: str,
+    dataset_kind: str,
+    split: str,
+    task: str,
+    profile: str,
+    profile_spec: LongBenchProfileSpec,
+    tokenizer: PromptTokenizer,
+    min_prompt_tokens: int,
+    max_prompt_tokens: int,
+    min_target_tokens: int,
+    max_target_tokens: int,
+    language_filter: dict[str, set[str]],
+    seen_content_hashes: set[str],
+    dedup_content_hash: bool,
+    counters: Counters,
+    source: str,
+) -> MaterializedSample | None:
+    prompt = _render_longbench_prompt(row)
+    target = _longbench_reference_answer(row.get("answers"))
+    prompt_token_count = len(tokenizer.encode(prompt))
+    target_token_count = len(tokenizer.encode(target))
+    if prompt_token_count < min_prompt_tokens:
+        counters.drops["prompt_too_short"] += 1
+        return None
+    if prompt_token_count > max_prompt_tokens:
+        counters.drops["prompt_too_long"] += 1
+        return None
+    if target_token_count < min_target_tokens:
+        counters.drops["missing_empty_target"] += 1
+        return None
+    if target_token_count > max_target_tokens:
+        counters.drops["target_too_long"] += 1
+        return None
+    language = _optional_string(row.get("language"), f"{source}.language") or _default_longbench_language(task)
+    if not _language_allowed(language, language_filter):
+        counters.drops["unsupported_language"] += 1
+        return None
+    content_hash = _hash_text(prompt)
+    if dedup_content_hash and content_hash in seen_content_hashes:
+        counters.drops["duplicate_content_hash"] += 1
+        return None
+    seen_content_hashes.add(content_hash)
+    sample_id = f"{dataset_name}-{task}-{row_index:06d}"
+    metadata = {
+        "dataset": dataset_name,
+        "dataset_kind": dataset_kind,
+        "task": task,
+        "profile": profile,
+        "workload_type": profile_spec.workload_type,
+        "output_regime": profile_spec.output_regime,
+        "prompt_template": "longbench_context_task",
+        "split": split,
+        "language": language,
+        "file_path": f"data/{task}.jsonl",
+        "session_id": f"{dataset_name}::{profile}::{task}",
+        "sample_id": sample_id,
+        "sequence_index": row_index,
+        "content_hash": content_hash,
+        "ground_truth": target,
+        "target_hash": _hash_text(target),
+        "prompt_token_count": prompt_token_count,
+        "target_token_count": target_token_count,
+        "longbench_id": row.get("_id"),
+        "longbench_row_index": row_index,
+        "longbench_length": row.get("length"),
+        "longbench_dataset": row.get("dataset"),
+    }
+    return MaterializedSample(
+        sample_id=sample_id,
+        prompt=prompt,
+        target=target,
+        expected_output_len=max(1, target_token_count),
+        metadata=metadata,
+    )
+
+
+def _render_longbench_prompt(row: dict[str, Any]) -> str:
+    context = _expect_string(row.get("context"), "longbench row.context")
+    task_input = _expect_string(row.get("input"), "longbench row.input")
+    all_classes = row.get("all_classes")
+    class_text = ""
+    if isinstance(all_classes, list) and all_classes:
+        labels = [str(item) for item in all_classes if str(item)]
+        if labels:
+            class_text = "\nCandidate labels/classes: " + ", ".join(labels)
+    language = row.get("language")
+    language_text = f"\nLanguage: {language}" if isinstance(language, str) and language else ""
+    return (
+        "Context:\n"
+        f"{context}\n\n"
+        "Task:\n"
+        f"{task_input}"
+        f"{class_text}"
+        f"{language_text}\n\n"
+        "Answer:"
+    )
+
+
+def _longbench_reference_answer(answers: Any) -> str:
+    if isinstance(answers, list):
+        text_answers = [str(item) for item in answers if str(item)]
+        if text_answers:
+            return max(text_answers, key=len)
+        return " "
+    if answers is None:
+        return " "
+    return str(answers)
+
+
+def _select_longbench_task_samples(
+    samples: list[MaterializedSample],
+    *,
+    task_name: str,
+    seed: int,
+    limit: int,
+) -> list[MaterializedSample]:
+    if len(samples) <= limit:
+        return sorted(samples, key=_sample_order_key)
+    ranked = sorted(
+        samples,
+        key=lambda sample: (
+            _hash_text(f"{seed}:{task_name}:{sample.sample_id}:{sample.metadata['content_hash']}"),
+            sample.sample_id,
+        ),
+    )
+    return sorted(ranked[:limit], key=_sample_order_key)
+
+
+def _sample_order_key(sample: MaterializedSample) -> tuple[int, str, str]:
+    return (
+        int(sample.metadata["sequence_index"]),
+        str(sample.metadata["file_path"]),
+        str(sample.metadata["content_hash"]),
+    )
 
 
 def _repobench_row_to_sample(
@@ -755,13 +1107,15 @@ def _build_manifest(
     dataset_name: str,
     dataset_kind: str,
     task: str,
+    profile: str | None,
     prompt_template: str,
     shards: list[list[MaterializedSample]],
     shard_entries: list[dict[str, Any]],
     samples_per_shard: int,
+    selected_tasks: list[str] | None,
 ) -> dict[str, Any]:
     all_samples = [sample for shard in shards for sample in shard]
-    return {
+    manifest = {
         "workload_name": name,
         "dataset": dataset_name,
         "dataset_kind": dataset_kind,
@@ -770,11 +1124,17 @@ def _build_manifest(
         "num_shards": len(shards),
         "samples_per_shard": samples_per_shard,
         "shards": shard_entries,
+        "selected_tasks": selected_tasks or sorted({str(sample.metadata["task"]) for sample in all_samples}),
         "language_counts": dict(Counter(str(sample.metadata["language"]) for sample in all_samples)),
         "prompt_tokens": _summary([int(sample.metadata["prompt_token_count"]) for sample in all_samples]),
         "target_tokens": _summary([int(sample.metadata["target_token_count"]) for sample in all_samples]),
+        "profile_summaries": _group_summaries(all_samples, group_key="profile"),
+        "task_summaries": _group_summaries(all_samples, group_key="task"),
         "unique_content_hashes": len({sample.metadata["content_hash"] for sample in all_samples}),
     }
+    if profile is not None:
+        manifest["profile"] = profile
+    return manifest
 
 
 def _build_report(
@@ -783,14 +1143,16 @@ def _build_report(
     dataset_name: str,
     dataset_kind: str,
     task: str,
+    profile: str | None,
     prompt_template: str,
     raw_path: Path | None,
     output_dir: Path,
     tokenizer_name: str,
     samples: list[MaterializedSample],
     counters: Counters,
+    selected_tasks: list[str] | None,
 ) -> dict[str, Any]:
-    return {
+    report = {
         "workload_name": name,
         "dataset": dataset_name,
         "dataset_kind": dataset_kind,
@@ -798,6 +1160,7 @@ def _build_report(
         "prompt_template": prompt_template,
         "raw_path": str(raw_path) if raw_path is not None else None,
         "output_dir": str(output_dir),
+        "selected_tasks": selected_tasks or sorted({str(sample.metadata["task"]) for sample in samples}),
         "tokenizer": {
             "name": tokenizer_name,
             "fallback_used": False,
@@ -810,7 +1173,51 @@ def _build_report(
         "language_counts": dict(Counter(str(sample.metadata["language"]) for sample in samples)),
         "prompt_tokens": _summary([int(sample.metadata["prompt_token_count"]) for sample in samples]),
         "target_tokens": _summary([int(sample.metadata["target_token_count"]) for sample in samples]),
+        "profile_summaries": _group_summaries(samples, group_key="profile"),
+        "task_summaries": _group_summaries(samples, group_key="task"),
     }
+    if profile is not None:
+        report["profile"] = profile
+    return report
+
+
+def _group_summaries(
+    samples: list[MaterializedSample],
+    *,
+    group_key: str,
+) -> dict[str, dict[str, Any]]:
+    groups: dict[str, list[MaterializedSample]] = defaultdict(list)
+    for sample in samples:
+        value = sample.metadata.get(group_key)
+        if value in (None, ""):
+            continue
+        groups[str(value)].append(sample)
+    summaries: dict[str, dict[str, Any]] = {}
+    for group_name in sorted(groups):
+        grouped_samples = groups[group_name]
+        payload: dict[str, Any] = {
+            "count": len(grouped_samples),
+            "prompt_tokens": _summary([int(sample.metadata["prompt_token_count"]) for sample in grouped_samples]),
+            "target_tokens": _summary([int(sample.metadata["target_token_count"]) for sample in grouped_samples]),
+        }
+        if group_key == "profile":
+            payload["task_counts"] = dict(Counter(str(sample.metadata["task"]) for sample in grouped_samples))
+        if group_key == "task":
+            payload["language_counts"] = dict(Counter(str(sample.metadata["language"]) for sample in grouped_samples))
+            profile_counts = Counter(
+                str(sample.metadata["profile"])
+                for sample in grouped_samples
+                if sample.metadata.get("profile") not in (None, "")
+            )
+            if profile_counts:
+                payload["profile_counts"] = dict(profile_counts)
+            first_metadata = grouped_samples[0].metadata
+            if "workload_type" in first_metadata:
+                payload["workload_type"] = first_metadata["workload_type"]
+            if "output_regime" in first_metadata:
+                payload["output_regime"] = first_metadata["output_regime"]
+        summaries[group_name] = payload
+    return summaries
 
 
 def _jsonl_files(raw_path: Path) -> list[Path]:
@@ -1023,6 +1430,42 @@ def _repobench_tasks(value: Any) -> list[str]:
     return tasks
 
 
+def _longbench_selection(dataset: dict[str, Any]) -> tuple[str, LongBenchProfileSpec, list[str]]:
+    profile = _required_string(dataset, "profile")
+    try:
+        profile_spec = LONGBENCH_PROFILE_SPECS[profile]
+    except KeyError as exc:
+        supported = ", ".join(sorted(LONGBENCH_PROFILE_SPECS))
+        raise ValueError(f"supported LongBench dataset.profile values: {supported}") from exc
+    requested = (
+        _string_list(dataset.get("configs"), "dataset.configs")
+        if dataset.get("configs") is not None
+        else list(profile_spec.tasks)
+    )
+    if not requested:
+        raise ValueError("dataset.configs must not be empty when provided")
+    excluded = sorted(task for task in requested if task in LONGBENCH_EXCLUDED_TASKS)
+    if excluded:
+        raise ValueError(
+            "LongBench realistic-NL profiles exclude tasks: "
+            + ", ".join(excluded)
+        )
+    allowed = set(profile_spec.tasks)
+    invalid = sorted(task for task in requested if task not in allowed)
+    if invalid:
+        raise ValueError(
+            f"LongBench profile {profile!r} only supports tasks {list(profile_spec.tasks)}; got {invalid}"
+        )
+    selected_tasks: list[str] = []
+    seen: set[str] = set()
+    for task_name in requested:
+        if task_name in seen:
+            continue
+        selected_tasks.append(task_name)
+        seen.add(task_name)
+    return profile, profile_spec, selected_tasks
+
+
 def _prompt_template(value: Any) -> str:
     template = _optional_string(value, "prompt_template") or "plain_prefix"
     if template not in {"plain_prefix", "xml_tags"}:
@@ -1032,6 +1475,12 @@ def _prompt_template(value: Any) -> str:
 
 def _hash_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _default_longbench_language(task_name: str) -> str:
+    if task_name.endswith("_zh") or task_name == "dureader":
+        return "zh"
+    return "en"
 
 
 def _resolve_path(path: str, *, base_dir: Path) -> Path:

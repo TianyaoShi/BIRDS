@@ -20,11 +20,8 @@ Implemented today:
 - CrossCodeEval-like local JSONL files or directories of JSONL files.
 - RepoBench local parquet artifacts, including aggregate mode across languages
   and tasks.
-
-Planned:
-
-- LongBench refinement through materialized profile shards rather than direct
-  whole-LongBench runtime sampling.
+- LongBench realistic-NL profile materialization from local `data.zip` or
+  unpacked task JSONL artifacts.
 
 CrossCodeEval-like JSONL supports field aliases configured under
 `dataset.field_aliases`. The default logical fields are:
@@ -83,6 +80,9 @@ These code-completion configs explicitly set:
 dataset:
   prompt_template: plain_prefix
 ```
+
+LongBench profile materialization configs live under
+`experiments/longbench_workloads/`.
 
 ## Materialize
 
