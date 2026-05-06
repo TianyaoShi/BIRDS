@@ -354,7 +354,7 @@ def render_energy_task_shell(group_plan_path: str | Path, task_index: int) -> st
 def render_energy_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmConfig) -> str:
     group_key = str(group_payload["group_key"])
     gpu_count = int(group_payload["gpu_count"])
-    cpus_per_task = _cpus_per_task(gpu_count)
+    cpus_per_task = _cpus_per_task(gpu_count, slurm=slurm)
     python_executable = str(group_payload["python_executable"])
     repo_root = str(group_payload["repo_root"])
     profiler_root = str(group_payload["profiler_root"])

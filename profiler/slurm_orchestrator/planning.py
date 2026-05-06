@@ -425,7 +425,7 @@ def render_task_shell(group_plan_path: str | Path, task_index: int) -> str:
 def render_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmConfig) -> str:
     group_key = str(group_payload["group_key"])
     gpu_count = int(group_payload["gpu_count"])
-    cpus_per_task = _cpus_per_task(gpu_count)
+    cpus_per_task = _cpus_per_task(gpu_count, slurm=slurm)
     python_executable = str(group_payload["python_executable"])
     repo_root = str(group_payload["repo_root"])
     profiler_root = str(group_payload["profiler_root"])
@@ -739,10 +739,13 @@ def _experiment_selected(
     return not any(fnmatchcase(lowered, pattern.lower()) for pattern in exclude_patterns)
 
 
-def _cpus_per_task(gpu_count: int) -> int:
+def _cpus_per_task(gpu_count: int, *, slurm: SlurmConfig | None = None) -> int:
     if gpu_count <= 0:
         raise ValueError("gpu_count must be positive")
-    return 14 * gpu_count
+    if slurm is not None and slurm.cpus_per_task is not None:
+        return slurm.cpus_per_task
+    cpus_per_gpu = slurm.cpus_per_gpu if slurm is not None else 14
+    return cpus_per_gpu * gpu_count
 
 
 def _job_name(run_id: str, group_key: str) -> str:

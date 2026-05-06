@@ -151,6 +151,23 @@ def test_materialize_energy_run_plan_groups_jobs_and_renders_energy_script(tmp_p
     assert (Path(run_plan["run_root"]) / "plan.yaml").is_file()
 
 
+def test_energy_sbatch_honors_slurm_cpu_overrides(tmp_path: Path) -> None:
+    plan = _make_energy_plan(tmp_path)
+    plan_path = write_energy_plan(plan, tmp_path / "plans" / "energy-plan-a.yaml")
+    slurm = SlurmConfig(base_port=8500, cpus_per_gpu=32)
+
+    run_plan = materialize_energy_run_plan(
+        plan=plan,
+        plan_path=plan_path,
+        run_id="energy-slurm-run",
+        slurm=slurm,
+    )
+
+    gpu2_script = Path(run_plan["groups"][1]["script_path"]).read_text(encoding="utf-8")
+    assert "#SBATCH --gres=gpu:2" in gpu2_script
+    assert "#SBATCH --cpus-per-task=64" in gpu2_script
+
+
 def test_finalize_and_collect_energy_run_write_profiler_compatible_summary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

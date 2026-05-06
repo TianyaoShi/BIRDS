@@ -145,6 +145,56 @@ def test_rendered_sbatch_script_scales_cpus_with_gpu_count(tmp_path: Path) -> No
     assert "#SBATCH --cpus-per-task=56" in script
 
 
+def test_rendered_sbatch_script_accepts_cpus_per_gpu_override(tmp_path: Path) -> None:
+    workload = _write_workload(tmp_path, "sharegpt.yaml")
+    manifest_path = _write_manifest(
+        tmp_path,
+        {
+            "run": {"output_root": str(tmp_path / "runs")},
+            "slurm": {"cpus_per_gpu": 32},
+            "experiments": [
+                {
+                    "id": "exp-b",
+                    "model": "model-b",
+                    "workload": str(workload),
+                    "launch": {"gpu_count": 4, "tensor_parallel_size": 4},
+                },
+            ],
+        },
+    )
+
+    plan = materialize_run_plan(load_manifest(manifest_path), "run-cpu-per-gpu")
+    script = Path(plan["groups"][0]["script_path"]).read_text(encoding="utf-8")
+
+    assert "#SBATCH --gres=gpu:4" in script
+    assert "#SBATCH --cpus-per-task=128" in script
+
+
+def test_rendered_sbatch_script_accepts_fixed_cpus_per_task_override(tmp_path: Path) -> None:
+    workload = _write_workload(tmp_path, "sharegpt.yaml")
+    manifest_path = _write_manifest(
+        tmp_path,
+        {
+            "run": {"output_root": str(tmp_path / "runs")},
+            "slurm": {"cpus_per_gpu": 32, "cpus_per_task": 16},
+            "experiments": [
+                {
+                    "id": "exp-b",
+                    "model": "model-b",
+                    "workload": str(workload),
+                    "launch": {"gpu_count": 4, "tensor_parallel_size": 4},
+                },
+            ],
+        },
+    )
+
+    plan = materialize_run_plan(load_manifest(manifest_path), "run-cpu-per-task")
+    script = Path(plan["groups"][0]["script_path"]).read_text(encoding="utf-8")
+
+    assert "#SBATCH --gres=gpu:4" in script
+    assert "#SBATCH --cpus-per-task=16" in script
+
+
 def test_collect_run_aggregates_succeeded_and_failed_jobs(tmp_path: Path) -> None:
     workload = _write_workload(tmp_path, "sharegpt.yaml")
     manifest_path = _write_manifest(

@@ -80,13 +80,18 @@ slurm:
   setup_commands:
     - source /path/to/venv/bin/activate
   python_executable: /path/to/venv/bin/python
+  cpus_per_gpu: 14
+  cpus_per_task: null
   array_concurrency_limit: 4
   base_port: 8000
 ```
 
 `run.python_executable` is still honored. If both are set, `slurm.python_executable` wins for the Slurm helper commands and MST invocations.
 
-`--cpus-per-task` is derived automatically as `14 * launch.gpu_count`, so the manifest does not expose a CPU override.
+`--cpus-per-task` defaults to `slurm.cpus_per_gpu * launch.gpu_count`.
+`slurm.cpus_per_gpu` defaults to `14` for backward compatibility with the original cluster.
+Set `slurm.cpus_per_gpu: 32` for Anvil-style 4xA100 nodes with 128 CPUs, or set
+`slurm.cpus_per_task` to force a fixed CPU count for every Slurm group.
 
 ## Submission Model
 
@@ -94,7 +99,7 @@ slurm:
 - Each group is submitted as one Slurm array with a generated `#SBATCH --array=...` clause.
 - Every array task loads one expanded job payload, starts one vLLM server on localhost, waits for `/v1/models`, runs MST search and report, then tears the server down.
 - Multi-GPU jobs request `launch.gpu_count` GPUs on one node with `#SBATCH --gres=gpu:<count>`.
-- CPU allocation follows the cluster convention `14 CPUs per GPU`, so a 4-GPU job renders `#SBATCH --cpus-per-task=56`.
+- CPU allocation follows `slurm.cpus_per_gpu` unless `slurm.cpus_per_task` is set, so the default 4-GPU job renders `#SBATCH --cpus-per-task=56`, while `cpus_per_gpu: 32` renders `#SBATCH --cpus-per-task=128`.
 
 ## State And Logs
 

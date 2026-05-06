@@ -43,6 +43,8 @@ _SLURM_KEYS = {
     "qos",
     "time",
     "mem",
+    "cpus_per_task",
+    "cpus_per_gpu",
     "modules",
     "setup_commands",
     "python_executable",
@@ -338,6 +340,8 @@ def _parse_slurm_config(raw: Any) -> SlurmConfig:
         "qos": None,
         "time": None,
         "mem": None,
+        "cpus_per_task": None,
+        "cpus_per_gpu": 14,
         "modules": (),
         "setup_commands": (),
         "python_executable": None,
@@ -352,7 +356,7 @@ def _parse_slurm_config(raw: Any) -> SlurmConfig:
         if key in {"modules", "setup_commands", "sbatch_extra_args"}:
             updated[key] = _parse_string_list(value, field_name=f"slurm.{key}")
             continue
-        if key == "base_port":
+        if key in {"cpus_per_task", "cpus_per_gpu", "base_port"}:
             updated[key] = _expect_int(value, f"slurm.{key}", minimum=1)
             continue
         if key == "array_concurrency_limit":

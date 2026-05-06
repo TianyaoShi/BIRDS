@@ -83,6 +83,8 @@ class SlurmConfig:
     qos: str | None = None
     time: str | None = None
     mem: str | None = None
+    cpus_per_task: int | None = None
+    cpus_per_gpu: int = 14
     modules: tuple[str, ...] = ()
     setup_commands: tuple[str, ...] = ()
     python_executable: str | None = None
@@ -95,6 +97,9 @@ class SlurmConfig:
             value = getattr(self, field_name)
             if value is not None and not value:
                 raise ValueError(f"{field_name} must be non-empty when provided")
+        if self.cpus_per_task is not None:
+            _require_positive_int("slurm cpus_per_task", self.cpus_per_task)
+        _require_positive_int("slurm cpus_per_gpu", self.cpus_per_gpu)
         if self.python_executable is not None and not self.python_executable:
             raise ValueError("slurm python_executable must be non-empty when provided")
         if self.array_concurrency_limit is not None:
