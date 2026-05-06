@@ -56,6 +56,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
 
     tokenization = optional_mapping(config.get("tokenization"), "tokenization")
     tokenizer_name = optional_string(tokenization.get("tokenizer"), "tokenization.tokenizer") or "whitespace"
+    tokenizer_name = _resolve_tokenizer_spec(tokenizer_name, base_dir=base_dir)
     tokenizer = resolve_tokenizer(tokenizer_name)
 
     filtering_payload = optional_mapping(config.get("filtering"), "filtering")
@@ -176,3 +177,15 @@ def _result_payload(output_dir: Path, shards: list[list[Any]]) -> dict[str, Any]
         "num_shards": len(shards),
         "num_samples": sum(len(shard) for shard in shards),
     }
+
+
+def _resolve_tokenizer_spec(tokenizer_spec: str, *, base_dir: Path) -> str:
+    if tokenizer_spec in {"whitespace", "character"}:
+        return tokenizer_spec
+    candidate = Path(tokenizer_spec).expanduser()
+    if candidate.is_absolute():
+        return str(candidate)
+    resolved = (base_dir / candidate).resolve()
+    if candidate.parts and (tokenizer_spec.startswith(".") or resolved.exists()):
+        return str(resolved)
+    return tokenizer_spec

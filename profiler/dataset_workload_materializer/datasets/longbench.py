@@ -109,8 +109,8 @@ def load_longbench_samples(
     samples_per_task: int,
 ) -> list[MaterializedSample]:
     samples: list[MaterializedSample] = []
-    seen_content_hashes: set[str] = set()
     for task_name in selected_tasks:
+        seen_content_hashes: set[str] = set()
         task_samples: list[MaterializedSample] = []
         for row_index, row, source in iter_longbench_rows(raw_path, task_name):
             counters.total_rows += 1
@@ -269,7 +269,9 @@ def longbench_row_to_sample(
 
 def render_longbench_prompt(row: dict[str, Any]) -> str:
     context = expect_string(row.get("context"), "longbench row.context")
-    task_input = expect_string(row.get("input"), "longbench row.input")
+    task_input = row.get("input")
+    if not isinstance(task_input, str):
+        raise ValueError("longbench row.input must be a string")
     all_classes = row.get("all_classes")
     class_text = ""
     if isinstance(all_classes, list) and all_classes:
