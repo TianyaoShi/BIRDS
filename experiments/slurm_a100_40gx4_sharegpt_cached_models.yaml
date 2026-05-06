@@ -16,7 +16,7 @@ slurm:
   setup_commands:
     - source /anvil/projects/x-cis250584/BioLLM/helper_scripts/activate_vllm_a100.sh
   python_executable: /anvil/projects/x-cis250584/BioLLM/.venv-a100/bin/python
-  cpus_per_gpu: 32
+  cpus_per_gpu: 16
   array_concurrency_limit: 1
   base_port: 9300
 
@@ -34,6 +34,7 @@ probe:
   kv_cache_request_count: 1
   model_size_overrides_b:
     openai/gpt-oss-20b: 5.0
+    openai/gpt-oss-120b: 30.0
 
 launch:
   executable: vllm
@@ -140,6 +141,21 @@ overrides:
       max_request_rate: 36
       max_binary_steps: 10
       max_bracket_trials: 16
+
+  - match:
+      model: openai/gpt-oss-120b
+    reason: gpt-oss-120b uses quantized checkpoint metadata; run only at TP4 on A100-40GB with conservative batching.
+    launch:
+      dtype: auto
+      gpu_memory_utilization: 0.88
+      max_model_len: 8192
+      max_num_seqs: 128
+      max_num_batched_tokens: 2048
+    search:
+      initial_request_rate: 0.5
+      max_request_rate: 12
+      max_binary_steps: 9
+      max_bracket_trials: 12
 
   - match:
       models:
@@ -307,3 +323,10 @@ experiments:
   - id: gpt-oss-20b-a100-tp1
     model: openai/gpt-oss-20b
     workload: ./workloads/live_sharegpt_workload_context_8192.yaml
+
+  - id: gpt-oss-120b-a100-tp4
+    model: openai/gpt-oss-120b
+    workload: ./workloads/live_sharegpt_workload_context_8192.yaml
+    launch:
+      gpu_count: 4
+      tensor_parallel_size: 4
