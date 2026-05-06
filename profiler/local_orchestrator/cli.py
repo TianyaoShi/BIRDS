@@ -76,6 +76,8 @@ def _dry_run_command(args: argparse.Namespace) -> int:
                 "max_binary_steps": job.search.max_binary_steps,
                 "ttft_slo_ms": job.search.ttft_slo_ms,
                 "tpot_slo_ms": job.search.tpot_slo_ms,
+                "ttft_slo_mode": job.search.ttft_slo_mode,
+                "longbench_ttft_static_preset": job.search.longbench_ttft_static_preset,
                 "probe": None if job.probe is None else job.probe.to_payload(),
                 "result_dir": str(job.result_dir),
                 "server_signature_key": job.server_signature_key,

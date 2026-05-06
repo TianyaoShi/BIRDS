@@ -53,17 +53,21 @@ def analyze_trial_dir(
     server_metrics_result = _load_server_metrics(directory, summary_payload)
     if isinstance(server_metrics_result, TrialAnalysisResult):
         return server_metrics_result
+    server_metrics: list[ServerMetricSample] = []
     if server_metrics_result:
+        server_metrics = server_metrics_result
         windows = FixedWindowAggregator(window_s=_analysis_window_s(config_payload)).summarize(
             trial_id=summary.trial_id,
             request_records=request_records,
-            server_metrics=server_metrics_result,
+            server_metrics=server_metrics,
         )
 
     stability = classify_stability(
         windows,
         config=stability_config or _stability_config_from_metadata(config_payload),
         aborted_safety=summary.status == "aborted_safety",
+        request_records=request_records,
+        trial_start_ts=_trial_start_ts(request_records, server_metrics),
     )
     bottleneck = classify_bottleneck(
         windows,
@@ -222,6 +226,19 @@ def _analysis_window_s(config_payload: Mapping[str, Any]) -> float:
     return float(raw_window_s)
 
 
+def _trial_start_ts(
+    request_records: Sequence[RequestRecord],
+    server_metrics: Sequence[ServerMetricSample],
+) -> float:
+    request_start = min(
+        record.actual_send_ts
+        for record in request_records
+        if record.actual_send_ts is not None
+    )
+    metric_start = min((sample.ts for sample in server_metrics), default=float("inf"))
+    return min(request_start, metric_start)
+
+
 def _load_server_metadata(
     trial_dir: Path,
     config_payload: Mapping[str, Any],
@@ -279,6 +296,8 @@ def _stability_config_from_metadata(config_payload: Mapping[str, Any]) -> Stabil
         "tpot_slo_ms",
         "ttft_slo_field",
         "tpot_slo_field",
+        "ttft_slo_mode",
+        "longbench_ttft_static_preset",
     }
     unknown = set(policy) - allowed
     if unknown:

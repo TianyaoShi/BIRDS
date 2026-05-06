@@ -225,6 +225,8 @@ class SearchConfig:
     tpot_slo_ms: float | None = None
     ttft_slo_field: str = "ttft_p90_ms"
     tpot_slo_field: str = "tpot_p90_ms"
+    ttft_slo_mode: str = "static"
+    longbench_ttft_static_preset: str | None = None
     max_num_seqs: int | None = None
     max_num_batched_tokens: int | None = None
 
@@ -264,6 +266,15 @@ class SearchConfig:
             raise ValueError(f"unsupported ttft_slo_field {self.ttft_slo_field!r}")
         if self.tpot_slo_field not in {"tpot_p50_ms", "tpot_p90_ms", "tpot_p99_ms"}:
             raise ValueError(f"unsupported tpot_slo_field {self.tpot_slo_field!r}")
+        if self.ttft_slo_mode not in {"static", "length_scaled"}:
+            raise ValueError(f"unsupported ttft_slo_mode {self.ttft_slo_mode!r}")
+        if self.longbench_ttft_static_preset is not None:
+            if self.longbench_ttft_static_preset not in {"default", "tight", "relaxed"}:
+                raise ValueError(
+                    "longbench_ttft_static_preset must be one of: default, tight, relaxed"
+                )
+            if self.ttft_slo_mode != "static":
+                raise ValueError("longbench_ttft_static_preset requires ttft_slo_mode='static'")
         if self.max_num_seqs is not None:
             _require_positive_int("max_num_seqs", self.max_num_seqs)
         if self.max_num_batched_tokens is not None:

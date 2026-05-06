@@ -421,6 +421,8 @@ def _render_markdown(payload: Mapping[str, object]) -> str:
         "## 7. Stability SLOs and decision basis",
         f"- ttft_slo_ms: {stability_policy.get('ttft_slo_ms')}",
         f"- ttft_slo_field: {stability_policy.get('ttft_slo_field')}",
+        f"- ttft_slo_mode: {stability_policy.get('ttft_slo_mode', 'static')}",
+        f"- longbench_ttft_static_preset: {stability_policy.get('longbench_ttft_static_preset')}",
         f"- tpot_slo_ms: {stability_policy.get('tpot_slo_ms')}",
         f"- tpot_slo_field: {stability_policy.get('tpot_slo_field')}",
         f"- decision_subject: {decision_context.get('subject')}",
@@ -696,6 +698,8 @@ def _stability_policy_payload(trials: Sequence[Mapping[str, object]]) -> dict[st
         "tpot_slo_ms": config.tpot_slo_ms,
         "ttft_slo_field": config.ttft_slo_field,
         "tpot_slo_field": config.tpot_slo_field,
+        "ttft_slo_mode": config.ttft_slo_mode,
+        "longbench_ttft_static_preset": config.longbench_ttft_static_preset,
     }
 
 

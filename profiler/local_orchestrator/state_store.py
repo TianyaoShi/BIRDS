@@ -443,11 +443,20 @@ class RunStateStore:
         search = job.get("search")
         if isinstance(search, dict) and any(
             key in search
-            for key in ("ttft_slo_ms", "tpot_slo_ms", "ttft_slo_field", "tpot_slo_field")
+            for key in (
+                "ttft_slo_ms",
+                "tpot_slo_ms",
+                "ttft_slo_field",
+                "tpot_slo_field",
+                "ttft_slo_mode",
+                "longbench_ttft_static_preset",
+            )
         ):
             return {
                 "ttft_slo_ms": search.get("ttft_slo_ms"),
                 "ttft_slo_field": search.get("ttft_slo_field", "ttft_p90_ms"),
+                "ttft_slo_mode": search.get("ttft_slo_mode", "static"),
+                "longbench_ttft_static_preset": search.get("longbench_ttft_static_preset"),
                 "tpot_slo_ms": search.get("tpot_slo_ms"),
                 "tpot_slo_field": search.get("tpot_slo_field", "tpot_p90_ms"),
             }
@@ -461,12 +470,18 @@ class RunStateStore:
                         return {
                             "ttft_slo_ms": policy.get("ttft_slo_ms"),
                             "ttft_slo_field": policy.get("ttft_slo_field", "ttft_p90_ms"),
+                            "ttft_slo_mode": policy.get("ttft_slo_mode", "static"),
+                            "longbench_ttft_static_preset": policy.get(
+                                "longbench_ttft_static_preset"
+                            ),
                             "tpot_slo_ms": policy.get("tpot_slo_ms"),
                             "tpot_slo_field": policy.get("tpot_slo_field", "tpot_p90_ms"),
                         }
         return {
             "ttft_slo_ms": None,
             "ttft_slo_field": "ttft_p90_ms",
+            "ttft_slo_mode": "static",
+            "longbench_ttft_static_preset": None,
             "tpot_slo_ms": None,
             "tpot_slo_field": "tpot_p90_ms",
         }
@@ -484,6 +499,13 @@ class RunStateStore:
             raise ValueError(f"unsupported SLO metric: {metric!r}")
         value = RunStateStore._as_finite_float(policy.get(f"{metric}_slo_ms"))
         field = policy.get(f"{metric}_slo_field") or f"{metric}_p90_ms"
+        if metric == "ttft":
+            mode = policy.get("ttft_slo_mode", "static")
+            preset = policy.get("longbench_ttft_static_preset")
+            if mode == "length_scaled":
+                return f"{field} length_scaled"
+            if preset is not None:
+                return f"{field} longbench_static:{preset}"
         if value is None:
             return f"{field} disabled"
         return f"{field}<={value:.6g}ms"

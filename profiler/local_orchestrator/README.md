@@ -93,6 +93,7 @@ search:
   max_request_rate: 8
   max_binary_steps: 8
   ttft_slo_ms: 1000
+  ttft_slo_mode: static
   tpot_slo_ms: 125
 
 overrides:
@@ -109,8 +110,14 @@ overrides:
   - match:
       workload: "*long-context*"
     search:
-      ttft_slo_ms: 2000
+      ttft_slo_mode: length_scaled
       tpot_slo_ms: 175
+
+  - match:
+      workload: "*longbench_short_answer_document_qa*"
+    search:
+      ttft_slo_mode: static
+      longbench_ttft_static_preset: tight
 
 experiments:
   - id: chat-matrix

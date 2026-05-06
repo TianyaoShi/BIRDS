@@ -137,6 +137,31 @@ Use `none` to disable a threshold:
 --tpot-slo-ms none
 ```
 
+TTFT has two policy modes:
+
+- `--ttft-slo-mode static`: the default. It uses `--ttft-slo-ms` exactly as
+  before.
+- `--ttft-slo-mode length_scaled`: request-level LongBench profile policy. It
+  uses `metadata.profile` and `prompt_len` from materialized LongBench bucket
+  workloads, then checks the configured TTFT percentile as a normalized
+  threshold ratio.
+
+LongBench bucketized workloads can also use profile-specific static fallbacks:
+
+```bash
+--ttft-slo-mode static --longbench-ttft-static-preset default
+--ttft-slo-mode static --longbench-ttft-static-preset tight
+--ttft-slo-mode static --longbench-ttft-static-preset relaxed
+```
+
+The preset TTFT seconds are ordered by profile
+`long_output_summarization`, `medium_output_summarization`,
+`medium_answer_rag_qa`, `short_answer_document_qa`:
+
+- default: `35 / 30 / 20 / 15`
+- tight: `25 / 22 / 15 / 10`
+- relaxed: `45 / 40 / 30 / 20`
+
 There is no E2E SLO interface.
 
 ## Commands

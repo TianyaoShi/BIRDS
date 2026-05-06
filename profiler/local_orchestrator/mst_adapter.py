@@ -74,7 +74,16 @@ def build_search_command(
         job.search.ttft_slo_field,
         "--tpot-slo-field",
         job.search.tpot_slo_field,
+        "--ttft-slo-mode",
+        job.search.ttft_slo_mode,
     ]
+    if job.search.longbench_ttft_static_preset is not None:
+        command.extend(
+            [
+                "--longbench-ttft-static-preset",
+                job.search.longbench_ttft_static_preset,
+            ]
+        )
     if job.search.trial_max_duration_s is not None:
         command.extend(["--trial-max-duration-s", f"{job.search.trial_max_duration_s}"])
     if job.search.final_confirmation_duration_s is not None:

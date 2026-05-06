@@ -9,11 +9,57 @@ from typing import Literal, Sequence
 
 from scipy import stats
 
-from .records import StabilityResult, WindowSummary
+from .records import RequestRecord, StabilityResult, WindowSummary
 
 
 Status = Literal["stable", "unstable", "slo_violation", "uncertain", "aborted_safety"]
 Confidence = Literal["high", "medium", "low"]
+TtftSloMode = Literal["static", "length_scaled"]
+LongBenchTtftStaticPreset = Literal["default", "tight", "relaxed"]
+
+TTFT_SLO_LENGTH_SCALED: dict[str, dict[str, float]] = {
+    "long_output_summarization": {
+        "base": 8.0,
+        "per_1k_input_tokens": 1.4,
+        "cap": 45.0,
+    },
+    "medium_output_summarization": {
+        "base": 6.0,
+        "per_1k_input_tokens": 1.2,
+        "cap": 40.0,
+    },
+    "medium_answer_rag_qa": {
+        "base": 5.0,
+        "per_1k_input_tokens": 0.9,
+        "cap": 30.0,
+    },
+    "short_answer_document_qa": {
+        "base": 4.0,
+        "per_1k_input_tokens": 0.8,
+        "cap": 20.0,
+    },
+}
+
+TTFT_SLO_LONGBENCH_STATIC_PRESETS: dict[str, dict[str, float]] = {
+    "default": {
+        "long_output_summarization": 35.0,
+        "medium_output_summarization": 30.0,
+        "medium_answer_rag_qa": 20.0,
+        "short_answer_document_qa": 15.0,
+    },
+    "tight": {
+        "long_output_summarization": 25.0,
+        "medium_output_summarization": 22.0,
+        "medium_answer_rag_qa": 15.0,
+        "short_answer_document_qa": 10.0,
+    },
+    "relaxed": {
+        "long_output_summarization": 45.0,
+        "medium_output_summarization": 40.0,
+        "medium_answer_rag_qa": 30.0,
+        "short_answer_document_qa": 20.0,
+    },
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +90,8 @@ class StabilityConfig:
     tpot_slo_ms: float | None = 80.0
     ttft_slo_field: str = "ttft_p90_ms"
     tpot_slo_field: str = "tpot_p90_ms"
+    ttft_slo_mode: TtftSloMode = "static"
+    longbench_ttft_static_preset: LongBenchTtftStaticPreset | None = None
     drift_test: DriftTestConfig = field(default_factory=DriftTestConfig)
 
     def __post_init__(self) -> None:
@@ -92,6 +140,16 @@ class StabilityConfig:
         _require_optional_positive_finite("tpot_slo_ms", self.tpot_slo_ms)
         _require_slo_field("ttft_slo_field", self.ttft_slo_field, {"ttft_p50_ms", "ttft_p90_ms", "ttft_p99_ms"})
         _require_slo_field("tpot_slo_field", self.tpot_slo_field, {"tpot_p50_ms", "tpot_p90_ms", "tpot_p99_ms"})
+        if self.ttft_slo_mode not in {"static", "length_scaled"}:
+            raise ValueError(f"unsupported ttft_slo_mode {self.ttft_slo_mode!r}")
+        if self.longbench_ttft_static_preset is not None:
+            if self.longbench_ttft_static_preset not in TTFT_SLO_LONGBENCH_STATIC_PRESETS:
+                raise ValueError(
+                    "longbench_ttft_static_preset must be one of: "
+                    + ", ".join(sorted(TTFT_SLO_LONGBENCH_STATIC_PRESETS))
+                )
+            if self.ttft_slo_mode != "static":
+                raise ValueError("longbench_ttft_static_preset requires ttft_slo_mode='static'")
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +167,8 @@ def classify_stability(
     *,
     config: StabilityConfig | None = None,
     aborted_safety: bool = False,
+    request_records: Sequence[RequestRecord] | None = None,
+    trial_start_ts: float | None = None,
 ) -> StabilityResult:
     stability_config = StabilityConfig() if config is None else config
     validated = _validate_windows(windows)
@@ -337,7 +397,13 @@ def classify_stability(
             + "; confidence lowered"
         )
 
-    slo_reasons = _slo_reasons(active_eval_windows, stability_config, key_metrics)
+    slo_reasons = _slo_reasons(
+        active_eval_windows,
+        stability_config,
+        key_metrics,
+        request_records=request_records,
+        trial_start_ts=trial_start_ts,
+    )
     if slo_reasons:
         slo_priority_reasons = list(slo_reasons)
         slo_priority_reasons.extend(reasons)
@@ -644,6 +710,21 @@ def _present_values(windows: Sequence[WindowSummary], field_name: str) -> list[f
     return [float(value) for window in windows if (value := getattr(window, field_name)) is not None]
 
 
+def _percentile(values: Sequence[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    if len(values) == 1:
+        return values[0]
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * (percentile / 100.0)
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    if lower == upper:
+        return ordered[lower]
+    weight = position - lower
+    return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
+
+
 def _missing_optional_server_fields(windows: Sequence[WindowSummary]) -> list[str]:
     missing: list[str] = []
     has_kv_pressure_fields = bool(_present_values(windows, "kv_cache_usage_max")) and bool(
@@ -679,9 +760,22 @@ def _slo_reasons(
     windows: Sequence[WindowSummary],
     config: StabilityConfig,
     key_metrics: dict[str, float],
+    *,
+    request_records: Sequence[RequestRecord] | None = None,
+    trial_start_ts: float | None = None,
 ) -> list[str]:
     reasons: list[str] = []
-    if config.ttft_slo_ms is not None:
+    if _uses_request_level_ttft_slo(config):
+        reasons.extend(
+            _request_level_ttft_slo_reasons(
+                windows,
+                config,
+                key_metrics,
+                request_records=request_records,
+                trial_start_ts=trial_start_ts,
+            )
+        )
+    elif config.ttft_slo_ms is not None:
         ttft_values = _present_values(windows, config.ttft_slo_field)
         if ttft_values:
             max_ttft = max(ttft_values)
@@ -702,6 +796,135 @@ def _slo_reasons(
                     f"> {config.tpot_slo_ms:.3f} ms"
                 )
     return reasons
+
+
+def _uses_request_level_ttft_slo(config: StabilityConfig) -> bool:
+    return config.ttft_slo_mode == "length_scaled" or config.longbench_ttft_static_preset is not None
+
+
+def _request_level_ttft_slo_reasons(
+    windows: Sequence[WindowSummary],
+    config: StabilityConfig,
+    key_metrics: dict[str, float],
+    *,
+    request_records: Sequence[RequestRecord] | None,
+    trial_start_ts: float | None,
+) -> list[str]:
+    if request_records is None:
+        raise ValueError("request_records are required for request-level TTFT SLO policies")
+    if trial_start_ts is None:
+        trial_start_ts = _infer_trial_start_ts(request_records)
+    if not isfinite(trial_start_ts):
+        raise ValueError("trial_start_ts must be finite for request-level TTFT SLO policies")
+
+    active_records_by_window: list[list[tuple[RequestRecord, float, float]]] = []
+    all_thresholds: list[float] = []
+    for window in windows:
+        window_records: list[tuple[RequestRecord, float, float]] = []
+        for record in request_records:
+            if record.ttft_s is None or record.actual_send_ts is None:
+                continue
+            relative_send_s = record.actual_send_ts - trial_start_ts
+            if not _record_in_window(relative_send_s, window):
+                continue
+            threshold_ms = _ttft_threshold_ms_for_record(record, config)
+            ratio = (record.ttft_s * 1000.0) / threshold_ms
+            window_records.append((record, ratio, threshold_ms))
+            all_thresholds.append(threshold_ms)
+        if window_records:
+            active_records_by_window.append(window_records)
+
+    if not active_records_by_window:
+        return []
+
+    percentile = _slo_field_percentile(config.ttft_slo_field)
+    window_ratio_values = [
+        _percentile([ratio for _record, ratio, _threshold in records], percentile)
+        for records in active_records_by_window
+    ]
+    max_ratio = max(value for value in window_ratio_values if value is not None)
+    key_metrics["ttft_slo_ratio_max"] = max_ratio
+    key_metrics["ttft_slo_threshold_ms_min"] = min(all_thresholds)
+    key_metrics["ttft_slo_threshold_ms_max"] = max(all_thresholds)
+    key_metrics["ttft_slo_threshold_ms_mean"] = sum(all_thresholds) / len(all_thresholds)
+
+    if max_ratio <= 1.0:
+        return []
+
+    violating_records = [
+        (record, ratio, threshold)
+        for records in active_records_by_window
+        for record, ratio, threshold in records
+        if ratio > 1.0
+    ]
+    worst_record, worst_ratio, worst_threshold_ms = max(
+        violating_records,
+        key=lambda item: item[1],
+    )
+    profile = _longbench_profile_for_record(worst_record)
+    observed_ms = (worst_record.ttft_s or 0.0) * 1000.0
+    return [
+        f"{_display_slo_field(config.ttft_slo_field)} request-level TTFT SLO violated: "
+        f"max normalized window percentile={max_ratio:.3f} > 1.000 "
+        f"(mode={config.ttft_slo_mode}, preset={config.longbench_ttft_static_preset}, "
+        f"worst_profile={profile}, worst_prompt_len={worst_record.prompt_len}, "
+        f"worst_ttft={observed_ms:.3f} ms > threshold={worst_threshold_ms:.3f} ms)"
+    ]
+
+
+def _record_in_window(relative_send_s: float, window: WindowSummary) -> bool:
+    if relative_send_s < window.start_s:
+        return False
+    if relative_send_s < window.end_s:
+        return True
+    return relative_send_s == window.end_s and window.arrivals > 0
+
+
+def _infer_trial_start_ts(records: Sequence[RequestRecord]) -> float:
+    send_times = [record.actual_send_ts for record in records if record.actual_send_ts is not None]
+    if not send_times:
+        raise ValueError("request_records contain no actual_send_ts values")
+    return min(send_times)
+
+
+def _ttft_threshold_ms_for_record(record: RequestRecord, config: StabilityConfig) -> float:
+    profile = _longbench_profile_for_record(record)
+    if config.ttft_slo_mode == "length_scaled":
+        params = TTFT_SLO_LENGTH_SCALED[profile]
+        threshold_s = min(
+            params["cap"],
+            params["base"] + params["per_1k_input_tokens"] * (record.prompt_len / 1000.0),
+        )
+        return threshold_s * 1000.0
+    if config.longbench_ttft_static_preset is not None:
+        threshold_s = TTFT_SLO_LONGBENCH_STATIC_PRESETS[config.longbench_ttft_static_preset][profile]
+        return threshold_s * 1000.0
+    if config.ttft_slo_ms is None:
+        raise ValueError("static TTFT SLO policy requires ttft_slo_ms unless a preset is configured")
+    return config.ttft_slo_ms
+
+
+def _longbench_profile_for_record(record: RequestRecord) -> str:
+    raw_profile = record.metadata.get("profile")
+    if raw_profile is None:
+        raw_profile = record.metadata.get("longbench_profile")
+    if not isinstance(raw_profile, str) or not raw_profile:
+        raise ValueError(
+            "request-level LongBench TTFT SLO policies require request metadata.profile"
+        )
+    if raw_profile not in TTFT_SLO_LENGTH_SCALED:
+        raise ValueError(f"unsupported LongBench profile for TTFT SLO policy: {raw_profile!r}")
+    return raw_profile
+
+
+def _slo_field_percentile(field_name: str) -> float:
+    if field_name == "ttft_p50_ms":
+        return 50.0
+    if field_name == "ttft_p90_ms":
+        return 90.0
+    if field_name == "ttft_p99_ms":
+        return 99.0
+    raise ValueError(f"unsupported request-level TTFT SLO field {field_name!r}")
 
 
 def _display_slo_field(field_name: str) -> str:
@@ -832,6 +1055,8 @@ _BACKCOMPAT_OPTIONAL_WINDOW_FIELDS = {
 
 __all__ = [
     "DriftTestConfig",
+    "TTFT_SLO_LENGTH_SCALED",
+    "TTFT_SLO_LONGBENCH_STATIC_PRESETS",
     "StabilityConfig",
     "classify_stability",
     "load_window_summaries_csv",

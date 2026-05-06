@@ -155,6 +155,43 @@ def test_load_manifest_rejects_invalid_slo_field(tmp_path: Path) -> None:
         load_manifest(manifest_path)
 
 
+def test_load_manifest_accepts_length_scaled_and_longbench_static_ttft_slo_modes(
+    tmp_path: Path,
+) -> None:
+    workload = _write_workload(tmp_path, "workload.yaml")
+    manifest_path = _write_manifest(
+        tmp_path,
+        {
+            "search": {
+                "ttft_slo_mode": "length_scaled",
+                "tpot_slo_ms": 150,
+            },
+            "experiments": [
+                {
+                    "model": "google/gemma-4-E4B-it",
+                    "workload": str(workload),
+                    "overrides": [
+                        {
+                            "match": {"workload": "*workload*"},
+                            "search": {
+                                "ttft_slo_mode": "static",
+                                "longbench_ttft_static_preset": "tight",
+                            },
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    manifest = load_manifest(manifest_path)
+    assert manifest.experiments[0].search.ttft_slo_mode == "length_scaled"
+    assert manifest.experiments[0].overrides[0].search == {
+        "ttft_slo_mode": "static",
+        "longbench_ttft_static_preset": "tight",
+    }
+
+
 def test_load_manifest_rejects_mixed_template_and_structured_launch(tmp_path: Path) -> None:
     workload = _write_workload(tmp_path, "workload.yaml")
     manifest_path = _write_manifest(

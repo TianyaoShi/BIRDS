@@ -677,6 +677,8 @@ def test_state_store_summary_includes_search_result_aggregates(tmp_path: Path) -
     assert summary["jobs"][0]["slo_policy"] == {
         "ttft_slo_ms": 15000,
         "ttft_slo_field": "ttft_p90_ms",
+        "ttft_slo_mode": "static",
+        "longbench_ttft_static_preset": None,
         "tpot_slo_ms": 150,
         "tpot_slo_field": "tpot_p90_ms",
     }

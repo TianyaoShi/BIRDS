@@ -221,6 +221,8 @@ def _server_config_slug(*, model: str, endpoint: str, launch: LaunchConfig, sear
             "tpot_slo_ms": search.tpot_slo_ms,
             "ttft_slo_field": search.ttft_slo_field,
             "tpot_slo_field": search.tpot_slo_field,
+            "ttft_slo_mode": search.ttft_slo_mode,
+            "longbench_ttft_static_preset": search.longbench_ttft_static_preset,
         },
         "search_mode": search.search_mode,
     }

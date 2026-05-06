@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from llm_mst_finder.records import WindowSummary
+from llm_mst_finder.records import RequestRecord, WindowSummary
 from llm_mst_finder.stability import (
     StabilityConfig,
     classify_stability,
@@ -90,6 +90,35 @@ def _window(
 
 def _stable_windows() -> list[WindowSummary]:
     return [_window(idx) for idx in range(6)]
+
+
+def _request_record(
+    idx: int,
+    *,
+    prompt_len: int,
+    ttft_s: float,
+    profile: str,
+) -> RequestRecord:
+    send_ts = float(idx)
+    return RequestRecord(
+        request_id=f"req-{idx}",
+        trial_id="trial-stability",
+        scheduled_send_ts=send_ts,
+        actual_send_ts=send_ts,
+        first_token_ts=send_ts + ttft_s,
+        end_ts=send_ts + ttft_s + 0.01,
+        success=True,
+        error=None,
+        prompt_len=prompt_len,
+        expected_output_len=10,
+        actual_output_len=10,
+        ttft_s=ttft_s,
+        e2e_s=ttft_s + 0.01,
+        tpot_s=0.001,
+        itl_s=[0.001],
+        output_token_timestamps=[send_ts + ttft_s],
+        metadata={"profile": profile},
+    )
 
 
 def test_classifies_stationary_windows_as_stable() -> None:
@@ -308,6 +337,77 @@ def test_uses_configured_slo_percentile_fields() -> None:
     assert result.status == "slo_violation"
     assert any("TTFT p99 SLO violated" in reason for reason in result.reasons)
     assert any("TPOT p99 SLO violated" in reason for reason in result.reasons)
+
+
+def test_length_scaled_ttft_slo_uses_prompt_length_and_longbench_profile() -> None:
+    windows = _stable_windows()
+    records = [
+        _request_record(
+            idx,
+            prompt_len=10_000,
+            ttft_s=11.5,
+            profile="short_answer_document_qa",
+        )
+        for idx in range(6)
+    ]
+
+    result = classify_stability(
+        windows,
+        config=StabilityConfig(ttft_slo_mode="length_scaled"),
+        request_records=records,
+        trial_start_ts=0.0,
+    )
+
+    assert result.status == "stable"
+    assert result.key_metrics["ttft_slo_threshold_ms_min"] == pytest.approx(12_000.0)
+    assert result.key_metrics["ttft_slo_ratio_max"] < 1.0
+
+
+def test_length_scaled_ttft_slo_flags_normalized_request_violation() -> None:
+    windows = _stable_windows()
+    records = [
+        _request_record(
+            idx,
+            prompt_len=10_000,
+            ttft_s=13.0,
+            profile="short_answer_document_qa",
+        )
+        for idx in range(6)
+    ]
+
+    result = classify_stability(
+        windows,
+        config=StabilityConfig(ttft_slo_mode="length_scaled"),
+        request_records=records,
+        trial_start_ts=0.0,
+    )
+
+    assert result.status == "slo_violation"
+    assert any("request-level TTFT SLO violated" in reason for reason in result.reasons)
+    assert any("worst_profile=short_answer_document_qa" in reason for reason in result.reasons)
+
+
+def test_longbench_static_ttft_preset_uses_profile_specific_thresholds() -> None:
+    windows = _stable_windows()
+    records = [
+        _request_record(
+            idx,
+            prompt_len=4_000,
+            ttft_s=16.0,
+            profile="medium_answer_rag_qa",
+        )
+        for idx in range(6)
+    ]
+
+    result = classify_stability(
+        windows,
+        config=StabilityConfig(longbench_ttft_static_preset="tight"),
+        request_records=records,
+        trial_start_ts=0.0,
+    )
+
+    assert result.status == "slo_violation"
+    assert result.key_metrics["ttft_slo_threshold_ms_min"] == pytest.approx(15_000.0)
 
 
 def test_sparse_waiting_queue_noise_does_not_trigger_instability() -> None:

@@ -117,6 +117,8 @@ _SEARCH_KEYS = {
     "tpot_slo_ms",
     "ttft_slo_field",
     "tpot_slo_field",
+    "ttft_slo_mode",
+    "longbench_ttft_static_preset",
     "max_num_seqs",
     "max_num_batched_tokens",
 }
@@ -539,6 +541,10 @@ def _merge_search_config(base: SearchConfig, raw: Any, *, field_name: str) -> Se
         "tpot_slo_ms": base.tpot_slo_ms,
         "ttft_slo_field": base.ttft_slo_field,
         "tpot_slo_field": base.tpot_slo_field,
+        "ttft_slo_mode": base.ttft_slo_mode,
+        "longbench_ttft_static_preset": base.longbench_ttft_static_preset,
+        "max_num_seqs": base.max_num_seqs,
+        "max_num_batched_tokens": base.max_num_batched_tokens,
     }
 
     for key, value in payload.items():
@@ -568,6 +574,12 @@ def _merge_search_config(base: SearchConfig, raw: Any, *, field_name: str) -> Se
             continue
         if key in {"ttft_slo_field", "tpot_slo_field"}:
             updated[key] = _expect_non_empty_string(value, f"{field_name}.{key}")
+            continue
+        if key == "ttft_slo_mode":
+            updated[key] = _expect_non_empty_string(value, f"{field_name}.{key}")
+            continue
+        if key == "longbench_ttft_static_preset":
+            updated[key] = _optional_non_empty_string(value, f"{field_name}.{key}")
             continue
         if key in {"max_num_seqs", "max_num_batched_tokens"}:
             updated[key] = _expect_optional_positive_int(value, f"{field_name}.{key}")

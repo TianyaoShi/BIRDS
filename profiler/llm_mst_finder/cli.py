@@ -411,6 +411,19 @@ def _add_stability_policy_args(
         default=defaults.ttft_slo_field if defaults_from_policy else None,
     )
     parser.add_argument(
+        "--ttft-slo-mode",
+        choices=("static", "length_scaled"),
+        default=defaults.ttft_slo_mode if defaults_from_policy else None,
+        help="TTFT SLO policy mode. static keeps existing threshold behavior; "
+        "length_scaled uses LongBench profile and input length.",
+    )
+    parser.add_argument(
+        "--longbench-ttft-static-preset",
+        choices=("default", "tight", "relaxed"),
+        default=defaults.longbench_ttft_static_preset if defaults_from_policy else None,
+        help="Profile-specific static LongBench TTFT fallback preset.",
+    )
+    parser.add_argument(
         "--tpot-slo-field",
         choices=("tpot_p50_ms", "tpot_p90_ms", "tpot_p99_ms"),
         default=defaults.tpot_slo_field if defaults_from_policy else None,
@@ -478,6 +491,8 @@ def _stability_policy_payload_from_args(args: argparse.Namespace) -> dict[str, o
         "tpot_slo_ms": config.tpot_slo_ms,
         "ttft_slo_field": config.ttft_slo_field,
         "tpot_slo_field": config.tpot_slo_field,
+        "ttft_slo_mode": config.ttft_slo_mode,
+        "longbench_ttft_static_preset": config.longbench_ttft_static_preset,
     }
 
 
@@ -489,6 +504,8 @@ def _stability_config_override_from_args(args: argparse.Namespace) -> StabilityC
             "tpot_slo_ms",
             "ttft_slo_field",
             "tpot_slo_field",
+            "ttft_slo_mode",
+            "longbench_ttft_static_preset",
         )
     ):
         return None
@@ -502,6 +519,8 @@ def _stability_config_from_args(args: argparse.Namespace) -> StabilityConfig:
         tpot_slo_ms=args.tpot_slo_ms,
         ttft_slo_field=args.ttft_slo_field or defaults.ttft_slo_field,
         tpot_slo_field=args.tpot_slo_field or defaults.tpot_slo_field,
+        ttft_slo_mode=args.ttft_slo_mode or defaults.ttft_slo_mode,
+        longbench_ttft_static_preset=args.longbench_ttft_static_preset,
     )
 
 
