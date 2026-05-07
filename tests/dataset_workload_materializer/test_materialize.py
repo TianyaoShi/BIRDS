@@ -277,6 +277,55 @@ def test_longbench_summarization_with_empty_input_synthesizes_task_instruction(t
     assert shard_row["metadata"]["longbench_task_input_source"] == "synthesized_summarization_instruction"
 
 
+def test_longbench_epoch_shuffle_expansion_preserves_unique_corpus_metadata(tmp_path: Path) -> None:
+    raw_path = _write_longbench_zip(
+        tmp_path,
+        {
+            "qasper": [
+                _longbench_row("qasper-0", "qasper", "en", suffix="paper-0"),
+                _longbench_row("qasper-1", "qasper", "en", suffix="paper-1"),
+                _longbench_row("qasper-2", "qasper", "en", suffix="paper-2"),
+            ],
+        },
+    )
+    config_path = _write_longbench_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_dir=tmp_path / "out",
+        profile="short_answer_document_qa",
+        configs=["qasper"],
+        samples_per_task=3,
+        repeat_policy="epoch_shuffle",
+        target_samples=7,
+    )
+
+    result = materialize_from_config(config_path)
+
+    assert result["num_samples"] == 7
+    shard_rows = [
+        json.loads(line)
+        for line in (tmp_path / "out" / "shards" / "shard_000.runner.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    original_ids = [row["metadata"]["original_sample_id"] for row in shard_rows]
+    assert len(set(original_ids[:3])) == 3
+    assert len(set(original_ids[3:6])) == 3
+    assert shard_rows[0]["metadata"]["repeat_policy"] == "epoch_shuffle"
+    assert shard_rows[0]["metadata"]["unique_sample_count"] == 3
+    assert shard_rows[0]["metadata"]["expanded_sample_count"] == 7
+    assert shard_rows[0]["metadata"]["epoch_shuffle_seed"] == 11
+    assert {row["metadata"]["epoch_index"] for row in shard_rows} == {0, 1, 2}
+
+    report = json.loads((tmp_path / "out" / "materialization_report.json").read_text(encoding="utf-8"))
+    manifest = json.loads((tmp_path / "out" / "shards_manifest.json").read_text(encoding="utf-8"))
+    assert report["rows"]["materialized"] == 7
+    assert report["sampling"]["unique_sample_ids"] == 3
+    assert report["sampling"]["repeat_policy"] == "epoch_shuffle"
+    assert manifest["unique_sample_ids"] == 3
+    assert manifest["repeat_policy"] == "epoch_shuffle"
+
+
 def _write_config(tmp_path: Path, *, raw_path: Path, output_dir: Path) -> Path:
     config = {
         "name": "crosscodeeval_tiny",
@@ -319,6 +368,8 @@ def _write_longbench_config(
     profile: str,
     configs: list[str],
     samples_per_task: int,
+    repeat_policy: str | None = None,
+    target_samples: int | None = None,
     config_name: str = "longbench_materialize.yaml",
 ) -> Path:
     config = {
@@ -354,6 +405,10 @@ def _write_longbench_config(
             }
         },
     }
+    if repeat_policy is not None:
+        config["sampling"]["repeat_policy"] = repeat_policy
+    if target_samples is not None:
+        config["sampling"]["target_samples"] = target_samples
     config_path = tmp_path / config_name
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     return config_path

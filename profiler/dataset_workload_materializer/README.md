@@ -167,6 +167,32 @@ Reference points:
 The local `llm_mst_finder` LongBench workload caches show the same split. The
 NL workload is long-context and often long-output summarization:
 
+The refined LongBench materialization keeps these regimes in separate buckets.
+The buckets are intentionally not mixed at profiling time because their output
+length distributions and task intentions differ. Since the smallest bucket has
+only about 200 unique examples and the others are still below 1k examples, the
+materializer supports deterministic corpus expansion:
+
+```yaml
+sampling:
+  repeat_policy: epoch_shuffle
+  target_samples: 1024
+```
+
+`epoch_shuffle` writes a larger ordinary JSONL shard by replaying the unique
+corpus in shuffled epochs. Every full epoch contains each unique row exactly
+once, and the row metadata records `original_sample_id`, `epoch_index`,
+`epoch_position`, `unique_sample_count`, and `expanded_sample_count`. The
+generated `llm_mst_finder` workload YAML still uses
+`sampling.entry_selection: sequential`, so runtime profiling stays deterministic
+and dataset-specific behavior remains in materialization.
+
+For current LongBench buckets, 1k-2k expanded samples are enough because each
+request carries long input and normally takes several seconds. The tracked
+configs use 1,024 rows for `long_output_summarization` and
+`medium_answer_rag_qa`, and 2,048 rows for `medium_output_summarization` and
+`short_answer_document_qa`.
+
 | LongBench-NL task | Samples | Input p50 | Input p90 | Input p95 | Output p50 | Output p90 | Output p95 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `2wikimqa` | 95 | 6,733 | 13,567 | 15,504 | 4 | 8 | 9 |

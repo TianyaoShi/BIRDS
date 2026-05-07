@@ -47,6 +47,8 @@ class SamplingConfig:
     burst_size: int
     policy: str | None
     samples_per_task: int | None
+    repeat_policy: str | None
+    target_samples: int | None
 
 
 @dataclass(frozen=True, slots=True)

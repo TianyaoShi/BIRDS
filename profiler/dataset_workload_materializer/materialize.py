@@ -26,6 +26,7 @@ from .outputs import (
     build_manifest,
     build_report,
     cache_realistic_order,
+    epoch_shuffle_expand,
     shard_samples,
     write_json,
     write_outputs,
@@ -73,11 +74,23 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
     samples_per_task = sampling_payload.get("samples_per_task")
     if samples_per_task is not None:
         samples_per_task = positive_int(samples_per_task, "sampling.samples_per_task")
+    repeat_policy = optional_string(sampling_payload.get("repeat_policy"), "sampling.repeat_policy")
+    if repeat_policy is not None and repeat_policy != "epoch_shuffle":
+        raise ValueError("sampling.repeat_policy must be 'epoch_shuffle' when provided")
+    target_samples = sampling_payload.get("target_samples")
+    if target_samples is not None:
+        target_samples = positive_int(target_samples, "sampling.target_samples")
+    if repeat_policy is None and target_samples is not None:
+        raise ValueError("sampling.target_samples requires sampling.repeat_policy")
+    if repeat_policy is not None and target_samples is None:
+        raise ValueError("sampling.repeat_policy requires sampling.target_samples")
     sampling = SamplingConfig(
         seed=int_setting(sampling_payload, "seed", 42),
         burst_size=int_setting(sampling_payload, "burst_size", 8),
         policy=optional_string(sampling_payload.get("policy"), "sampling.policy"),
         samples_per_task=samples_per_task,
+        repeat_policy=repeat_policy,
+        target_samples=target_samples,
     )
 
     sharding = required_mapping(config, "sharding")
@@ -112,6 +125,14 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
         seed=sampling.seed,
         burst_size=sampling.burst_size,
     )
+    if sampling.repeat_policy == "epoch_shuffle":
+        if sampling.target_samples is None:
+            raise ValueError("sampling.target_samples is required for epoch_shuffle")
+        ordered = epoch_shuffle_expand(
+            ordered,
+            seed=sampling.seed,
+            target_samples=sampling.target_samples,
+        )
     shards = shard_samples(
         ordered,
         samples_per_shard=samples_per_shard,
@@ -160,7 +181,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
         raw_path=raw_path,
         output_dir=output_dir,
         tokenizer_name=tokenizer_name,
-        samples=loaded.samples,
+        samples=ordered,
         counters=counters,
         selected_tasks=loaded.selected_tasks,
     )

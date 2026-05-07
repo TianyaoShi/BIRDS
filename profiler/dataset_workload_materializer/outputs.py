@@ -44,6 +44,54 @@ def cache_realistic_order(
     return output
 
 
+def epoch_shuffle_expand(
+    samples: list[MaterializedSample],
+    *,
+    seed: int,
+    target_samples: int,
+) -> list[MaterializedSample]:
+    if target_samples <= len(samples):
+        return list(samples)
+    unique_count = len(samples)
+    expanded: list[MaterializedSample] = []
+    epoch_index = 0
+    while len(expanded) < target_samples:
+        epoch = list(samples)
+        rng = random.Random(seed + epoch_index * 1_000_003)
+        rng.shuffle(epoch)
+        for epoch_position, sample in enumerate(epoch):
+            if len(expanded) >= target_samples:
+                break
+            original_sample_id = str(
+                sample.metadata.get("original_sample_id", sample.sample_id)
+            )
+            materialized_sample_id = f"{original_sample_id}::epoch-{epoch_index:04d}"
+            metadata = dict(sample.metadata)
+            metadata.update(
+                {
+                    "sample_id": materialized_sample_id,
+                    "original_sample_id": original_sample_id,
+                    "repeat_policy": "epoch_shuffle",
+                    "epoch_index": epoch_index,
+                    "epoch_position": epoch_position,
+                    "epoch_shuffle_seed": seed,
+                    "unique_sample_count": unique_count,
+                    "expanded_sample_count": target_samples,
+                }
+            )
+            expanded.append(
+                MaterializedSample(
+                    sample_id=materialized_sample_id,
+                    prompt=sample.prompt,
+                    target=sample.target,
+                    expected_output_len=sample.expected_output_len,
+                    metadata=metadata,
+                )
+            )
+        epoch_index += 1
+    return expanded
+
+
 def sample_order_key(sample: MaterializedSample) -> tuple[int, str, str]:
     return (
         int(sample.metadata["sequence_index"]),
@@ -192,7 +240,17 @@ def build_manifest(
         "profile_summaries": group_summaries(all_samples, group_key="profile"),
         "task_summaries": group_summaries(all_samples, group_key="task"),
         "unique_content_hashes": len({sample.metadata["content_hash"] for sample in all_samples}),
+        "unique_sample_ids": len(
+            {
+                sample.metadata.get("original_sample_id", sample.sample_id)
+                for sample in all_samples
+            }
+        ),
     }
+    repeat_policy = sample_repeat_policy(all_samples)
+    if repeat_policy is not None:
+        manifest["repeat_policy"] = repeat_policy
+        manifest["repeat_factor"] = len(all_samples) / manifest["unique_sample_ids"]
     if profile is not None:
         manifest["profile"] = profile
     return manifest
@@ -237,9 +295,31 @@ def build_report(
         "profile_summaries": group_summaries(samples, group_key="profile"),
         "task_summaries": group_summaries(samples, group_key="task"),
     }
+    unique_sample_ids = len(
+        {sample.metadata.get("original_sample_id", sample.sample_id) for sample in samples}
+    )
+    report["sampling"] = {
+        "unique_sample_ids": unique_sample_ids,
+        "expanded_sample_count": len(samples),
+        "repeat_policy": sample_repeat_policy(samples),
+        "repeat_factor": len(samples) / unique_sample_ids if unique_sample_ids else None,
+    }
     if profile is not None:
         report["profile"] = profile
     return report
+
+
+def sample_repeat_policy(samples: list[MaterializedSample]) -> str | None:
+    policies = {
+        str(sample.metadata["repeat_policy"])
+        for sample in samples
+        if sample.metadata.get("repeat_policy")
+    }
+    if not policies:
+        return None
+    if len(policies) != 1:
+        raise ValueError(f"mixed repeat policies in materialized samples: {sorted(policies)}")
+    return next(iter(policies))
 
 
 def group_summaries(
