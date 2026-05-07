@@ -161,7 +161,7 @@ experiments:
     workloads:
       # Each bucket is materialized as one deterministic epoch-shuffled JSONL
       # workload. Keep them separate because output length distributions differ.
-      - ./longbench_workloads/materialization/longbench_long_output_summarization_qwen3_8b/workload_yamls/shard_000.yaml
-      - ./longbench_workloads/materialization/longbench_medium_output_summarization_qwen3_8b/workload_yamls/shard_000.yaml
-      - ./longbench_workloads/materialization/longbench_medium_answer_rag_qa_qwen3_8b/workload_yamls/shard_000.yaml
-      - ./longbench_workloads/materialization/longbench_short_answer_document_qa_qwen3_8b/workload_yamls/shard_000.yaml
+      - ./workloads/longbench_long_output_summarization.yaml
+      - ./workloads/longbench_medium_output_summarization.yaml
+      - ./workloads/longbench_medium_answer_rag_qa.yaml
+      - ./workloads/longbench_short_answer_document_qa.yaml
