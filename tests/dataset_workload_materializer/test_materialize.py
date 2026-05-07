@@ -277,6 +277,111 @@ def test_longbench_summarization_with_empty_input_synthesizes_task_instruction(t
     assert shard_row["metadata"]["longbench_task_input_source"] == "synthesized_summarization_instruction"
 
 
+def test_reasoning_mcq_materialization_uses_final_answer_as_metadata_only(tmp_path: Path) -> None:
+    raw_path = tmp_path / "mmlu_pro.jsonl"
+    raw_path.write_text(
+        json.dumps(
+            {
+                "question": "Which option is the only prime number?",
+                "options": ["A. 21", "B. 23", "C. 25", "D. 27"],
+                "answer": "B",
+                "subject": "mathematics",
+                "id": "mmlu-pro-0",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "out"
+    config_path = _write_reasoning_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_dir=output_dir,
+        dataset_name="mmlu_pro",
+        task="mmlu_pro",
+        max_tokens=2048,
+    )
+
+    materialize_from_config(config_path)
+
+    shard_row = json.loads(
+        (output_dir / "shards" / "shard_000.runner.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert shard_row["expected_output_len"] == 1
+    assert shard_row["metadata"]["dataset"] == "mmlu_pro"
+    assert shard_row["metadata"]["dataset_kind"] == "reasoning_qa"
+    assert shard_row["metadata"]["ground_truth"] == "B"
+    assert shard_row["metadata"]["ground_truth_text"] == "23"
+    assert shard_row["metadata"]["answer_label"] == "B"
+    assert "Think step by step" in shard_row["prompt"]
+
+    prepared = prepare_workload_for_trial(
+        output_dir / "workload_yamls" / "shard_000.yaml",
+        model_name="fake-model",
+    )
+    assert len(prepared.samples) == 1
+    assert prepared.samples[0].expected_output_len == 2048
+    assert prepared.samples[0].metadata["sampling_output_len_mode"] == "natural_until_eos"
+    assert prepared.samples[0].metadata["sampling_output_len_is_cap"] is True
+    assert prepared.samples[0].metadata["ground_truth"] == "B"
+
+
+def test_reasoning_gpqa_and_aime_like_rows_materialize_from_local_directory(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "reasoning"
+    raw_dir.mkdir()
+    (raw_dir / "aime.jsonl").write_text(
+        json.dumps(
+            {
+                "Problem": "Find the value of 40 + 2.",
+                "Answer": "42",
+                "year": 2024,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (raw_dir / "gpqa.jsonl").write_text(
+        json.dumps(
+            {
+                "Question": "Which statement is correct?",
+                "Correct Answer": "The stable isotope has lower energy.",
+                "Incorrect Answer 1": "All isotopes have identical mass.",
+                "Incorrect Answer 2": "Energy is independent of structure.",
+                "Incorrect Answer 3": "No stable isotope can exist.",
+                "Subject": "physics",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "out"
+    config_path = _write_reasoning_config(
+        tmp_path,
+        raw_path=raw_dir,
+        output_dir=output_dir,
+        dataset_name="gpqa",
+        task="gpqa_diamond",
+        max_tokens=4096,
+    )
+
+    result = materialize_from_config(config_path)
+
+    assert result["num_samples"] == 2
+    shard_rows = [
+        json.loads(line)
+        for line in (output_dir / "shards" / "shard_000.runner.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    free_response = next(row for row in shard_rows if row["metadata"]["ground_truth"] == "42")
+    mcq = next(row for row in shard_rows if row["metadata"]["ground_truth"] != "42")
+    assert free_response["metadata"]["year"] == 2024
+    assert "Answer: <answer>" in free_response["prompt"]
+    assert mcq["metadata"]["ground_truth"] in {"A", "B", "C", "D"}
+    assert mcq["metadata"]["ground_truth_text"] == "The stable isotope has lower energy."
+    assert "Answer: <letter>" in mcq["prompt"]
+
+
 def test_longbench_epoch_shuffle_expansion_preserves_unique_corpus_metadata(tmp_path: Path) -> None:
     raw_path = _write_longbench_zip(
         tmp_path,
@@ -410,6 +515,52 @@ def _write_longbench_config(
     if target_samples is not None:
         config["sampling"]["target_samples"] = target_samples
     config_path = tmp_path / config_name
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    return config_path
+
+
+def _write_reasoning_config(
+    tmp_path: Path,
+    *,
+    raw_path: Path,
+    output_dir: Path,
+    dataset_name: str,
+    task: str,
+    max_tokens: int,
+) -> Path:
+    config = {
+        "name": f"{task}_tiny",
+        "dataset": {
+            "name": dataset_name,
+            "raw_path": str(raw_path),
+            "split": "test",
+            "task": task,
+            "prompt_template": "reasoning_auto",
+        },
+        "tokenization": {"tokenizer": "whitespace"},
+        "filtering": {
+            "min_prompt_tokens": 4,
+            "max_prompt_tokens": 512,
+            "min_target_tokens": 1,
+            "max_target_tokens": 32,
+        },
+        "sampling": {
+            "seed": 13,
+            "burst_size": 1,
+        },
+        "request": {"temperature": 0.0, "stream": True, "ignore_eos": False},
+        "sharding": {"output_dir": str(output_dir), "samples_per_shard": 8},
+        "workload_yaml": {
+            "output_len": {"mode": "natural_until_eos", "max_tokens": max_tokens},
+            "context_policy": {
+                "max_model_len": 8192,
+                "tokenizer_source": "workload_tokenizer",
+                "unsafe_allow_workload_tokenizer_for_real_datasets": True,
+                "over_limit": "fail",
+            },
+        },
+    }
+    config_path = tmp_path / f"{task}_materialize.yaml"
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     return config_path
 

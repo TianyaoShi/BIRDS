@@ -126,6 +126,7 @@ def write_outputs(
     shards: list[list[MaterializedSample]],
     request: dict[str, Any],
     context_policy: dict[str, Any],
+    output_len: dict[str, Any],
 ) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for shard_index, shard in enumerate(shards):
@@ -153,6 +154,7 @@ def write_outputs(
             shard_size=len(shard),
             request=request,
             context_policy=context_policy,
+            output_len=output_len,
         )
         workload_path.write_text(
             yaml.safe_dump(workload_payload, sort_keys=False),
@@ -176,6 +178,7 @@ def workload_yaml_payload(
     shard_size: int,
     request: dict[str, Any],
     context_policy: dict[str, Any],
+    output_len: dict[str, Any],
 ) -> dict[str, Any]:
     request_payload: dict[str, Any] = {
         "stream": request.get("stream", True),
@@ -189,6 +192,7 @@ def workload_yaml_payload(
         extra_body["stop"] = request["stop"]
     if extra_body:
         request_payload["extra_body"] = extra_body
+    output_len_payload = dict(output_len) if output_len else {"mode": "from_dataset"}
     payload: dict[str, Any] = {
         "name": f"{name}-{shard_id}",
         "dataset": {
@@ -201,7 +205,7 @@ def workload_yaml_payload(
             "num_requests": shard_size,
             "entry_selection": "sequential",
             "prompt_len": {"mode": "from_dataset"},
-            "output_len": {"mode": "from_dataset"},
+            "output_len": output_len_payload,
         },
         "request": request_payload,
     }

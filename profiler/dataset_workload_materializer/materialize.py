@@ -148,16 +148,19 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
     )
 
     request = optional_mapping(config.get("request"), "request")
+    workload_yaml = optional_mapping(config.get("workload_yaml"), "workload_yaml")
     context_policy = optional_mapping(
-        optional_mapping(config.get("workload_yaml"), "workload_yaml").get("context_policy"),
+        workload_yaml.get("context_policy"),
         "workload_yaml.context_policy",
     )
+    output_len = optional_mapping(workload_yaml.get("output_len"), "workload_yaml.output_len")
     shard_entries = write_outputs(
         output_dir,
         name=name,
         shards=shards,
         request=request,
         context_policy=context_policy,
+        output_len=output_len,
     )
     manifest = build_manifest(
         name=name,

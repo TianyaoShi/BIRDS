@@ -22,6 +22,8 @@ Implemented today:
   and tasks.
 - LongBench realistic-NL profile materialization from local `data.zip` or
   unpacked task JSONL artifacts.
+- Reasoning QA local JSONL files or directories for GPQA, MMLU, MMLU-Pro, and
+  AIME-style rows.
 
 CrossCodeEval-like JSONL supports field aliases configured under
 `dataset.field_aliases`. The default logical fields are:
@@ -84,6 +86,16 @@ dataset:
 LongBench profile materialization configs live under
 `experiments/longbench_workloads/`.
 
+Reasoning-question materialization configs live under
+`experiments/reasoning_workloads/`:
+
+```text
+experiments/reasoning_workloads/gpqa_diamond_reasoning.yaml
+experiments/reasoning_workloads/mmlu_reasoning.yaml
+experiments/reasoning_workloads/mmlu_pro_reasoning.yaml
+experiments/reasoning_workloads/aime_2024_2026_reasoning.yaml
+```
+
 ## Materialize
 
 Run from the repository root with the project environment:
@@ -113,7 +125,37 @@ workload_yamls/*.yaml
 ```
 
 The generated directories under `experiments/code_workloads/*/` are ignored by
-git; the source config YAMLs are tracked.
+git; the same is true for generated directories under
+`experiments/reasoning_workloads/*/`. The source config YAMLs are tracked.
+
+## Reasoning QA Workloads
+
+Reasoning QA materialization accepts local JSONL file or directory inputs. Rows
+may be multiple-choice or free-response. Supported common fields include:
+
+- Question text: `question`, `Question`, `prompt`, `input`, `problem`, `Problem`.
+- Choices: `choices`, `options`, `answer_choices`, `Options`, or per-choice
+  fields such as `A`, `B`, `C`, `D`.
+- GPQA-style rows with `Correct Answer` and `Incorrect Answer 1` through
+  `Incorrect Answer 3`.
+- Answer labels or values: `answer`, `Answer`, `target`, `correct_answer`,
+  `label`, `answer_idx`, `answer_index`, `gold`, `final_answer`.
+
+The generated JSONL keeps final answers in `metadata.ground_truth` and
+`metadata.ground_truth_text`, but generated workload YAMLs should use:
+
+```yaml
+sampling:
+  output_len:
+    mode: natural_until_eos
+    max_tokens: 4096
+request:
+  ignore_eos: false
+```
+
+This is deliberate: GPQA, MMLU/MMLU-Pro, and AIME provide final answers, not
+reference reasoning traces. The generation length is therefore a safety cap for
+natural EOS stopping, not a target derived from the final-answer token count.
 
 Recent real materialization counts:
 

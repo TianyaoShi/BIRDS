@@ -5,14 +5,19 @@ from typing import Any, Callable
 from ..models import DatasetLoadResult, MaterializationContext
 from .code import load_code_dataset
 from .longbench import load_longbench_dataset
+from .reasoning import load_reasoning_dataset
 
 
 DatasetLoader = Callable[[dict[str, Any], MaterializationContext], DatasetLoadResult]
 
 
 DATASET_LOADERS: dict[str, DatasetLoader] = {
+    "aime": load_reasoning_dataset,
     "crosscodeeval": load_code_dataset,
+    "gpqa": load_reasoning_dataset,
     "longbench": load_longbench_dataset,
+    "mmlu": load_reasoning_dataset,
+    "mmlu_pro": load_reasoning_dataset,
     "repobench": load_code_dataset,
 }
 

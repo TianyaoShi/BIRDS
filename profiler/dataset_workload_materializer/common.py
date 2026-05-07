@@ -7,7 +7,11 @@ from typing import Any
 
 SUPPORTED_DATASET_KINDS: dict[str, str] = {
     "crosscodeeval": "code_completion",
+    "aime": "reasoning_qa",
+    "gpqa": "reasoning_qa",
     "longbench": "long_context_nlp",
+    "mmlu": "reasoning_qa",
+    "mmlu_pro": "reasoning_qa",
     "repobench": "code_completion",
 }
 
