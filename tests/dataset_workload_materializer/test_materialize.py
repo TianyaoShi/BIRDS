@@ -250,6 +250,33 @@ def test_longbench_generated_workload_yaml_loads_through_llm_mst_finder(tmp_path
     assert prepared.samples[0].metadata["shard_id"] == "shard_000"
 
 
+def test_longbench_summarization_with_empty_input_synthesizes_task_instruction(tmp_path: Path) -> None:
+    raw_path = _write_longbench_zip(
+        tmp_path,
+        {
+            "multi_news": [
+                _longbench_row("multi-news-0", "multi_news", "en", suffix="brief", empty_input=True),
+            ],
+        },
+    )
+    config_path = _write_longbench_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_dir=tmp_path / "out",
+        profile="medium_output_summarization",
+        configs=["multi_news"],
+        samples_per_task=1,
+    )
+
+    materialize_from_config(config_path)
+
+    shard_row = json.loads(
+        (tmp_path / "out" / "shards" / "shard_000.runner.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert "Summarize the document in about" in shard_row["prompt"]
+    assert shard_row["metadata"]["longbench_task_input_source"] == "synthesized_summarization_instruction"
+
+
 def _write_config(tmp_path: Path, *, raw_path: Path, output_dir: Path) -> Path:
     config = {
         "name": "crosscodeeval_tiny",
@@ -349,11 +376,12 @@ def _longbench_row(
     language: str,
     *,
     suffix: str = "sample",
+    empty_input: bool = False,
 ) -> dict[str, object]:
     return {
         "_id": row_id,
         "dataset": task_name,
-        "input": f"Summarize the material for {suffix}.",
+        "input": "" if empty_input else f"Summarize the material for {suffix}.",
         "context": f"context tokens for {task_name} {suffix} include several informative words",
         "answers": [f"reference answer {suffix}", f"longer reference answer {suffix}"],
         "length": 7,

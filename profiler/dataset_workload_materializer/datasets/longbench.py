@@ -208,8 +208,19 @@ def longbench_row_to_sample(
     counters,
     source: str,
 ) -> MaterializedSample | None:
-    prompt = render_longbench_prompt(row)
+    raw_task_input = row.get("input")
+    if not isinstance(raw_task_input, str):
+        raise ValueError(f"{source}.input must be a string")
     target = longbench_reference_answer(row.get("answers"))
+    task_input, task_input_source = resolved_longbench_task_input(
+        raw_task_input,
+        target=target,
+        profile_spec=profile_spec,
+    )
+    if task_input is None:
+        counters.drops["missing_empty_task_input"] += 1
+        return None
+    prompt = render_longbench_prompt(row, task_input=task_input)
     prompt_token_count = len(tokenizer.encode(prompt))
     target_token_count = len(tokenizer.encode(target))
     if prompt_token_count < filtering.min_prompt_tokens:
@@ -257,6 +268,7 @@ def longbench_row_to_sample(
         "longbench_row_index": row_index,
         "longbench_length": row.get("length"),
         "longbench_dataset": row.get("dataset"),
+        "longbench_task_input_source": task_input_source,
     }
     return MaterializedSample(
         sample_id=sample_id,
@@ -267,11 +279,12 @@ def longbench_row_to_sample(
     )
 
 
-def render_longbench_prompt(row: dict[str, Any]) -> str:
+def render_longbench_prompt(row: dict[str, Any], *, task_input: str | None = None) -> str:
     context = expect_string(row.get("context"), "longbench row.context")
-    task_input = row.get("input")
-    if not isinstance(task_input, str):
-        raise ValueError("longbench row.input must be a string")
+    resolved_task_input = task_input if task_input is not None else expect_string(
+        row.get("input"),
+        "longbench row.input",
+    )
     all_classes = row.get("all_classes")
     class_text = ""
     if isinstance(all_classes, list) and all_classes:
@@ -284,11 +297,37 @@ def render_longbench_prompt(row: dict[str, Any]) -> str:
         "Context:\n"
         f"{context}\n\n"
         "Task:\n"
-        f"{task_input}"
+        f"{resolved_task_input}"
         f"{class_text}"
         f"{language_text}\n\n"
         "Answer:"
     )
+
+
+def resolved_longbench_task_input(
+    raw_task_input: str,
+    *,
+    target: str,
+    profile_spec: LongBenchProfileSpec,
+) -> tuple[str | None, str]:
+    if raw_task_input:
+        return raw_task_input, "dataset"
+    if profile_spec.workload_type == "summarization":
+        return synthesized_summarization_task_input(target), "synthesized_summarization_instruction"
+    return None, "missing"
+
+
+def synthesized_summarization_task_input(target: str) -> str:
+    target_words = [word for word in target.split() if word]
+    approximate_words = rounded_word_target(len(target_words))
+    return f"Summarize the document in about {approximate_words} words."
+
+
+def rounded_word_target(word_count: int) -> int:
+    if word_count <= 0:
+        return 100
+    rounded = int(25 * round(word_count / 25))
+    return max(25, rounded)
 
 
 def longbench_reference_answer(answers: Any) -> str:
