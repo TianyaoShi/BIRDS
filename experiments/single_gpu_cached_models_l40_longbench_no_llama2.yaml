@@ -1,10 +1,10 @@
 run:
-  run_id: single-gpu-model-loop-run-longbench-no-llama2-000
+  run_id: single-gpu-model-loop-run-longbench-bucketized-no-llama2-000
   output_root: ../results/orchestrator
   allowed_gpu_ids: [0, 1, 2, 3]
   max_active_gpus: 4
   keep_one_gpu_spare: false
-  default_endpoint: /v1/chat/completions
+  default_endpoint: /v1/completions
   base_port_start: 8300
   base_port_end: 8399
   metrics_port_offset: 1000
@@ -33,20 +33,21 @@ launch:
 
 search:
   search_mode: hybrid
-  trial_min_duration_s: 300
-  trial_max_duration_s: 600
-  final_confirmation_duration_s: 600
+  trial_min_duration_s: 600
+  trial_max_duration_s: 1200
+  final_confirmation_duration_s: 1200
   rate_precision: 0.05
   initial_request_rate: 0.25
   max_request_rate: 4
   max_binary_steps: 8
   max_bracket_trials: 14
   metrics_interval_s: 1.0
-  window_s: 30.0
+  window_s: 60.0
   ttft_slo_ms: 15000
   tpot_slo_ms: 150
   ttft_slo_field: ttft_p90_ms
   tpot_slo_field: tpot_p90_ms
+  ttft_slo_mode: length_scaled
   closed_loop_min_trials: 3
   max_closed_loop_concurrency: 64
   closed_loop_plateau_relative_gain: 0.05
@@ -66,7 +67,7 @@ overrides:
       max_num_batched_tokens: 8192
     search:
       initial_request_rate: 0.5
-      max_request_rate: 16
+      max_request_rate: 12
       max_binary_steps: 10
       max_bracket_trials: 18
 
@@ -79,7 +80,7 @@ overrides:
     reason: Mid-size models use a moderate LongBench search envelope.
     search:
       initial_request_rate: 0.25
-      max_request_rate: 8
+      max_request_rate: 6
       max_binary_steps: 9
       max_bracket_trials: 16
 
@@ -97,17 +98,53 @@ overrides:
 
   - match:
       model: openai/gpt-oss-20b
-    reason: gpt-oss-20b uses the cached mxfp4 checkpoint; let vLLM pick dtype automatically.
+    reason: gpt-oss-20b uses the cached mxfp4 checkpoint; use the same bucketized LongBench sweep but let vLLM pick dtype automatically.
     launch:
       dtype: auto
     search:
-      initial_request_rate: 0.5
-      max_request_rate: 8
+      initial_request_rate: 0.25
+      max_request_rate: 4
       max_binary_steps: 9
       max_bracket_trials: 16
 
+  - match:
+      workloads:
+        - '*long_output_summarization*'
+    reason: Long-output summarization has the largest decode demand; keep the rate ceiling low and rely on the extended 600-1200s trials for enough requests.
+    search:
+      initial_request_rate: 0.125
+      max_request_rate: 2
+      max_closed_loop_concurrency: 64
+
+  - match:
+      workloads:
+        - '*medium_output_summarization*'
+    reason: Medium-output summarization still has long prompts and hundreds-token completions, so cap the sweep below short-answer QA.
+    search:
+      initial_request_rate: 0.25
+      max_request_rate: 3
+      max_closed_loop_concurrency: 64
+
+  - match:
+      workloads:
+        - '*medium_answer_rag_qa*'
+    reason: RAG-QA uses very long inputs with medium answers; the bucketized shard has only 200 unique examples expanded to 1k, so avoid high-rate replay.
+    search:
+      initial_request_rate: 0.25
+      max_request_rate: 4
+      max_closed_loop_concurrency: 64
+
+  - match:
+      workloads:
+        - '*short_answer_document_qa*'
+    reason: Short-answer QA has the shortest outputs but still long inputs; allow the widest LongBench bucket ceiling without reverting to the deprecated mixed workload.
+    search:
+      initial_request_rate: 0.25
+      max_request_rate: 6
+      max_closed_loop_concurrency: 96
+
 experiments:
-  - id: single-gpu-model-loop-longbench-no-llama2
+  - id: single-gpu-model-loop-longbench-bucketized-no-llama2
     models:
       - Qwen/Qwen3-0.6B
       - Qwen/Qwen3-1.7B
@@ -122,4 +159,9 @@ experiments:
       - meta-llama/Llama-3.2-3B-Instruct
       - openai/gpt-oss-20b
     workloads:
-      - ./workloads/longbench_nl_truncated.yaml
+      # Each bucket is materialized as one deterministic epoch-shuffled JSONL
+      # workload. Keep them separate because output length distributions differ.
+      - ./longbench_workloads/materialization/longbench_long_output_summarization_qwen3_8b/workload_yamls/shard_000.yaml
+      - ./longbench_workloads/materialization/longbench_medium_output_summarization_qwen3_8b/workload_yamls/shard_000.yaml
+      - ./longbench_workloads/materialization/longbench_medium_answer_rag_qa_qwen3_8b/workload_yamls/shard_000.yaml
+      - ./longbench_workloads/materialization/longbench_short_answer_document_qa_qwen3_8b/workload_yamls/shard_000.yaml
