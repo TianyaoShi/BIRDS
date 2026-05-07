@@ -1,10 +1,10 @@
-name: gpqa_diamond_reasoning
+name: hard_reasoning_small_mixed
 
 dataset:
   name: gpqa
-  raw_path: ../../data/raw/reasoning/gpqa_diamond.jsonl
-  split: test
-  task: gpqa_diamond
+  raw_path: ../../data/raw/reasoning/hard_reasoning_small_mixed.jsonl
+  split: mixed
+  task: hard_reasoning_small_mixed
   prompt_template: reasoning_auto
 
 tokenization:
@@ -29,13 +29,13 @@ request:
   ignore_eos: false
 
 sharding:
-  output_dir: gpqa_diamond_reasoning
+  output_dir: hard_reasoning_small_mixed
   samples_per_shard: 2048
 
 workload_yaml:
   output_len:
     mode: natural_until_eos
-    max_tokens: 4096
+    max_tokens: 8192
   context_policy:
     max_model_len: 32768
     tokenizer_source: vllm_model_config

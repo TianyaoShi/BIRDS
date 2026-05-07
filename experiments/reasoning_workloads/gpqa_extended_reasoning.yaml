@@ -1,10 +1,10 @@
-name: gpqa_diamond_reasoning
+name: gpqa_extended_reasoning
 
 dataset:
   name: gpqa
-  raw_path: ../../data/raw/reasoning/gpqa_diamond.jsonl
-  split: test
-  task: gpqa_diamond
+  raw_path: ../../data/raw/reasoning/gpqa_extended.jsonl
+  split: train
+  task: gpqa_extended
   prompt_template: reasoning_auto
 
 tokenization:
@@ -29,7 +29,7 @@ request:
   ignore_eos: false
 
 sharding:
-  output_dir: gpqa_diamond_reasoning
+  output_dir: gpqa_extended_reasoning
   samples_per_shard: 2048
 
 workload_yaml:

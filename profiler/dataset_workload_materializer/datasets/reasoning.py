@@ -34,8 +34,8 @@ DEFAULT_REASONING_FIELD_ALIASES: dict[str, list[str]] = {
         "gold",
         "final_answer",
     ],
-    "subject": ["subject", "category", "discipline", "subdomain", "Subject"],
-    "record_id": ["id", "_id", "question_id", "problem_id", "record_id"],
+    "subject": ["subject", "category", "discipline", "subdomain", "Subject", "Subdomain", "High-level domain"],
+    "record_id": ["id", "_id", "question_id", "problem_id", "record_id", "Record ID", "problem_idx"],
     "year": ["year", "contest_year"],
 }
 
@@ -176,6 +176,7 @@ def reasoning_row_to_sample(
         counters.drops["target_too_long"] += 1
         return None
 
+    source_metadata = optional_mapping(row.get("metadata"), f"{source}.metadata")
     subject = str(metadata_alias(row, aliases["subject"], task))
     record_id = metadata_alias(row, aliases["record_id"], f"{row_index:06d}")
     year = metadata_alias(row, aliases["year"], "")
@@ -208,6 +209,7 @@ def reasoning_row_to_sample(
         "target_token_count": target_token_count,
         "record_id": record_id,
     }
+    metadata.update(source_metadata)
     if choices:
         metadata["choices"] = [{"label": label, "text": text} for label, text in choices]
         metadata["answer_label"] = answer.ground_truth

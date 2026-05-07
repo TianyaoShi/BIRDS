@@ -16,7 +16,7 @@ filtering:
   min_target_tokens: 1
   max_target_tokens: 64
   dedup:
-    content_hash: true
+    content_hash: false
 
 sampling:
   seed: 31
@@ -37,5 +37,6 @@ workload_yaml:
     mode: natural_until_eos
     max_tokens: 2048
   context_policy:
+    max_model_len: 32768
     tokenizer_source: vllm_model_config
     over_limit: fail

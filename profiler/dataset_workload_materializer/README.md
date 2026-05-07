@@ -91,10 +91,30 @@ Reasoning-question materialization configs live under
 
 ```text
 experiments/reasoning_workloads/gpqa_diamond_reasoning.yaml
+experiments/reasoning_workloads/gpqa_extended_reasoning.yaml
 experiments/reasoning_workloads/mmlu_reasoning.yaml
 experiments/reasoning_workloads/mmlu_pro_reasoning.yaml
 experiments/reasoning_workloads/aime_2024_2026_reasoning.yaml
+experiments/reasoning_workloads/hard_reasoning_small_mixed.yaml
 ```
+
+Download and normalize the public source artifacts with:
+
+```bash
+PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
+/local/scratch/a/shi676/.venv/bin/python -m dataset_workload_materializer.download_reasoning_sources \
+  --output-dir data/raw/reasoning
+```
+
+The downloader currently uses:
+
+- GPQA Diamond: `Wanfq/gpqa`, file `gpqa_diamond.csv`.
+- GPQA Extended: `Wanfq/gpqa`, file `gpqa_extended.csv`.
+- MMLU: `cais/mmlu`, config `all`, split `test`.
+- MMLU-Pro: `TIGER-Lab/MMLU-Pro`, split `test`.
+- AIME 2024: `sea-snell/aime-2024`, split `test`.
+- AIME 2025: `test-time-compute/aime_2025`, split `test`.
+- AIME 2026: `MathArena/aime_2026`, split `train`.
 
 ## Materialize
 
@@ -156,6 +176,22 @@ request:
 This is deliberate: GPQA, MMLU/MMLU-Pro, and AIME provide final answers, not
 reference reasoning traces. The generation length is therefore a safety cap for
 natural EOS stopping, not a target derived from the final-answer token count.
+
+For profiling, MMLU and MMLU-Pro are the statistically robust reasoning
+workloads. GPQA Diamond and AIME 2024-2026 are too small by themselves. GPQA
+Extended and AIME 2024-2026 have similar prompt-length distributions in the
+current materialization:
+
+| Workload | Samples | Input p50 | Input p90 | Input p95 |
+| --- | ---: | ---: | ---: | ---: |
+| GPQA Extended | 546 | 108 | 187.5 | 231.75 |
+| AIME 2024-2026 | 90 | 78 | 154.5 | 194.5 |
+| Hard reasoning small mixed | 636 | 100.5 | 185.5 | 228.75 |
+
+Because those prompt lengths are close, the materializer also prepares
+`hard_reasoning_small_mixed` by merging GPQA Extended and AIME 2024-2026. The
+mixed shard keeps `metadata.mixed_source` so GPQA and AIME rows remain
+auditable.
 
 Recent real materialization counts:
 
