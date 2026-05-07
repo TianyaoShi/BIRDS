@@ -16,6 +16,7 @@ from llm_mst_finder.workload import (
     load_workload_samples_for_sampling_only,
     prepare_workload_for_trial,
 )
+from llm_mst_finder.vllm_compat import build_openai_payload
 
 
 FIXTURES_ROOT = Path(__file__).parent / "fixtures"
@@ -97,6 +98,85 @@ def test_jsonl_sequential_entry_selection_replays_rows_in_order(tmp_path: Path) 
     ]
     assert [sample.expected_output_len for sample in samples] == [1, 2, 3, 1, 2]
     assert all(sample.metadata["sampling_entry_selection"] == "sequential" for sample in samples)
+
+
+def test_jsonl_natural_until_eos_uses_cap_without_dataset_output_length(tmp_path: Path) -> None:
+    dataset_path = tmp_path / "reasoning_questions.jsonl"
+    dataset_path.write_text(
+        json.dumps(
+            {
+                "prompt": "Question: What is 2+2? Think carefully.",
+                "metadata": {"ground_truth": "4"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    workload_path = tmp_path / "reasoning_natural.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: reasoning-natural",
+                "dataset:",
+                "  type: jsonl",
+                f"  path: {dataset_path}",
+                "tokenizer: whitespace",
+                "sampling:",
+                "  seed: 99",
+                "  num_requests: 1",
+                "  entry_selection: sequential",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: natural_until_eos",
+                "    max_tokens: 2048",
+                "request:",
+                "  temperature: 0.0",
+                "  ignore_eos: false",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    sample = load_workload_samples_for_sampling_only(workload_path)[0]
+    payload = build_openai_payload("/v1/completions", "fake-model", sample)
+
+    assert sample.expected_output_len == 2048
+    assert sample.metadata["ground_truth"] == "4"
+    assert sample.metadata["sampling_output_len_mode"] == "natural_until_eos"
+    assert sample.metadata["sampling_output_len_is_cap"] is True
+    assert sample.metadata["max_output_tokens"] == 2048
+    assert sample.extra_body == {"temperature": 0.0, "ignore_eos": False}
+    assert payload["max_tokens"] == 2048
+    assert payload["ignore_eos"] is False
+
+
+def test_natural_until_eos_rejects_ignore_eos_true(tmp_path: Path) -> None:
+    workload_path = tmp_path / "invalid_reasoning_natural.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: invalid-reasoning-natural",
+                "dataset:",
+                "  type: synthetic-fixed",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 1",
+                "  prompt_len:",
+                "    mode: fixed",
+                "    value: 8",
+                "  output_len:",
+                "    mode: natural_until_eos",
+                "    max_tokens: 128",
+                "request:",
+                "  ignore_eos: true",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="requires request.ignore_eos=false"):
+        load_workload_config(workload_path)
 
 
 def test_sharegpt_from_dataset_uses_assistant_output_length() -> None:

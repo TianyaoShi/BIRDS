@@ -157,13 +157,14 @@ class LengthSpec:
     buckets: tuple[LengthBucket, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.mode not in {"fixed", "bucketed", "from_dataset"}:
+        if self.mode not in {"fixed", "bucketed", "from_dataset", "natural_until_eos"}:
             raise ValueError(f"unsupported length mode {self.mode!r}")
-        if self.mode == "fixed":
+        if self.mode in {"fixed", "natural_until_eos"}:
             if self.value is None or self.value <= 0:
-                raise ValueError("fixed mode requires positive value")
+                field_name = "max_tokens" if self.mode == "natural_until_eos" else "value"
+                raise ValueError(f"{self.mode} mode requires positive {field_name}")
             if self.buckets:
-                raise ValueError("fixed mode does not allow buckets")
+                raise ValueError(f"{self.mode} mode does not allow buckets")
         if self.mode == "bucketed":
             if not self.buckets:
                 raise ValueError("bucketed mode requires buckets")
@@ -174,7 +175,7 @@ class LengthSpec:
                 raise ValueError("from_dataset mode does not allow value or buckets")
 
     def sample(self, rng: random.Random) -> int:
-        if self.mode == "fixed":
+        if self.mode in {"fixed", "natural_until_eos"}:
             assert self.value is not None
             return self.value
         if self.mode == "bucketed":
@@ -345,7 +346,7 @@ def _parse_length_spec(payload: Any, field_name: str) -> LengthSpec:
     _check_allowed_keys(
         spec_payload,
         field_name,
-        {"mode", "value", "buckets", "target_mean"},
+        {"mode", "value", "buckets", "target_mean", "max_tokens"},
     )
     if mode == "fixed":
         return LengthSpec(
@@ -373,6 +374,15 @@ def _parse_length_spec(payload: Any, field_name: str) -> LengthSpec:
         return LengthSpec(mode="bucketed", buckets=tuple(buckets))
     if mode == "from_dataset":
         return LengthSpec(mode="from_dataset")
+    if mode == "natural_until_eos":
+        return LengthSpec(
+            mode="natural_until_eos",
+            value=_expect_int(
+                spec_payload.get("max_tokens"),
+                f"{field_name}.max_tokens",
+                positive=True,
+            ),
+        )
     raise ValueError(f"unsupported {field_name}.mode: {mode!r}")
 
 
@@ -517,6 +527,13 @@ def load_workload_config(path: str | Path) -> WorkloadConfig:
         raise ValueError("synthetic datasets do not support sampling.prompt_len.mode=from_dataset")
     if config.dataset.type.startswith("synthetic") and config.sampling.output_len.mode == "from_dataset":
         raise ValueError("synthetic datasets do not support sampling.output_len.mode=from_dataset")
+    if config.sampling.prompt_len.mode == "natural_until_eos":
+        raise ValueError("sampling.prompt_len.mode=natural_until_eos is only valid for output_len")
+    if (
+        config.sampling.output_len.mode == "natural_until_eos"
+        and config.request.extra_body.get("ignore_eos") is True
+    ):
+        raise ValueError("sampling.output_len.mode=natural_until_eos requires request.ignore_eos=false")
     return config
 
 
@@ -1271,6 +1288,8 @@ def generate_sample_requests(
         else:
             prompt_len = len(resolved_tokenizer.encode(prompt))
         expected_output_len = _resolve_output_len(config.sampling.output_len, entry, rng)
+        output_len_is_cap = config.sampling.output_len.mode == "natural_until_eos"
+        output_cap_metadata = {"max_output_tokens": expected_output_len} if output_len_is_cap else {}
         samples.append(
             SampleRequest(
                 prompt=prompt,
@@ -1286,6 +1305,8 @@ def generate_sample_requests(
                     "sampling_entry_selection": config.sampling.entry_selection,
                     "sampling_prompt_len_mode": config.sampling.prompt_len.mode,
                     "sampling_output_len_mode": config.sampling.output_len.mode,
+                    "sampling_output_len_is_cap": output_len_is_cap,
+                    **output_cap_metadata,
                     "prompt_tokenizer_key": workload_tokenizer_key,
                     **entry.metadata,
                 },

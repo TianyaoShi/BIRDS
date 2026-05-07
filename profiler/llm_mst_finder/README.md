@@ -97,6 +97,22 @@ context_policy:
   over_limit: fail
 ```
 
+Reasoning datasets with only final-answer labels should not use
+`output_len.mode: from_dataset`, because the final answer length is not the
+reasoning trace length. Use a natural-stop cap instead:
+
+```yaml
+sampling:
+  output_len:
+    mode: natural_until_eos
+    max_tokens: 2048
+request:
+  ignore_eos: false
+```
+
+This sends `max_tokens: 2048` as a safety cap while allowing the model to stop
+on EOS. Context validation reserves the same cap against `max_model_len`.
+
 HF example:
 
 ```yaml
