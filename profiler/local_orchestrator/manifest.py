@@ -121,6 +121,7 @@ _SEARCH_KEYS = {
     "tpot_slo_field",
     "ttft_slo_mode",
     "longbench_ttft_static_preset",
+    "request_reuse_policy",
     "max_num_seqs",
     "max_num_batched_tokens",
 }
@@ -547,6 +548,7 @@ def _merge_search_config(base: SearchConfig, raw: Any, *, field_name: str) -> Se
         "tpot_slo_field": base.tpot_slo_field,
         "ttft_slo_mode": base.ttft_slo_mode,
         "longbench_ttft_static_preset": base.longbench_ttft_static_preset,
+        "request_reuse_policy": base.request_reuse_policy,
         "max_num_seqs": base.max_num_seqs,
         "max_num_batched_tokens": base.max_num_batched_tokens,
     }
@@ -584,6 +586,9 @@ def _merge_search_config(base: SearchConfig, raw: Any, *, field_name: str) -> Se
             continue
         if key == "longbench_ttft_static_preset":
             updated[key] = _optional_non_empty_string(value, f"{field_name}.{key}")
+            continue
+        if key == "request_reuse_policy":
+            updated[key] = _expect_non_empty_string(value, f"{field_name}.{key}")
             continue
         if key in {"max_num_seqs", "max_num_batched_tokens"}:
             updated[key] = _expect_optional_positive_int(value, f"{field_name}.{key}")

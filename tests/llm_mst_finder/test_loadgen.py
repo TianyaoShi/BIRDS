@@ -3,7 +3,15 @@ from __future__ import annotations
 import asyncio
 import time
 
-from llm_mst_finder.loadgen import ClosedLoopLoadGenerator, OpenLoopLoadGenerator, cycling_request_source
+from llm_mst_finder.loadgen import (
+    ClosedLoopLoadGenerator,
+    OpenLoopLoadGenerator,
+    RequestSourceExhausted,
+    count_unique_request_reuse_keys,
+    cycling_request_source,
+    request_source_factory_for_reuse_policy,
+    unique_request_source,
+)
 from llm_mst_finder.records import RequestRecord, SampleRequest, ScheduledRequest
 
 
@@ -60,6 +68,67 @@ def test_open_loop_deterministic_schedule() -> None:
 
     scheduled = asyncio.run(run())
     assert scheduled == [0.0, 0.5, 1.0, 1.5]
+
+
+def test_unique_request_source_uses_content_hash_and_exhausts() -> None:
+    samples = [
+        SampleRequest(
+            prompt=f"prompt-{index}",
+            prompt_len=5,
+            expected_output_len=3,
+            metadata={"content_hash": content_hash},
+        )
+        for index, content_hash in enumerate(("a", "b", "a"))
+    ]
+    source = unique_request_source(samples)
+
+    assert source().prompt == "prompt-0"
+    assert source().prompt == "prompt-1"
+    try:
+        source()
+    except RequestSourceExhausted as exc:
+        assert "no unused request content" in str(exc)
+    else:
+        raise AssertionError("unique source should exhaust after unique content hashes")
+    assert count_unique_request_reuse_keys(samples) == 2
+
+
+def test_request_source_factory_can_avoid_repeats_across_search() -> None:
+    samples = [
+        SampleRequest(
+            prompt=f"prompt-{index}",
+            prompt_len=5,
+            expected_output_len=3,
+            metadata={"content_hash": str(index)},
+        )
+        for index in range(4)
+    ]
+    factory = request_source_factory_for_reuse_policy(
+        samples,
+        reuse_policy="no-repeat-across-search",
+    )
+
+    first_trial = factory()
+    second_trial = factory()
+    assert [first_trial().prompt for _ in range(2)] == ["prompt-0", "prompt-1"]
+    assert [second_trial().prompt for _ in range(2)] == ["prompt-3", "prompt-2"]
+    try:
+        factory()()
+    except RequestSourceExhausted:
+        pass
+    else:
+        raise AssertionError("cross-search unique source should exhaust")
+
+
+def test_cycling_factory_rotates_trial_start_offset() -> None:
+    samples = [
+        SampleRequest(prompt=f"prompt-{index}", prompt_len=5, expected_output_len=3)
+        for index in range(5)
+    ]
+    factory = request_source_factory_for_reuse_policy(samples, reuse_policy="cycle")
+
+    assert factory()().prompt == "prompt-0"
+    assert factory()().prompt == "prompt-3"
 
 
 def test_open_loop_abort_stops_scheduling() -> None:

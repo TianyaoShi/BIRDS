@@ -76,6 +76,8 @@ def build_search_command(
         job.search.tpot_slo_field,
         "--ttft-slo-mode",
         job.search.ttft_slo_mode,
+        "--request-reuse-policy",
+        job.search.request_reuse_policy,
     ]
     if job.search.longbench_ttft_static_preset is not None:
         command.extend(

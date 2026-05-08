@@ -137,6 +137,11 @@ class TrialRunner:
                 return True
             return False
 
+        def on_source_exhausted(reason: str) -> None:
+            nonlocal abort_reason
+            if abort_reason is None:
+                abort_reason = f"request source exhausted: {reason}"
+
         metrics_task: asyncio.Task[Sequence[ServerMetricSample]] | None = None
         if self._metrics_poller is not None:
             assert server_metrics_path is not None
@@ -168,6 +173,7 @@ class TrialRunner:
                 duration_s=config.duration_s,
                 start_ts=run_start_ts,
                 should_abort=should_abort,
+                on_source_exhausted=on_source_exhausted,
             )
         finally:
             stop_event.set()

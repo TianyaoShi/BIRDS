@@ -47,6 +47,7 @@ def test_load_manifest_accepts_valid_structured_config(tmp_path: Path) -> None:
                 "closed_loop_min_trials": 3,
                 "ttft_slo_field": "ttft_p90_ms",
                 "tpot_slo_field": "tpot_p90_ms",
+                "request_reuse_policy": "no-repeat-per-trial",
             },
             "experiments": [
                 {
@@ -68,6 +69,7 @@ def test_load_manifest_accepts_valid_structured_config(tmp_path: Path) -> None:
     assert manifest.experiments[0].experiment_id == "exp-chat"
     assert manifest.experiments[0].launch.max_model_len == 32768
     assert manifest.experiments[0].search.closed_loop_min_trials == 3
+    assert manifest.experiments[0].search.request_reuse_policy == "no-repeat-per-trial"
 
 
 def test_load_manifest_accepts_slurm_config(tmp_path: Path) -> None:

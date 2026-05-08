@@ -266,6 +266,8 @@ def test_cli_search_records_server_metadata_file(
             str(metadata_path),
             "--max-num-batched-tokens",
             "8192",
+            "--request-reuse-policy",
+            "no-repeat-per-trial",
         ]
     )
 
@@ -278,6 +280,7 @@ def test_cli_search_records_server_metadata_file(
     assert config.uncertain_trial_duration_multiplier == 3.0
     assert config.final_confirmation_duration_s == 25.0
     assert config.closed_loop_min_trials == 4
+    assert config.request_reuse_policy == "no-repeat-per-trial"
     metadata = config.metadata
     assert metadata["stability_policy"]["ttft_slo_ms"] == 1500.0
     assert metadata["stability_policy"]["ttft_slo_field"] == "ttft_p99_ms"
@@ -288,6 +291,9 @@ def test_cli_search_records_server_metadata_file(
     assert server_metadata["server_config"]["max_num_seqs"] == 128
     assert server_metadata["max_num_seqs"] == 128.0
     assert server_metadata["max_num_batched_tokens"] == 8192.0
+    assert metadata["request_reuse"]["policy"] == "no-repeat-per-trial"
+    assert metadata["request_reuse"]["sample_rows"] > 0
+    assert metadata["request_reuse"]["unique_reuse_keys"] > 0
 
 
 def test_cli_rejects_conflicting_server_metadata(

@@ -62,6 +62,7 @@ search:
   tpot_slo_ms: 150
   ttft_slo_field: ttft_p90_ms
   tpot_slo_field: tpot_p90_ms
+  request_reuse_policy: cycle
   max_num_seqs: 256
   max_num_batched_tokens: 2048
 

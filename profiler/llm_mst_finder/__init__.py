@@ -1,4 +1,13 @@
-from .loadgen import ClosedLoopLoadGenerator, OpenLoopLoadGenerator, cycling_request_source
+from .loadgen import (
+    ClosedLoopLoadGenerator,
+    OpenLoopLoadGenerator,
+    RequestSourceExhausted,
+    count_unique_request_reuse_keys,
+    cycling_request_source,
+    request_reuse_key,
+    request_source_factory_for_reuse_policy,
+    unique_request_source,
+)
 from .metrics_polling import PrometheusMetricsPoller, parse_prometheus_text, parse_server_metrics_sample
 from .model_context import (
     ContextPolicy,
@@ -76,6 +85,7 @@ __all__ = [
     "PrometheusMetricsPoller",
     "RequestClient",
     "RequestRecord",
+    "RequestSourceExhausted",
     "SampleRequest",
     "SearchConfig",
     "SearchController",
@@ -92,6 +102,7 @@ __all__ = [
     "TrialRunner",
     "TrialSummary",
     "WindowSummary",
+    "count_unique_request_reuse_keys",
     "cycling_request_source",
     "generate_report",
     "generate_sample_requests",
@@ -106,7 +117,10 @@ __all__ = [
     "parse_context_policy",
     "parse_prometheus_text",
     "parse_server_metrics_sample",
+    "request_reuse_key",
+    "request_source_factory_for_reuse_policy",
     "resolve_model_tokenizer_for_policy",
     "resolve_model_context_info",
+    "unique_request_source",
     "validate_samples_against_context_window",
 ]

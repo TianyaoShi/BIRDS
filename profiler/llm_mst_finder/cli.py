@@ -9,7 +9,10 @@ from math import isfinite
 from typing import Any, Mapping, Sequence
 
 from .analysis import analyze_trial_dir, write_analysis_artifact
-from .loadgen import cycling_request_source
+from .loadgen import (
+    count_unique_request_reuse_keys,
+    request_source_factory_for_reuse_policy,
+)
 from .metrics_polling import PrometheusMetricsPoller
 from .reporting import generate_report
 from .records import TrialConfig
@@ -76,6 +79,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON object merged into every request body",
     )
     run_trial.add_argument("--safety-max-outstanding", type=int, default=None)
+    run_trial.add_argument(
+        "--request-reuse-policy",
+        choices=("cycle", "no-repeat-per-trial"),
+        default="cycle",
+        help="request reuse policy for this single trial",
+    )
     run_trial.add_argument("--metrics-url", default=None)
     run_trial.add_argument("--metrics-interval-s", type=float, default=1.0)
     run_trial.add_argument("--window-s", type=float, default=10.0)
@@ -131,6 +140,12 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--extra-header", action="append", default=[])
     search.add_argument("--extra-body-json", default=None)
     search.add_argument("--safety-max-outstanding", type=int, default=None)
+    search.add_argument(
+        "--request-reuse-policy",
+        choices=("cycle", "no-repeat-per-trial", "no-repeat-across-search"),
+        default="no-repeat-across-search",
+        help="request reuse policy across search trials",
+    )
     search.add_argument("--metrics-url", "--server-metrics-url", dest="metrics_url", default=None)
     search.add_argument("--metrics-interval-s", type=float, default=1.0)
     search.add_argument("--window-s", type=float, default=10.0)
@@ -159,7 +174,10 @@ async def _run_trial_command(args: argparse.Namespace) -> int:
         endpoint=args.endpoint,
     )
     request_samples = prepared_workload.samples
-    request_source = cycling_request_source(request_samples)
+    request_source = request_source_factory_for_reuse_policy(
+        request_samples,
+        reuse_policy=args.request_reuse_policy,
+    )()
     request_client = RequestClient(
         base_url=args.base_url,
         endpoint=args.endpoint,
@@ -184,6 +202,10 @@ async def _run_trial_command(args: argparse.Namespace) -> int:
     )
     metadata = _merge_cli_metadata(
         prepared_workload.metadata,
+        _request_reuse_metadata(
+            prepared_workload.samples,
+            request_reuse_policy=args.request_reuse_policy,
+        ),
         _parse_server_metadata_args(args),
         _stability_policy_payload_from_args(args),
     )
@@ -289,6 +311,10 @@ async def _search_command(args: argparse.Namespace) -> int:
     )
     metadata = _merge_cli_metadata(
         prepared_workload.metadata,
+        _request_reuse_metadata(
+            prepared_workload.samples,
+            request_reuse_policy=args.request_reuse_policy,
+        ),
         _parse_server_metadata_args(args),
         _stability_policy_payload_from_args(args),
     )
@@ -325,11 +351,15 @@ async def _search_command(args: argparse.Namespace) -> int:
         metrics_url=args.metrics_url,
         metrics_interval_s=args.metrics_interval_s,
         window_s=args.window_s,
+        request_reuse_policy=args.request_reuse_policy,
         metadata=metadata,
     )
     controller = SearchController(
         runner,
-        request_source_factory=lambda: cycling_request_source(prepared_workload.samples),
+        request_source_factory=request_source_factory_for_reuse_policy(
+            prepared_workload.samples,
+            reuse_policy=args.request_reuse_policy,
+        ),
         output_dir=args.output_dir,
     )
     try:
@@ -449,6 +479,20 @@ def _parse_json_mapping(raw_json: str | None, *, field_name: str) -> dict[str, o
     if not isinstance(payload, dict):
         raise ValueError(f"{field_name} must decode to a JSON object")
     return payload
+
+
+def _request_reuse_metadata(
+    samples: Sequence[Any],
+    *,
+    request_reuse_policy: str,
+) -> dict[str, object]:
+    return {
+        "request_reuse": {
+            "policy": request_reuse_policy,
+            "sample_rows": len(samples),
+            "unique_reuse_keys": count_unique_request_reuse_keys(samples),
+        }
+    }
 
 
 def _positive_server_metadata_arg(raw_value: str) -> float:
@@ -600,10 +644,13 @@ def _merge_server_metadata_value(metadata: dict[str, object], key: str, value: f
 
 def _merge_cli_metadata(
     workload_metadata: Mapping[str, Any],
+    request_reuse_metadata: Mapping[str, object] | None,
     server_metadata: Mapping[str, object] | None,
     stability_policy: Mapping[str, object] | None,
 ) -> dict[str, Any]:
     metadata = dict(workload_metadata)
+    if request_reuse_metadata is not None:
+        metadata = _merge_metadata_mappings(metadata, request_reuse_metadata, path="metadata")
     if stability_policy is not None:
         metadata["stability_policy"] = dict(stability_policy)
     if server_metadata is not None:

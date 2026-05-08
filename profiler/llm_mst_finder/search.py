@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal, Protocol, cast
 
 from .analysis import analyze_trial_dir, write_analysis_artifact
-from .loadgen import RequestSource
+from .loadgen import RequestReusePolicy, RequestSource
 from .records import TrialAnalysisResult, TrialConfig
 from .trial_runner import TrialRunResult, TrialRunner
 
@@ -72,6 +72,7 @@ class SearchConfig:
     metrics_url: str | None = None
     metrics_interval_s: float = 1.0
     window_s: float = 10.0
+    request_reuse_policy: RequestReusePolicy = "no-repeat-across-search"
     metadata: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -122,6 +123,12 @@ class SearchConfig:
             _require_positive_int("safety_max_outstanding", self.safety_max_outstanding)
         _require_positive("metrics_interval_s", self.metrics_interval_s)
         _require_positive("window_s", self.window_s)
+        if self.request_reuse_policy not in {
+            "cycle",
+            "no-repeat-per-trial",
+            "no-repeat-across-search",
+        }:
+            raise ValueError(f"unsupported request_reuse_policy {self.request_reuse_policy!r}")
 
     @property
     def confirmation_duration_s(self) -> float:

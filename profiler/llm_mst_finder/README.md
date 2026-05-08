@@ -136,6 +136,40 @@ Context policy rules:
 - `whitespace` tokenization is rejected; workloads must name a real tokenizer or an explicit local test tokenizer.
 - If context failures are discovered from server responses, analysis marks the trial `invalid_workload` and excludes it from search decisions.
 
+## Request Reuse
+
+Prefix caching should stay enabled on vLLM servers. It is the production default,
+and disabling it for profiling would measure a deployment mode we do not intend
+to use. Instead, `llm_mst_finder` controls prompt reuse at the load-generator
+boundary.
+
+Search defaults to:
+
+```bash
+--request-reuse-policy no-repeat-across-search
+```
+
+This policy uses `metadata.content_hash` when present, then sample identity
+metadata, and finally a prompt hash. A content hash is sent at most once during
+the whole search run. If the workload runs out of unused content, the trial is
+aborted and marked with a request-source exhaustion reason rather than silently
+cycling through cached prompts.
+
+Other policies are explicit opt-ins:
+
+- `no-repeat-per-trial`: allow reuse across different trials, but not inside
+  one trial.
+- `cycle`: legacy cycling. The source still rotates its start offset for each
+  trial so consecutive trials do not all start at sample zero.
+
+Small expanded datasets such as LongBench buckets may need `cycle`, because the
+source buckets intentionally contain 1k-2k materialized rows and some buckets
+have only a few hundred unique originals. The LongBench experiment manifests set
+`request_reuse_policy: cycle` explicitly for that reason. Treat those results as
+cache-aware production measurements, not as no-repeat prompt sweeps; keep
+closed-loop concurrency and max request rate low enough that repeated long
+prompts are not sent by many workers at the same instant.
+
 ## SLO Policy
 
 Only TTFT and TPOT SLOs are supported:

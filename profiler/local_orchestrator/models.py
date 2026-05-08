@@ -232,6 +232,7 @@ class SearchConfig:
     tpot_slo_field: str = "tpot_p90_ms"
     ttft_slo_mode: str = "static"
     longbench_ttft_static_preset: str | None = None
+    request_reuse_policy: str = "no-repeat-across-search"
     max_num_seqs: int | None = None
     max_num_batched_tokens: int | None = None
 
@@ -280,6 +281,12 @@ class SearchConfig:
                 )
             if self.ttft_slo_mode != "static":
                 raise ValueError("longbench_ttft_static_preset requires ttft_slo_mode='static'")
+        if self.request_reuse_policy not in {
+            "cycle",
+            "no-repeat-per-trial",
+            "no-repeat-across-search",
+        }:
+            raise ValueError(f"unsupported request_reuse_policy {self.request_reuse_policy!r}")
         if self.max_num_seqs is not None:
             _require_positive_int("max_num_seqs", self.max_num_seqs)
         if self.max_num_batched_tokens is not None:

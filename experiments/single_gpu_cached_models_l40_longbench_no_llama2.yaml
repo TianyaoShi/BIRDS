@@ -48,6 +48,7 @@ search:
   ttft_slo_field: ttft_p90_ms
   tpot_slo_field: tpot_p90_ms
   ttft_slo_mode: length_scaled
+  request_reuse_policy: cycle
   closed_loop_min_trials: 3
   max_closed_loop_concurrency: 64
   closed_loop_plateau_relative_gain: 0.05

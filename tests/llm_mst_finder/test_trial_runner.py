@@ -140,8 +140,9 @@ def test_trial_runner_open_loop_send_rate_uses_send_timestamps_not_completion_ta
             duration_s: float,
             start_ts: float | None = None,
             should_abort=None,
+            on_source_exhausted=None,
         ):
-            del duration_s, should_abort
+            del duration_s, should_abort, on_source_exhausted
             assert start_ts is not None
             first = ScheduledRequest(
                 request_index=0,
