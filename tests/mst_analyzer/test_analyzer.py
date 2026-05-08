@@ -26,7 +26,7 @@ def _write_workload(tmp_path: Path, *, name: str = "live_sharegpt_workload_conte
                 f"name: {name}",
                 "dataset:",
                 "  type: synthetic-fixed",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 100",

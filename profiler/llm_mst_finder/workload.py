@@ -27,28 +27,6 @@ class PromptTokenizer(Protocol):
         ...
 
 
-class WhitespaceTokenizer:
-    def __init__(self) -> None:
-        self._token_to_id: dict[str, int] = {}
-        self._id_to_token: dict[int, str] = {}
-        self._next_id = 1
-
-    def encode(self, text: str) -> list[int]:
-        token_ids: list[int] = []
-        for token in text.split():
-            token_id = self._token_to_id.get(token)
-            if token_id is None:
-                token_id = self._next_id
-                self._next_id += 1
-                self._token_to_id[token] = token_id
-                self._id_to_token[token_id] = token
-            token_ids.append(token_id)
-        return token_ids
-
-    def decode(self, token_ids: list[int]) -> str:
-        return " ".join(self._id_to_token[token_id] for token_id in token_ids)
-
-
 class CharacterTokenizer:
     def __init__(self) -> None:
         self._char_to_id: dict[str, int] = {}
@@ -99,8 +77,10 @@ class HuggingFaceTokenizer:
 
 
 def resolve_tokenizer(tokenizer_spec: str | None) -> PromptTokenizer:
-    if tokenizer_spec is None or tokenizer_spec == "whitespace":
-        return WhitespaceTokenizer()
+    if tokenizer_spec is None:
+        raise ValueError("tokenizer is required; implicit whitespace tokenization is not allowed")
+    if tokenizer_spec == "whitespace":
+        raise ValueError("tokenizer must not be 'whitespace'")
     if tokenizer_spec == "character":
         return CharacterTokenizer()
     return HuggingFaceTokenizer(tokenizer_spec)
@@ -496,8 +476,12 @@ def load_workload_config(path: str | Path) -> WorkloadConfig:
     )
     name = _expect_string(root.get("name"), "name")
     tokenizer = root.get("tokenizer")
-    if tokenizer is not None and not isinstance(tokenizer, str):
-        raise ValueError("tokenizer must be a string when provided")
+    if tokenizer is None:
+        raise ValueError("tokenizer is required")
+    if not isinstance(tokenizer, str):
+        raise ValueError("tokenizer must be a string")
+    if tokenizer == "whitespace":
+        raise ValueError("tokenizer must not be 'whitespace'")
     sampling_payload = _expect_mapping(root.get("sampling"), "sampling")
     _check_allowed_keys(
         sampling_payload,
@@ -538,7 +522,11 @@ def load_workload_config(path: str | Path) -> WorkloadConfig:
 
 
 def _normalized_tokenizer_spec(tokenizer_spec: str | None) -> str:
-    return "whitespace" if tokenizer_spec is None else tokenizer_spec
+    if tokenizer_spec is None:
+        raise ValueError("tokenizer is required")
+    if tokenizer_spec == "whitespace":
+        raise ValueError("tokenizer must not be 'whitespace'")
+    return tokenizer_spec
 
 
 def _tokenizer_cache_key(
@@ -549,7 +537,7 @@ def _tokenizer_cache_key(
     if tokenizer_spec is not None:
         return f"tokenizer:{_normalized_tokenizer_spec(tokenizer_spec)}"
     if tokenizer is None:
-        return "tokenizer:whitespace"
+        raise ValueError("tokenizer is required")
     return f"tokenizer:{tokenizer.__class__.__module__}.{tokenizer.__class__.__qualname__}"
 
 
@@ -1306,6 +1294,7 @@ def generate_sample_requests(
                 expected_output_len=expected_output_len,
                 extra_body=dict(config.request.extra_body) or None,
                 metadata={
+                    **entry.metadata,
                     "workload_name": config.name,
                     "dataset_type": config.dataset.type,
                     "request_index": request_index,
@@ -1317,7 +1306,6 @@ def generate_sample_requests(
                     "sampling_output_len_is_cap": output_len_is_cap,
                     **output_cap_metadata,
                     "prompt_tokenizer_key": workload_tokenizer_key,
-                    **entry.metadata,
                 },
             )
         )

@@ -201,9 +201,10 @@ Recent real materialization counts:
 
 ## Length Statistics
 
-The materialized rows record whitespace-tokenized prompt and target lengths in
-`metadata.prompt_token_count` and `metadata.target_token_count`. These are the
-dataset/materializer token counts used by the generated workload YAMLs.
+The materialized rows record prompt and target lengths from the configured
+tokenizer in `metadata.prompt_token_count` and `metadata.target_token_count`.
+`tokenization.tokenizer: whitespace` is rejected so generated workload YAMLs
+cannot silently inherit whitespace accounting.
 
 Tracked real workload summaries:
 

@@ -29,7 +29,7 @@ def test_synthetic_distribution_is_deterministic_and_records_token_lengths() -> 
 
     assert [sample.to_dict() for sample in first] == [sample.to_dict() for sample in second]
     assert len(first) == 6
-    assert all(sample.prompt_len == len(sample.prompt.split()) for sample in first)
+    assert all(sample.prompt_len == len(sample.prompt) for sample in first)
     assert all(sample.expected_output_len == 4 for sample in first)
     assert all(sample.extra_body is not None for sample in first)
     assert all(sample.extra_body["ignore_eos"] is True for sample in first if sample.extra_body is not None)
@@ -48,7 +48,7 @@ def test_jsonl_from_dataset_uses_dataset_lengths() -> None:
 
     assert len(samples) == 5
     assert all(sample.expected_output_len in {4, 5, 6} for sample in samples)
-    assert all(sample.prompt_len == len(sample.prompt.split()) for sample in samples)
+    assert all(sample.prompt_len == len(sample.prompt) for sample in samples)
     assert all(sample.metadata["dataset_type"] == "jsonl" for sample in samples)
 
 
@@ -73,7 +73,7 @@ def test_jsonl_sequential_entry_selection_replays_rows_in_order(tmp_path: Path) 
                 "dataset:",
                 "  type: jsonl",
                 f"  path: {dataset_path}",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 99",
                 "  num_requests: 5",
@@ -114,7 +114,7 @@ def test_jsonl_from_dataset_honors_materialized_prompt_len(tmp_path: Path) -> No
                 "dataset:",
                 "  type: jsonl",
                 f"  path: {dataset_path}",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 99",
                 "  num_requests: 1",
@@ -154,7 +154,7 @@ def test_jsonl_natural_until_eos_uses_cap_without_dataset_output_length(tmp_path
                 "dataset:",
                 "  type: jsonl",
                 f"  path: {dataset_path}",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 99",
                 "  num_requests: 1",
@@ -193,6 +193,7 @@ def test_natural_until_eos_rejects_ignore_eos_true(tmp_path: Path) -> None:
                 "name: invalid-reasoning-natural",
                 "dataset:",
                 "  type: synthetic-fixed",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 1",
@@ -228,7 +229,7 @@ def test_sharegpt_from_dataset_uses_assistant_output_length() -> None:
         assistant_turn = next(
             turn for turn in row["conversations"] if turn.get("from", "").lower() == "gpt"
         )
-        assert sample.expected_output_len == len(assistant_turn["value"].split())
+        assert sample.expected_output_len == len(assistant_turn["value"])
     assert all(sample.metadata["dataset_type"] == "sharegpt" for sample in samples)
 
 
@@ -238,7 +239,7 @@ def test_sharegpt_skips_rows_missing_prompt_or_assistant() -> None:
 
     assert len(samples) == 3
     assert all(sample.prompt == "valid prompt text" for sample in samples)
-    assert all(sample.expected_output_len == 4 for sample in samples)
+    assert all(sample.expected_output_len == len("valid assistant text here") for sample in samples)
 
 
 def test_hf_dataset_uses_conversation_rows(monkeypatch, tmp_path: Path) -> None:
@@ -275,7 +276,7 @@ def test_hf_dataset_uses_conversation_rows(monkeypatch, tmp_path: Path) -> None:
                 "  type: hf",
                 "  path: allenai/WildChat",
                 "  split: train",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 2",
@@ -335,7 +336,7 @@ def test_hf_dataset_uses_reservoir_uniform_sample_not_first_rows(
                 "  type: hf",
                 "  path: allenai/WildChat",
                 "  split: train",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 7",
                 "  num_requests: 5",
@@ -396,7 +397,7 @@ def test_inspect_workload_dataset_reports_hf_length_distribution(
                 "  type: hf",
                 "  path: allenai/WildChat",
                 "  split: train",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 2",
@@ -419,7 +420,7 @@ def test_inspect_workload_dataset_reports_hf_length_distribution(
     assert report["source_summary"]["sampling_method"] == "reservoir_uniform"
     assert report["source_summary"]["scanned_rows"] == 2
     assert report["lengths"]["prompt_tokens"]["count"] == 2
-    assert report["lengths"]["output_tokens"]["max"] == 6
+    assert report["lengths"]["output_tokens"]["max"] == len("longer answer with several output words")
     assert "trial_min_duration_s" in report["suggested_search_overrides"]
 
 
@@ -472,7 +473,7 @@ def test_longbench_dataset_reads_zip_and_formats_prompts(
                 "  configs:",
                 "    - gov_report",
                 "    - trec",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 3",
                 "  num_requests: 2",
@@ -481,7 +482,7 @@ def test_longbench_dataset_reads_zip_and_formats_prompts(
                 "  output_len:",
                 "    mode: from_dataset",
                 "context_policy:",
-                "  max_model_len: 64",
+                "  max_model_len: 256",
                 "  tokenizer_source: workload_tokenizer",
                 "  unsafe_allow_workload_tokenizer_for_real_datasets: true",
                 "  over_limit: fail",
@@ -499,7 +500,7 @@ def test_longbench_dataset_reads_zip_and_formats_prompts(
     assert all(sample.prompt.endswith("Answer:") for sample in samples)
     assert any("Candidate labels/classes: DESC, ENTY" in sample.prompt for sample in samples)
     gov_report_sample = next(sample for sample in samples if sample.metadata["longbench_config"] == "gov_report")
-    assert gov_report_sample.expected_output_len == 3
+    assert gov_report_sample.expected_output_len == len("longer reference summary")
     assert gov_report_sample.metadata["longbench_language"] == "en"
 
 
@@ -537,7 +538,7 @@ def test_longbench_inspection_reports_selected_configs(
                 f"  path: {zip_path}",
                 "  configs:",
                 "    - multi_news",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 1",
@@ -573,7 +574,7 @@ def test_missing_dataset_file_raises(tmp_path: Path) -> None:
                 "dataset:",
                 "  type: jsonl",
                 "  path: not-there.jsonl",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 3",
@@ -599,6 +600,7 @@ def test_invalid_fixed_or_bucketed_raises(tmp_path: Path) -> None:
                 "name: invalid-fixed-or-bucketed",
                 "dataset:",
                 "  type: synthetic-fixed",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 2",
@@ -616,6 +618,33 @@ def test_invalid_fixed_or_bucketed_raises(tmp_path: Path) -> None:
         load_workload_config(workload_path)
 
 
+def test_workload_config_rejects_whitespace_tokenizer(tmp_path: Path) -> None:
+    workload_path = tmp_path / "whitespace_tokenizer.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: whitespace-tokenizer",
+                "dataset:",
+                "  type: synthetic-fixed",
+                "tokenizer: whitespace",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 1",
+                "  prompt_len:",
+                "    mode: fixed",
+                "    value: 8",
+                "  output_len:",
+                "    mode: fixed",
+                "    value: 4",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="tokenizer must not be 'whitespace'"):
+        load_workload_config(workload_path)
+
+
 def test_context_policy_is_loaded_from_yaml(tmp_path: Path) -> None:
     workload_path = tmp_path / "with_context_policy.yaml"
     workload_path.write_text(
@@ -624,6 +653,7 @@ def test_context_policy_is_loaded_from_yaml(tmp_path: Path) -> None:
                 "name: with-context-policy",
                 "dataset:",
                 "  type: synthetic-fixed",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 2",
@@ -656,6 +686,7 @@ def test_context_policy_can_omit_model_specific_max_model_len(tmp_path: Path) ->
                 "name: model-resolved-context-policy",
                 "dataset:",
                 "  type: synthetic-fixed",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 2",
@@ -705,7 +736,7 @@ def test_prepare_workload_for_trial_uses_model_tokenizer_for_dataset_lengths(
                 "dataset:",
                 "  type: jsonl",
                 f"  path: {dataset_path}",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 1",
@@ -750,7 +781,7 @@ def test_prepare_workload_for_trial_falls_back_to_workload_tokenizer_when_model_
                 "dataset:",
                 "  type: jsonl",
                 f"  path: {dataset_path}",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 1",
@@ -768,7 +799,7 @@ def test_prepare_workload_for_trial_falls_back_to_workload_tokenizer_when_model_
 
     prepared = prepare_workload_for_trial(workload_path, model_name="missing/model")
 
-    assert prepared.samples[0].prompt_len == 2
+    assert prepared.samples[0].prompt_len == len("alpha beta")
     model_context = prepared.metadata["workload"]["model_context"]
     assert model_context["fallback_used"] is True
     assert model_context["tokenizer_source"] == "fallback"
@@ -796,7 +827,7 @@ def test_prepare_workload_for_trial_rejects_workload_tokenizer_for_real_dataset_
                 "dataset:",
                 "  type: jsonl",
                 f"  path: {FIXTURES_ROOT / 'data' / 'requests.jsonl'}",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 3",
@@ -831,7 +862,7 @@ def test_prepare_workload_for_trial_allows_explicit_unsafe_override_and_records_
                 "dataset:",
                 "  type: jsonl",
                 f"  path: {FIXTURES_ROOT / 'data' / 'requests.jsonl'}",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 3",
@@ -871,7 +902,7 @@ def test_jsonl_manifest_cache_is_reused_when_present(
                 "dataset:",
                 "  type: jsonl",
                 f"  path: {dataset_path}",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 3",
@@ -915,7 +946,7 @@ def test_jsonl_manifest_cache_invalidates_when_source_changes(
                 "dataset:",
                 "  type: jsonl",
                 f"  path: {dataset_path}",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 1",

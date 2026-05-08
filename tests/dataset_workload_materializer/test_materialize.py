@@ -104,6 +104,11 @@ def test_generated_workload_yaml_loads_through_llm_mst_finder(tmp_path: Path) ->
     config_path = _write_config(tmp_path, raw_path=raw_path, output_dir=output_dir)
     materialize_from_config(config_path)
 
+    generated_workload = yaml.safe_load(
+        (output_dir / "workload_yamls" / "shard_000.yaml").read_text(encoding="utf-8")
+    )
+    assert generated_workload["tokenizer"] == "character"
+
     prepared = prepare_workload_for_trial(
         output_dir / "workload_yamls" / "shard_000.yaml",
         model_name="fake-model",
@@ -113,6 +118,21 @@ def test_generated_workload_yaml_loads_through_llm_mst_finder(tmp_path: Path) ->
     assert prepared.samples[0].metadata["dataset"] == "crosscodeeval"
     assert prepared.samples[0].metadata["sampling_entry_selection"] == "sequential"
     assert prepared.samples[0].metadata["shard_id"] == "shard_000"
+
+
+def test_materializer_rejects_whitespace_tokenizer(tmp_path: Path) -> None:
+    raw_path = tmp_path / "raw.jsonl"
+    raw_path.write_text(
+        json.dumps({"prompt": "def alpha():", "target": " pass", "language": "python"}) + "\n",
+        encoding="utf-8",
+    )
+    config_path = _write_config(tmp_path, raw_path=raw_path, output_dir=tmp_path / "out")
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    payload["tokenization"]["tokenizer"] = "whitespace"
+    config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="tokenization.tokenizer must not be 'whitespace'"):
+        materialize_from_config(config_path)
 
 
 def test_longbench_materialization_rejects_excluded_tasks(tmp_path: Path) -> None:
@@ -442,7 +462,7 @@ def _write_config(tmp_path: Path, *, raw_path: Path, output_dir: Path) -> Path:
             "mode": "cross_file_materialized",
             "prompt_template": "plain_prefix",
         },
-        "tokenization": {"tokenizer": "whitespace"},
+        "tokenization": {"tokenizer": "character"},
         "filtering": {
             "min_prompt_tokens": 1,
             "max_prompt_tokens": 128,
@@ -487,7 +507,7 @@ def _write_longbench_config(
             "profile": profile,
             "configs": configs,
         },
-        "tokenization": {"tokenizer": "whitespace"},
+        "tokenization": {"tokenizer": "character"},
         "filtering": {
             "min_prompt_tokens": 4,
             "max_prompt_tokens": 512,
@@ -538,7 +558,7 @@ def _write_reasoning_config(
             "task": task,
             "prompt_template": "reasoning_auto",
         },
-        "tokenization": {"tokenizer": "whitespace"},
+        "tokenization": {"tokenizer": "character"},
         "filtering": {
             "min_prompt_tokens": 4,
             "max_prompt_tokens": 512,

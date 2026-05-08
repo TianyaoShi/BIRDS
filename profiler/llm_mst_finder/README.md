@@ -133,7 +133,7 @@ Context policy rules:
 - Real workload validation must use the serving/model-compatible tokenizer.
 - `over_limit: fail` is the default and safest policy.
 - `skip_sample` and `truncate_prompt` are allowed only when explicitly configured and are recorded in metadata.
-- `whitespace` and toy tokenizers are only for synthetic/offline tests, not production context validation.
+- `whitespace` tokenization is rejected; workloads must name a real tokenizer or an explicit local test tokenizer.
 - If context failures are discovered from server responses, analysis marks the trial `invalid_workload` and excludes it from search decisions.
 
 ## SLO Policy

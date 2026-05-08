@@ -14,7 +14,7 @@ def _write_workload(tmp_path: Path) -> Path:
 name: synthetic
 dataset:
   type: synthetic-fixed
-tokenizer: whitespace
+tokenizer: character
 sampling:
   seed: 1
   num_requests: 10

@@ -14,7 +14,7 @@ dataset:
     - cross_file_random
 
 tokenization:
-  tokenizer: whitespace
+  tokenizer: Qwen/Qwen3-8B
 
 filtering:
   min_prompt_tokens: 32
@@ -44,7 +44,7 @@ sharding:
 workload_yaml:
   context_policy:
     max_model_len: 32768
-    tokenizer_source: workload_tokenizer
+    tokenizer_source: vllm_model_config
     unsafe_allow_workload_tokenizer_for_real_datasets: true
     over_limit: truncate_prompt
     truncation_side: left

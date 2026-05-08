@@ -109,7 +109,7 @@ def test_cli_run_trial_records_context_policy_metadata(
                 "dataset:",
                 "  type: synthetic-fixed",
                 "  prompt: alpha beta gamma delta epsilon",
-                "tokenizer: whitespace",
+                "tokenizer: character",
                 "sampling:",
                 "  seed: 1",
                 "  num_requests: 1",

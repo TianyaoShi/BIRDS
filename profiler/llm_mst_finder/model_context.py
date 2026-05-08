@@ -163,6 +163,8 @@ def parse_context_policy(payload: Any | None) -> ContextPolicy | None:
     tokenizer = policy_payload.get("tokenizer")
     if tokenizer is not None and not isinstance(tokenizer, str):
         raise ValueError("context_policy.tokenizer must be a string when provided")
+    if tokenizer == "whitespace":
+        raise ValueError("context_policy.tokenizer must not be 'whitespace'")
     over_limit = policy_payload.get("over_limit", "fail")
     if not isinstance(over_limit, str):
         raise ValueError("context_policy.over_limit must be a string")
@@ -326,6 +328,8 @@ def validate_samples_against_context_window(
                 "sample.metadata['prompt_tokenizer_key'] must be a string when present, "
                 f"got {type(cached_prompt_tokenizer_key).__name__}"
             )
+        if cached_prompt_tokenizer_key == "tokenizer:whitespace":
+            raise ValueError("sample.metadata['prompt_tokenizer_key'] must not be 'tokenizer:whitespace'")
         if (
             not _is_chat_endpoint(endpoint)
             and tokenizer_key is not None

@@ -56,7 +56,11 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
     )
 
     tokenization = optional_mapping(config.get("tokenization"), "tokenization")
-    tokenizer_name = optional_string(tokenization.get("tokenizer"), "tokenization.tokenizer") or "whitespace"
+    tokenizer_name = optional_string(tokenization.get("tokenizer"), "tokenization.tokenizer")
+    if tokenizer_name is None:
+        raise ValueError("tokenization.tokenizer is required")
+    if tokenizer_name == "whitespace":
+        raise ValueError("tokenization.tokenizer must not be 'whitespace'")
     tokenizer_name = _resolve_tokenizer_spec(tokenizer_name, base_dir=base_dir)
     tokenizer = resolve_tokenizer(tokenizer_name)
 
@@ -158,6 +162,7 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
         output_dir,
         name=name,
         shards=shards,
+        tokenizer_name=tokenizer_name,
         request=request,
         context_policy=context_policy,
         output_len=output_len,
@@ -204,7 +209,7 @@ def _result_payload(output_dir: Path, shards: list[list[Any]]) -> dict[str, Any]
 
 
 def _resolve_tokenizer_spec(tokenizer_spec: str, *, base_dir: Path) -> str:
-    if tokenizer_spec in {"whitespace", "character"}:
+    if tokenizer_spec == "character":
         return tokenizer_spec
     candidate = Path(tokenizer_spec).expanduser()
     if candidate.is_absolute():

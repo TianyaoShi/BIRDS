@@ -103,7 +103,7 @@ def test_expand_manifest_applies_selector_overrides_and_probe_auto_gpu_count(tmp
             {
                 "name": "synthetic_512_128",
                 "dataset": {"type": "synthetic-fixed"},
-                "tokenizer": "whitespace",
+                "tokenizer": "character",
                 "sampling": {
                     "seed": 1,
                     "num_requests": 100,

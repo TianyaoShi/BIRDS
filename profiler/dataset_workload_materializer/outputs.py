@@ -124,6 +124,7 @@ def write_outputs(
     *,
     name: str,
     shards: list[list[MaterializedSample]],
+    tokenizer_name: str,
     request: dict[str, Any],
     context_policy: dict[str, Any],
     output_len: dict[str, Any],
@@ -153,6 +154,7 @@ def write_outputs(
             name=name,
             shard_id=shard_id,
             shard_size=len(shard),
+            tokenizer_name=tokenizer_name,
             request=request,
             context_policy=context_policy,
             output_len=output_len,
@@ -177,10 +179,13 @@ def workload_yaml_payload(
     name: str,
     shard_id: str,
     shard_size: int,
+    tokenizer_name: str,
     request: dict[str, Any],
     context_policy: dict[str, Any],
     output_len: dict[str, Any],
 ) -> dict[str, Any]:
+    if tokenizer_name == "whitespace":
+        raise ValueError("tokenizer_name must not be 'whitespace'")
     request_payload: dict[str, Any] = {
         "stream": request.get("stream", True),
         "temperature": request.get("temperature", 0.0),
@@ -200,7 +205,7 @@ def workload_yaml_payload(
             "type": "jsonl",
             "path": f"../shards/{shard_id}.runner.jsonl",
         },
-        "tokenizer": "whitespace",
+        "tokenizer": tokenizer_name,
         "sampling": {
             "seed": 42,
             "num_requests": shard_size,

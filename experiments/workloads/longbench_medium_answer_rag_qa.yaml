@@ -2,7 +2,7 @@ name: longbench_medium_answer_rag_qa
 dataset:
   type: jsonl
   path: ../longbench_workloads/materialization/longbench_medium_answer_rag_qa_qwen3_8b/shards/shard_000.runner.jsonl
-tokenizer: whitespace
+tokenizer: Qwen/Qwen3-8B
 sampling:
   seed: 42
   num_requests: 1024
@@ -17,7 +17,7 @@ request:
   ignore_eos: false
 context_policy:
   max_model_len: 32768
-  tokenizer_source: workload_tokenizer
+  tokenizer_source: vllm_model_config
   unsafe_allow_workload_tokenizer_for_real_datasets: true
   over_limit: truncate_prompt
   truncation_side: left
