@@ -55,6 +55,7 @@ def test_crosscodeeval_like_materialization_from_local_jsonl(tmp_path: Path) -> 
     assert len(shard_rows) == 2
     assert shard_rows[0]["metadata"]["dataset"] == "crosscodeeval"
     assert shard_rows[0]["metadata"]["dataset_kind"] == "code_completion"
+    assert shard_rows[0]["prompt_len"] == shard_rows[0]["metadata"]["prompt_token_count"]
     assert shard_rows[0]["metadata"]["task"] == "cross_file_materialized"
     assert shard_rows[0]["metadata"]["prompt_template"] == "plain_prefix"
     assert shard_rows[0]["metadata"]["content_hash"]

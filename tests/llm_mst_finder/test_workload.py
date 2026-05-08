@@ -100,6 +100,40 @@ def test_jsonl_sequential_entry_selection_replays_rows_in_order(tmp_path: Path) 
     assert all(sample.metadata["sampling_entry_selection"] == "sequential" for sample in samples)
 
 
+def test_jsonl_from_dataset_honors_materialized_prompt_len(tmp_path: Path) -> None:
+    dataset_path = tmp_path / "requests.jsonl"
+    dataset_path.write_text(
+        json.dumps({"prompt": "one two", "prompt_len": 1234, "expected_output_len": 5}) + "\n",
+        encoding="utf-8",
+    )
+    workload_path = tmp_path / "jsonl_prompt_len.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: jsonl-prompt-len",
+                "dataset:",
+                "  type: jsonl",
+                f"  path: {dataset_path}",
+                "tokenizer: whitespace",
+                "sampling:",
+                "  seed: 99",
+                "  num_requests: 1",
+                "  entry_selection: sequential",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    sample = load_workload_samples_for_sampling_only(workload_path)[0]
+
+    assert sample.prompt_len == 1234
+    assert sample.expected_output_len == 5
+
+
 def test_jsonl_natural_until_eos_uses_cap_without_dataset_output_length(tmp_path: Path) -> None:
     dataset_path = tmp_path / "reasoning_questions.jsonl"
     dataset_path.write_text(

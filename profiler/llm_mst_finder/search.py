@@ -358,6 +358,23 @@ class SearchController:
             second_rate = first_rate * 2.0
 
         bounds = _SearchBounds()
+        if self._rate_exceeds_max_rate(config, first_rate):
+            assert config.max_request_rate is not None
+            bounds.max_request_rate_cap_attempted_rate = first_rate
+            await self._test_open_loop_rate(
+                config,
+                bounds,
+                config.max_request_rate,
+                purpose="open_loop_bracket_cap",
+            )
+            if bounds.low_rate is not None and bounds.high_rate is None:
+                bounds.max_request_rate_cap = config.max_request_rate
+                self._record_bounds(bounds)
+                return bounds
+            if bounds.high_rate is not None and bounds.low_rate is None:
+                await self._shrink_low_bound(config, bounds)
+                return bounds
+
         await self._test_open_loop_rate(config, bounds, first_rate, purpose="open_loop_bracket")
         if bounds.low_rate is not None and bounds.high_rate is None:
             await self._grow_high_bound(config, bounds, second_rate)

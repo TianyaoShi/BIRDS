@@ -233,6 +233,50 @@ def test_hybrid_search_reports_max_request_rate_limited_result(tmp_path: Path) -
     asyncio.run(run())
 
 
+def test_hybrid_search_caps_first_closed_loop_seed_rate(tmp_path: Path) -> None:
+    async def run() -> None:
+        runner = FakeRunner(sustainable_rate=20.0, closed_loop_peak=20.0)
+        controller = SearchController(
+            runner,
+            request_source=_source(),
+            output_dir=tmp_path / "search-first-rate-capped",
+            analyze_trial=lambda trial_dir: runner.analyses[Path(trial_dir).name],
+            write_analysis=lambda trial_dir, result: Path(trial_dir) / "analysis.json",
+        )
+        result = await controller.search(
+            SearchConfig(
+                search_id="fixture-first-rate-capped",
+                search_mode="hybrid",
+                model="fake-model",
+                trial_duration_s=1.0,
+                rate_precision=0.05,
+                initial_request_rate=1.0,
+                max_closed_loop_concurrency=16,
+                closed_loop_min_trials=2,
+                max_request_rate=8.0,
+            )
+        )
+
+        assert result.termination_reason == "max_request_rate_limited"
+        assert result.max_no_drift_request_rate == pytest.approx(8.0)
+        assert result.closed_loop is not None
+        assert result.closed_loop.peak_request_throughput == pytest.approx(20.0)
+
+        open_loop_calls = [call for call in runner.calls if call.mode == "open-loop"]
+        assert [call.request_rate for call in open_loop_calls] == [pytest.approx(8.0)]
+        trace = json.loads(
+            (tmp_path / "search-first-rate-capped" / "search_trace.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert trace["bounds"]["low_rate"] == pytest.approx(8.0)
+        assert trace["bounds"]["max_request_rate_cap"] == 8.0
+        assert trace["bounds"]["max_request_rate_cap_attempted_rate"] == pytest.approx(12.0)
+        assert trace["events"][-1]["purpose"] == "open_loop_bracket_cap"
+
+    asyncio.run(run())
+
+
 def test_hybrid_search_uses_max_request_rate_as_high_bound_when_cap_is_unstable(tmp_path: Path) -> None:
     async def run() -> None:
         runner = FakeRunner(sustainable_rate=7.5, closed_loop_peak=12.0)

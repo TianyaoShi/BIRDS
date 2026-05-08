@@ -141,6 +141,7 @@ def write_outputs(
                     json.dumps(
                         {
                             "prompt": sample.prompt,
+                            "prompt_len": int(sample.metadata["prompt_token_count"]),
                             "expected_output_len": sample.expected_output_len,
                             "metadata": metadata,
                         },

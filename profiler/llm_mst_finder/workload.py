@@ -582,7 +582,7 @@ def _manifest_cache_path(
 ) -> Path:
     source_fingerprint = _dataset_source_fingerprint(config.dataset)
     key_payload = {
-        "cache_version": 2,
+        "cache_version": 3,
         "dataset_path": config.dataset.path,
         "dataset_source_fingerprint": source_fingerprint,
         "dataset_subset": config.dataset.subset,
@@ -700,7 +700,7 @@ def _write_entries_to_manifest(
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     payload = {
-        "cache_version": 2,
+        "cache_version": 3,
         "dataset_path": config.dataset.path,
         "dataset_source_fingerprint": _dataset_source_fingerprint(config.dataset),
         "dataset_subset": config.dataset.subset,
@@ -742,6 +742,13 @@ def _load_jsonl_entries_from_source(
             if not isinstance(row, dict):
                 raise ValueError(f"jsonl row {index} must be a mapping")
             prompt = _expect_string(row.get("prompt"), f"jsonl row {index}.prompt")
+            prompt_len = row.get("prompt_len")
+            if prompt_len is not None:
+                prompt_len = _expect_int(
+                    prompt_len,
+                    f"jsonl row {index}.prompt_len",
+                    positive=True,
+                )
             expected_output_len = row.get("expected_output_len")
             if expected_output_len is not None:
                 expected_output_len = _expect_int(
@@ -752,11 +759,13 @@ def _load_jsonl_entries_from_source(
             metadata = row.get("metadata", {})
             if not isinstance(metadata, dict):
                 raise ValueError(f"jsonl row {index}.metadata must be a mapping")
-            prompt_len = None
             if include_prompt_len:
-                if tokenizer is None:
+                if prompt_len is not None:
+                    pass
+                elif tokenizer is None:
                     raise ValueError("tokenizer is required when include_prompt_len=True")
-                prompt_len = len(tokenizer.encode(prompt))
+                else:
+                    prompt_len = len(tokenizer.encode(prompt))
             entries.append(
                 DatasetEntry(
                     prompt=prompt,
