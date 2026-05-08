@@ -33,16 +33,16 @@ launch:
 
 search:
   search_mode: hybrid
-  trial_min_duration_s: 600
-  trial_max_duration_s: 1200
-  final_confirmation_duration_s: 1200
+  trial_min_duration_s: 450
+  trial_max_duration_s: 750
+  final_confirmation_duration_s: 750
   rate_precision: 0.05
   initial_request_rate: 0.25
   max_request_rate: 4
   max_binary_steps: 8
   max_bracket_trials: 14
   metrics_interval_s: 1.0
-  window_s: 60.0
+  window_s: 50.0
   ttft_slo_ms: 15000
   tpot_slo_ms: 150
   ttft_slo_field: ttft_p90_ms
@@ -50,7 +50,7 @@ search:
   ttft_slo_mode: length_scaled
   request_reuse_policy: cycle
   closed_loop_min_trials: 3
-  max_closed_loop_concurrency: 64
+  max_closed_loop_concurrency: 16
   closed_loop_plateau_relative_gain: 0.05
   max_num_seqs: 256
   max_num_batched_tokens: 2048
@@ -111,11 +111,11 @@ overrides:
   - match:
       workloads:
         - '*long_output_summarization*'
-    reason: Long-output summarization has the largest decode demand; keep the rate ceiling low and rely on the extended 600-1200s trials for enough requests.
+    reason: Long-output summarization has the largest decode demand; keep the rate ceiling low and rely on the extended 450-750s trials for enough requests.
     search:
       initial_request_rate: 0.125
       max_request_rate: 2
-      max_closed_loop_concurrency: 64
+      max_closed_loop_concurrency: 16
 
   - match:
       workloads:
@@ -124,7 +124,7 @@ overrides:
     search:
       initial_request_rate: 0.25
       max_request_rate: 3
-      max_closed_loop_concurrency: 64
+      max_closed_loop_concurrency: 16
 
   - match:
       workloads:
@@ -133,7 +133,7 @@ overrides:
     search:
       initial_request_rate: 0.25
       max_request_rate: 4
-      max_closed_loop_concurrency: 64
+      max_closed_loop_concurrency: 16
 
   - match:
       workloads:
@@ -142,7 +142,7 @@ overrides:
     search:
       initial_request_rate: 0.25
       max_request_rate: 6
-      max_closed_loop_concurrency: 96
+      max_closed_loop_concurrency: 16
 
 experiments:
   - id: single-gpu-model-loop-longbench-bucketized-no-llama2
