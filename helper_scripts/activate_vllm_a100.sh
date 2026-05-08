@@ -3,6 +3,7 @@
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="${VLLM_A100_VENV_DIR:-$ROOT_DIR/.venv-a100}"
 CACHE_ROOT="${VLLM_A100_CACHE_ROOT:-$ROOT_DIR/.cache/a100}"
+FLASHINFER_WORKSPACE_BASE="${FLASHINFER_WORKSPACE_BASE:-$CACHE_ROOT/flashinfer-workspace}"
 
 if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
   echo "error: missing A100 virtualenv at $VENV_DIR" >&2
@@ -10,16 +11,20 @@ if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
   return 1 2>/dev/null || exit 1
 fi
 
-mkdir -p "$CACHE_ROOT"/{vllm,triton,torchinductor,flashinfer,jit,flashinfer-cubins}
+mkdir -p "$CACHE_ROOT"/{vllm,triton,torchinductor,flashinfer,jit,flashinfer-cubins} "$FLASHINFER_WORKSPACE_BASE"
 
 export UV_CACHE_DIR="${UV_CACHE_DIR:-$ROOT_DIR/.cache/uv}"
 export VLLM_CACHE_ROOT="$CACHE_ROOT/vllm"
 export TRITON_CACHE_DIR="$CACHE_ROOT/triton"
 export TORCHINDUCTOR_CACHE_DIR="$CACHE_ROOT/torchinductor"
+export FLASHINFER_WORKSPACE_BASE
 export FLASHINFER_CACHE_DIR="$CACHE_ROOT/flashinfer"
 export FLASHINFER_JIT_DIR="$CACHE_ROOT/jit"
 export FLASHINFER_CUBIN_DIR="$CACHE_ROOT/flashinfer-cubins"
-export FLASHINFER_CUDA_ARCH_LIST="${FLASHINFER_CUDA_ARCH_LIST:-80}"
+case "${FLASHINFER_CUDA_ARCH_LIST:-}" in
+  "") export FLASHINFER_CUDA_ARCH_LIST="8.0" ;;
+  "80") export FLASHINFER_CUDA_ARCH_LIST="8.0" ;;
+esac
 
 if [[ -x "$HOME/.local/bin/uv" ]]; then
   case ":$PATH:" in
