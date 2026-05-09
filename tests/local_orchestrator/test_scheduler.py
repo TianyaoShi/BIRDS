@@ -689,3 +689,58 @@ def test_state_store_summary_includes_search_result_aggregates(tmp_path: Path) -
     assert "## SLO Policies" in markdown
     assert "ttft_p90_ms<=15000ms; tpot_p90_ms<=150ms" in markdown
     assert "| TTFT SLO | TPOT SLO |" in markdown
+
+
+def test_state_store_summary_prefers_trace_slo_mode_when_state_is_partial(
+    tmp_path: Path,
+) -> None:
+    search = SearchConfig(ttft_slo_ms=15000, tpot_slo_ms=150, ttft_slo_mode="length_scaled")
+    job = _make_job(tmp_path, experiment_id="job-length-scaled", signature="sig-a", search=search)
+    state_store = RunStateStore(tmp_path / "summary-length-scaled-run")
+    state = state_store.initialize_new(
+        run_id="run-summary-length-scaled",
+        manifest_path=tmp_path / "manifest.yaml",
+        jobs=[job],
+    )
+
+    job_state = state_store.find_job(state, "job-length-scaled")
+    job_state["status"] = "succeeded"
+    # Simulate state files written before ttft_slo_mode was persisted.
+    job_state["search"].pop("ttft_slo_mode")
+    job_state["search"].pop("longbench_ttft_static_preset")
+    job.result_dir.mkdir(parents=True, exist_ok=True)
+    search_trace_path = job.result_dir / "search_trace.json"
+    search_trace_path.write_text(
+        json.dumps(
+            {
+                "config": {
+                    "metadata": {
+                        "stability_policy": {
+                            "ttft_slo_ms": 15000,
+                            "ttft_slo_field": "ttft_p90_ms",
+                            "ttft_slo_mode": "length_scaled",
+                            "longbench_ttft_static_preset": None,
+                            "tpot_slo_ms": 150,
+                            "tpot_slo_field": "tpot_p90_ms",
+                        }
+                    }
+                },
+                "result": {
+                    "termination_reason": "confirmed_stable",
+                    "bottleneck_class": "slo_limited",
+                    "max_no_drift_request_rate": 1.0,
+                    "max_slo_satisfying_request_rate": 1.0,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    job_state["artifacts"]["search_trace"] = str(search_trace_path)
+
+    summary = state_store.write_summary_files(state)
+
+    assert summary["aggregate"]["slo_policy_counts"] == {
+        "ttft_p90_ms length_scaled; tpot_p90_ms<=150ms": 1
+    }
+    assert summary["jobs"][0]["slo_policy"]["ttft_slo_mode"] == "length_scaled"

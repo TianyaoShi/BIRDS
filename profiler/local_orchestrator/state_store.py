@@ -34,6 +34,8 @@ def build_job_state_payload(job: ExpandedExperimentJob) -> dict[str, Any]:
             "tpot_slo_ms": job.search.tpot_slo_ms,
             "ttft_slo_field": job.search.ttft_slo_field,
             "tpot_slo_field": job.search.tpot_slo_field,
+            "ttft_slo_mode": job.search.ttft_slo_mode,
+            "longbench_ttft_static_preset": job.search.longbench_ttft_static_preset,
         },
         "probe": None if job.probe is None else job.probe.to_payload(),
         "result_dir": str(job.result_dir),
@@ -442,6 +444,7 @@ class RunStateStore:
         job: dict[str, Any],
         trace_payload: dict[str, Any] | None,
     ) -> dict[str, Any]:
+        trace_policy = RunStateStore._extract_trace_slo_policy(trace_payload)
         search = job.get("search")
         if isinstance(search, dict) and any(
             key in search
@@ -457,11 +460,30 @@ class RunStateStore:
             return {
                 "ttft_slo_ms": search.get("ttft_slo_ms"),
                 "ttft_slo_field": search.get("ttft_slo_field", "ttft_p90_ms"),
-                "ttft_slo_mode": search.get("ttft_slo_mode", "static"),
-                "longbench_ttft_static_preset": search.get("longbench_ttft_static_preset"),
+                "ttft_slo_mode": search.get(
+                    "ttft_slo_mode",
+                    trace_policy.get("ttft_slo_mode", "static") if trace_policy else "static",
+                ),
+                "longbench_ttft_static_preset": search.get(
+                    "longbench_ttft_static_preset",
+                    trace_policy.get("longbench_ttft_static_preset") if trace_policy else None,
+                ),
                 "tpot_slo_ms": search.get("tpot_slo_ms"),
                 "tpot_slo_field": search.get("tpot_slo_field", "tpot_p90_ms"),
             }
+        if trace_policy is not None:
+            return trace_policy
+        return {
+            "ttft_slo_ms": None,
+            "ttft_slo_field": "ttft_p90_ms",
+            "ttft_slo_mode": "static",
+            "longbench_ttft_static_preset": None,
+            "tpot_slo_ms": None,
+            "tpot_slo_field": "tpot_p90_ms",
+        }
+
+    @staticmethod
+    def _extract_trace_slo_policy(trace_payload: dict[str, Any] | None) -> dict[str, Any] | None:
         if trace_payload is not None:
             config = trace_payload.get("config")
             if isinstance(config, dict):
@@ -479,14 +501,7 @@ class RunStateStore:
                             "tpot_slo_ms": policy.get("tpot_slo_ms"),
                             "tpot_slo_field": policy.get("tpot_slo_field", "tpot_p90_ms"),
                         }
-        return {
-            "ttft_slo_ms": None,
-            "ttft_slo_field": "ttft_p90_ms",
-            "ttft_slo_mode": "static",
-            "longbench_ttft_static_preset": None,
-            "tpot_slo_ms": None,
-            "tpot_slo_field": "tpot_p90_ms",
-        }
+        return None
 
     @staticmethod
     def _format_slo_policy(policy: dict[str, Any]) -> str:
