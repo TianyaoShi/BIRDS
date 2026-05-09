@@ -109,6 +109,8 @@ _SEARCH_KEYS = {
     "max_request_rate",
     "max_binary_steps",
     "max_bracket_trials",
+    "client_limited_retry_attempts",
+    "client_limited_retry_cooldown_s",
     "closed_loop_initial_concurrency",
     "closed_loop_min_trials",
     "max_closed_loop_concurrency",
@@ -536,6 +538,8 @@ def _merge_search_config(base: SearchConfig, raw: Any, *, field_name: str) -> Se
         "max_request_rate": base.max_request_rate,
         "max_binary_steps": base.max_binary_steps,
         "max_bracket_trials": base.max_bracket_trials,
+        "client_limited_retry_attempts": base.client_limited_retry_attempts,
+        "client_limited_retry_cooldown_s": base.client_limited_retry_cooldown_s,
         "closed_loop_initial_concurrency": base.closed_loop_initial_concurrency,
         "closed_loop_min_trials": base.closed_loop_min_trials,
         "max_closed_loop_concurrency": base.max_closed_loop_concurrency,
@@ -571,6 +575,12 @@ def _merge_search_config(base: SearchConfig, raw: Any, *, field_name: str) -> Se
             continue
         if key in {"max_binary_steps", "max_bracket_trials", "closed_loop_initial_concurrency", "closed_loop_min_trials", "max_closed_loop_concurrency"}:
             updated[key] = _expect_int(value, f"{field_name}.{key}", minimum=1)
+            continue
+        if key == "client_limited_retry_attempts":
+            updated[key] = _expect_int(value, f"{field_name}.{key}", minimum=0)
+            continue
+        if key == "client_limited_retry_cooldown_s":
+            updated[key] = _expect_non_negative_float(value, f"{field_name}.{key}")
             continue
         if key == "closed_loop_plateau_relative_gain":
             updated[key] = _expect_positive_float(value, f"{field_name}.{key}")
@@ -790,6 +800,15 @@ def _expect_positive_float(value: Any, field_name: str) -> float:
     numeric = float(value)
     if numeric <= 0.0:
         raise ManifestValidationError(f"{field_name} must be a positive number")
+    return numeric
+
+
+def _expect_non_negative_float(value: Any, field_name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ManifestValidationError(f"{field_name} must be a non-negative number")
+    numeric = float(value)
+    if numeric < 0.0:
+        raise ManifestValidationError(f"{field_name} must be a non-negative number")
     return numeric
 
 

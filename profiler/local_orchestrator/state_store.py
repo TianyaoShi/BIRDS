@@ -28,6 +28,8 @@ def build_job_state_payload(job: ExpandedExperimentJob) -> dict[str, Any]:
             "rate_precision": job.search.rate_precision,
             "initial_request_rate": job.search.initial_request_rate,
             "max_request_rate": job.search.max_request_rate,
+            "client_limited_retry_attempts": job.search.client_limited_retry_attempts,
+            "client_limited_retry_cooldown_s": job.search.client_limited_retry_cooldown_s,
             "ttft_slo_ms": job.search.ttft_slo_ms,
             "tpot_slo_ms": job.search.tpot_slo_ms,
             "ttft_slo_field": job.search.ttft_slo_field,

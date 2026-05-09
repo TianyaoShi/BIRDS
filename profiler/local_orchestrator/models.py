@@ -24,6 +24,11 @@ def _require_positive_float(name: str, value: float) -> None:
         raise ValueError(f"{name} must be positive, got {value!r}")
 
 
+def _require_non_negative_float(name: str, value: float) -> None:
+    if value < 0.0:
+        raise ValueError(f"{name} must be non-negative, got {value!r}")
+
+
 @dataclass(frozen=True, slots=True)
 class RetryPolicy:
     startup_attempts: int = 2
@@ -220,6 +225,8 @@ class SearchConfig:
     max_request_rate: float | None = None
     max_binary_steps: int = 24
     max_bracket_trials: int = 16
+    client_limited_retry_attempts: int = 1
+    client_limited_retry_cooldown_s: float = 30.0
     closed_loop_initial_concurrency: int = 1
     closed_loop_min_trials: int = 2
     max_closed_loop_concurrency: int = 128
@@ -256,6 +263,11 @@ class SearchConfig:
                 raise ValueError("max_request_rate must be >= initial_request_rate")
         _require_positive_int("max_binary_steps", self.max_binary_steps)
         _require_positive_int("max_bracket_trials", self.max_bracket_trials)
+        _require_non_negative_int("client_limited_retry_attempts", self.client_limited_retry_attempts)
+        _require_non_negative_float(
+            "client_limited_retry_cooldown_s",
+            self.client_limited_retry_cooldown_s,
+        )
         _require_positive_int("closed_loop_initial_concurrency", self.closed_loop_initial_concurrency)
         _require_positive_int("closed_loop_min_trials", self.closed_loop_min_trials)
         _require_positive_int("max_closed_loop_concurrency", self.max_closed_loop_concurrency)

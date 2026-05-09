@@ -581,6 +581,8 @@ def serialize_expanded_job(job: ExpandedExperimentJob) -> dict[str, Any]:
             "max_request_rate": job.search.max_request_rate,
             "max_binary_steps": job.search.max_binary_steps,
             "max_bracket_trials": job.search.max_bracket_trials,
+            "client_limited_retry_attempts": job.search.client_limited_retry_attempts,
+            "client_limited_retry_cooldown_s": job.search.client_limited_retry_cooldown_s,
             "closed_loop_initial_concurrency": job.search.closed_loop_initial_concurrency,
             "closed_loop_min_trials": job.search.closed_loop_min_trials,
             "max_closed_loop_concurrency": job.search.max_closed_loop_concurrency,
@@ -593,6 +595,7 @@ def serialize_expanded_job(job: ExpandedExperimentJob) -> dict[str, Any]:
             "tpot_slo_field": job.search.tpot_slo_field,
             "ttft_slo_mode": job.search.ttft_slo_mode,
             "longbench_ttft_static_preset": job.search.longbench_ttft_static_preset,
+            "request_reuse_policy": job.search.request_reuse_policy,
             "max_num_seqs": job.search.max_num_seqs,
             "max_num_batched_tokens": job.search.max_num_batched_tokens,
         },
@@ -666,6 +669,10 @@ def deserialize_expanded_job(payload: dict[str, Any]) -> ExpandedExperimentJob:
             max_request_rate=search_payload.get("max_request_rate"),
             max_binary_steps=int(search_payload["max_binary_steps"]),
             max_bracket_trials=int(search_payload["max_bracket_trials"]),
+            client_limited_retry_attempts=int(search_payload.get("client_limited_retry_attempts", 1)),
+            client_limited_retry_cooldown_s=float(
+                search_payload.get("client_limited_retry_cooldown_s", 30.0)
+            ),
             closed_loop_initial_concurrency=int(search_payload["closed_loop_initial_concurrency"]),
             closed_loop_min_trials=int(search_payload["closed_loop_min_trials"]),
             max_closed_loop_concurrency=int(search_payload["max_closed_loop_concurrency"]),
@@ -678,6 +685,9 @@ def deserialize_expanded_job(payload: dict[str, Any]) -> ExpandedExperimentJob:
             tpot_slo_field=str(search_payload["tpot_slo_field"]),
             ttft_slo_mode=str(search_payload.get("ttft_slo_mode", "static")),
             longbench_ttft_static_preset=search_payload.get("longbench_ttft_static_preset"),
+            request_reuse_policy=str(
+                search_payload.get("request_reuse_policy", "no-repeat-across-search")
+            ),
             max_num_seqs=search_payload.get("max_num_seqs"),
             max_num_batched_tokens=search_payload.get("max_num_batched_tokens"),
         ),

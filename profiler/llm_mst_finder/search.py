@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
@@ -56,6 +57,8 @@ class SearchConfig:
     max_request_rate: float | None = None
     max_binary_steps: int = 24
     max_bracket_trials: int = 16
+    client_limited_retry_attempts: int = 1
+    client_limited_retry_cooldown_s: float = 30.0
     closed_loop_initial_concurrency: int = 1
     closed_loop_min_trials: int = 2
     max_closed_loop_concurrency: int = 128
@@ -106,6 +109,8 @@ class SearchConfig:
                 raise ValueError("max_request_rate must be >= initial_request_rate")
         _require_positive_int("max_binary_steps", self.max_binary_steps)
         _require_positive_int("max_bracket_trials", self.max_bracket_trials)
+        _require_non_negative_int("client_limited_retry_attempts", self.client_limited_retry_attempts)
+        _require_non_negative("client_limited_retry_cooldown_s", self.client_limited_retry_cooldown_s)
         _require_positive_int("closed_loop_initial_concurrency", self.closed_loop_initial_concurrency)
         _require_positive_int("closed_loop_min_trials", self.closed_loop_min_trials)
         _require_positive_int("max_closed_loop_concurrency", self.max_closed_loop_concurrency)
@@ -477,16 +482,13 @@ class SearchController:
             latest_analysis: TrialAnalysisResult | None = None
 
             for purpose in ("open_loop_confirmation", "open_loop_confirmation_majority"):
-                event = await self._run_and_analyze_trial(
+                event = await self._run_valid_open_loop_trial(
                     config,
-                    mode="open-loop",
-                    concurrency=None,
-                    request_rate=failed_rate,
                     duration_s=config.confirmation_duration_s,
                     purpose=purpose,
+                    rate=failed_rate,
                 )
                 analysis = event["analysis_result"]
-                self._reject_invalid_trial(analysis, event["trial_id"])
                 decision = self._analysis_decision(analysis)
                 latest_event = event
                 latest_analysis = analysis
@@ -550,6 +552,37 @@ class SearchController:
             "confirmation did not converge within max_binary_steps="
             f"{config.max_binary_steps}"
         )
+
+    async def _run_valid_open_loop_trial(
+        self,
+        config: SearchConfig,
+        *,
+        duration_s: float,
+        purpose: str,
+        rate: float,
+    ) -> dict[str, object]:
+        for attempt_index in range(config.client_limited_retry_attempts + 1):
+            retry_suffix = "" if attempt_index == 0 else f"_client_retry{attempt_index}"
+            event = await self._run_and_analyze_trial(
+                config,
+                mode="open-loop",
+                concurrency=None,
+                request_rate=rate,
+                duration_s=duration_s,
+                purpose=f"{purpose}{retry_suffix}",
+            )
+            analysis = event["analysis_result"]
+            if not isinstance(analysis, TrialAnalysisResult):
+                raise RuntimeError("search trial analysis result has unexpected type")
+            if analysis.trial_validity == "valid":
+                return event
+            if analysis.trial_validity != "client_limited":
+                self._reject_invalid_trial(analysis, event["trial_id"])
+            if attempt_index >= config.client_limited_retry_attempts:
+                self._reject_invalid_trial(analysis, event["trial_id"])
+            if config.client_limited_retry_cooldown_s > 0.0:
+                await asyncio.sleep(config.client_limited_retry_cooldown_s)
+        raise RuntimeError("client-limited retry loop exited unexpectedly")
 
     def _build_unconfirmed_result(
         self,
@@ -741,41 +774,32 @@ class SearchController:
         purpose: str,
     ) -> None:
         self._check_max_rate(config, rate)
-        event = await self._run_and_analyze_trial(
+        event = await self._run_valid_open_loop_trial(
             config,
-            mode="open-loop",
-            concurrency=None,
-            request_rate=rate,
             duration_s=config.trial_duration_s,
             purpose=purpose,
+            rate=rate,
         )
         analysis = event["analysis_result"]
-        self._reject_invalid_trial(analysis, event["trial_id"])
         decision = self._analysis_decision(analysis)
         if decision is False and self._is_soft_unstable(analysis):
-            repeat_event = await self._run_and_analyze_trial(
+            repeat_event = await self._run_valid_open_loop_trial(
                 config,
-                mode="open-loop",
-                concurrency=None,
-                request_rate=rate,
                 duration_s=config.uncertain_retry_duration_s,
                 purpose=f"{purpose}_extend_unstable",
+                rate=rate,
             )
             repeat_analysis = repeat_event["analysis_result"]
-            self._reject_invalid_trial(repeat_analysis, repeat_event["trial_id"])
             decision = self._analysis_decision(repeat_analysis)
             event = repeat_event
         if decision is None:
-            repeat_event = await self._run_and_analyze_trial(
+            repeat_event = await self._run_valid_open_loop_trial(
                 config,
-                mode="open-loop",
-                concurrency=None,
-                request_rate=rate,
                 duration_s=config.uncertain_retry_duration_s,
                 purpose=f"{purpose}_extend_uncertain",
+                rate=rate,
             )
             repeat_analysis = repeat_event["analysis_result"]
-            self._reject_invalid_trial(repeat_analysis, repeat_event["trial_id"])
             decision = self._analysis_decision(repeat_analysis)
             if decision is None:
                 if bounds.low_rate is None:
@@ -1074,6 +1098,11 @@ def _require_non_negative(name: str, value: float) -> None:
 def _require_positive_int(name: str, value: int) -> None:
     if not isinstance(value, int) or value <= 0:
         raise ValueError(f"{name} must be a positive integer, got {value!r}")
+
+
+def _require_non_negative_int(name: str, value: int) -> None:
+    if not isinstance(value, int) or value < 0:
+        raise ValueError(f"{name} must be a non-negative integer, got {value!r}")
 
 
 def _min_confidence(left: Confidence, right: Confidence) -> Confidence:
