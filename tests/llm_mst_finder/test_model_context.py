@@ -378,6 +378,34 @@ def test_resolve_model_context_info_uses_model_limit_with_workload_cap(monkeypat
     assert info.fallback_used is False
 
 
+def test_resolve_model_context_info_uses_serving_limit_with_model_and_workload_caps(monkeypatch) -> None:
+    class FakeTokenizer:
+        model_max_length = 32768
+
+        def encode(self, text: str) -> list[int]:
+            return text.split()
+
+    monkeypatch.setattr(
+        "llm_mst_finder.model_context._resolve_vllm_tokenizer",
+        lambda tokenizer_name: FakeTokenizer(),
+    )
+
+    info = resolve_model_context_info(
+        ContextPolicy(max_model_len=32768, tokenizer_source="vllm_model_config"),
+        model_name="fake/model",
+        fallback_tokenizer=WordTokenizer(),
+        fallback_tokenizer_key="tokenizer:fallback",
+        fallback_tokenizer_name="fallback",
+        serving_max_model_len=8192,
+    )
+
+    assert info.max_model_len == 8192
+    assert info.model_max_model_len == 32768
+    assert info.workload_max_model_len == 32768
+    assert info.serving_max_model_len == 8192
+    assert info.to_metadata()["serving_max_model_len"] == 8192
+
+
 def test_resolve_model_context_info_falls_back_when_model_tokenizer_unavailable(monkeypatch) -> None:
     monkeypatch.setattr(
         "llm_mst_finder.model_context._resolve_vllm_tokenizer",

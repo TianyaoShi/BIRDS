@@ -799,6 +799,70 @@ def test_prepare_workload_for_trial_uses_model_tokenizer_for_dataset_lengths(
     assert model_context["model_max_model_len"] == 128
 
 
+def test_prepare_workload_for_trial_truncates_to_serving_max_model_len(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    class CharacterModelTokenizer:
+        model_max_length = 32768
+
+        def encode(self, text: str) -> list[int]:
+            return list(range(len(text)))
+
+        def decode(self, token_ids: list[int]) -> str:
+            return "x" * len(token_ids)
+
+    monkeypatch.setattr(
+        "llm_mst_finder.model_context._resolve_vllm_tokenizer",
+        lambda tokenizer_name: CharacterModelTokenizer(),
+    )
+    dataset_path = tmp_path / "requests.jsonl"
+    dataset_path.write_text(
+        json.dumps({"prompt": "a" * 8191, "expected_output_len": 2}) + "\n",
+        encoding="utf-8",
+    )
+    workload_path = tmp_path / "jsonl_serving_context.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: jsonl-serving-context",
+                "dataset:",
+                "  type: jsonl",
+                f"  path: {dataset_path}",
+                "tokenizer: character",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 1",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+                "context_policy:",
+                "  max_model_len: 32768",
+                "  over_limit: truncate_prompt",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    prepared = prepare_workload_for_trial(
+        workload_path,
+        model_name="fake/model",
+        serving_max_model_len=8192,
+    )
+
+    assert prepared.samples[0].prompt_len == 8190
+    assert prepared.samples[0].expected_output_len == 2
+    assert prepared.samples[0].metadata["context_truncated"] is True
+    context_policy = prepared.metadata["workload"]["context_policy"]
+    assert context_policy["max_model_len"] == 8192
+    assert context_policy["truncated_samples"] == 1
+    model_context = prepared.metadata["workload"]["model_context"]
+    assert model_context["model_max_model_len"] == 32768
+    assert model_context["workload_max_model_len"] == 32768
+    assert model_context["serving_max_model_len"] == 8192
+
+
 def test_prepare_workload_for_trial_falls_back_to_workload_tokenizer_when_model_unavailable(
     tmp_path: Path,
     monkeypatch,

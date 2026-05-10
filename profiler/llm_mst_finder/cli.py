@@ -88,6 +88,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_trial.add_argument("--metrics-url", default=None)
     run_trial.add_argument("--metrics-interval-s", type=float, default=1.0)
     run_trial.add_argument("--window-s", type=float, default=10.0)
+    run_trial.add_argument(
+        "--serving-max-model-len",
+        type=_positive_int_arg,
+        default=None,
+        help="actual max_model_len used by the running server; constrains workload filtering",
+    )
     _add_server_metadata_args(run_trial)
     _add_stability_policy_args(run_trial)
     run_trial.set_defaults(handler=_run_trial_command)
@@ -157,6 +163,12 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--metrics-url", "--server-metrics-url", dest="metrics_url", default=None)
     search.add_argument("--metrics-interval-s", type=float, default=1.0)
     search.add_argument("--window-s", type=float, default=10.0)
+    search.add_argument(
+        "--serving-max-model-len",
+        type=_positive_int_arg,
+        default=None,
+        help="actual max_model_len used by the running server; constrains workload filtering",
+    )
     _add_server_metadata_args(search)
     _add_stability_policy_args(search)
     search.set_defaults(handler=_search_command)
@@ -180,6 +192,7 @@ async def _run_trial_command(args: argparse.Namespace) -> int:
         args.workload,
         model_name=args.model,
         endpoint=args.endpoint,
+        serving_max_model_len=args.serving_max_model_len,
     )
     request_samples = prepared_workload.samples
     request_source = request_source_factory_for_reuse_policy(
@@ -295,6 +308,7 @@ async def _search_command(args: argparse.Namespace) -> int:
         args.workload,
         model_name=args.model,
         endpoint=args.endpoint,
+        serving_max_model_len=args.serving_max_model_len,
     )
     request_client = RequestClient(
         base_url=args.base_url,
@@ -514,6 +528,16 @@ def _positive_server_metadata_arg(raw_value: str) -> float:
         raise argparse.ArgumentTypeError("must be a positive finite number") from exc
     if not isfinite(value) or value <= 0.0:
         raise argparse.ArgumentTypeError("must be a positive finite number")
+    return value
+
+
+def _positive_int_arg(raw_value: str) -> int:
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer") from exc
+    if value <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
     return value
 
 

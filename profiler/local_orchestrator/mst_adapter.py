@@ -100,6 +100,8 @@ def build_search_command(
         )
     if job.search.max_request_rate is not None:
         command.extend(["--max-request-rate", f"{job.search.max_request_rate}"])
+    if job.launch.max_model_len is not None:
+        command.extend(["--serving-max-model-len", str(job.launch.max_model_len)])
     if job.launch.max_num_seqs is not None:
         command.extend(["--max-num-seqs", f"{job.launch.max_num_seqs}"])
     elif job.search.max_num_seqs is not None:

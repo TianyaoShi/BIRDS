@@ -90,6 +90,7 @@ class ModelContextInfo:
     max_model_len: int
     model_max_model_len: int | None
     workload_max_model_len: int | None
+    serving_max_model_len: int | None
     tokenizer_source: str
     tokenizer_name: str | None
     fallback_used: bool = False
@@ -104,6 +105,7 @@ class ModelContextInfo:
             "fallback_used": self.fallback_used,
             "max_model_len": self.max_model_len,
             "model_max_model_len": self.model_max_model_len,
+            "serving_max_model_len": self.serving_max_model_len,
             "tokenizer": self.tokenizer_name,
             "tokenizer_key": self.tokenizer_key,
             "tokenizer_source": self.tokenizer_source,
@@ -470,9 +472,12 @@ def resolve_model_context_info(
     fallback_tokenizer_key: str,
     fallback_tokenizer_name: str,
     default_max_model_len: int = 4096,
+    serving_max_model_len: int | None = None,
 ) -> ModelContextInfo:
     if default_max_model_len <= 0:
         raise ValueError("default_max_model_len must be positive")
+    if serving_max_model_len is not None and serving_max_model_len <= 0:
+        raise ValueError("serving_max_model_len must be positive when provided")
 
     if policy.tokenizer_source == "workload_tokenizer":
         if workload_tokenizer is None or workload_tokenizer_key is None:
@@ -482,6 +487,7 @@ def resolve_model_context_info(
         max_model_len = _effective_max_model_len(
             model_max_model_len=None,
             workload_max_model_len=policy.max_model_len,
+            serving_max_model_len=serving_max_model_len,
             default_max_model_len=default_max_model_len,
         )
         return ModelContextInfo(
@@ -490,6 +496,7 @@ def resolve_model_context_info(
             max_model_len=max_model_len,
             model_max_model_len=None,
             workload_max_model_len=policy.max_model_len,
+            serving_max_model_len=serving_max_model_len,
             tokenizer_source="workload_tokenizer",
             tokenizer_name=fallback_tokenizer_name,
         )
@@ -505,6 +512,7 @@ def resolve_model_context_info(
         max_model_len = _effective_max_model_len(
             model_max_model_len=model_max_model_len,
             workload_max_model_len=policy.max_model_len,
+            serving_max_model_len=serving_max_model_len,
             default_max_model_len=default_max_model_len,
         )
         return ModelContextInfo(
@@ -513,6 +521,7 @@ def resolve_model_context_info(
             max_model_len=max_model_len,
             model_max_model_len=model_max_model_len,
             workload_max_model_len=policy.max_model_len,
+            serving_max_model_len=serving_max_model_len,
             tokenizer_source="explicit",
             tokenizer_name=tokenizer_name,
         )
@@ -528,6 +537,7 @@ def resolve_model_context_info(
             max_model_len = _effective_max_model_len(
                 model_max_model_len=model_max_model_len,
                 workload_max_model_len=policy.max_model_len,
+                serving_max_model_len=serving_max_model_len,
                 default_max_model_len=default_max_model_len,
             )
             return ModelContextInfo(
@@ -536,6 +546,7 @@ def resolve_model_context_info(
                 max_model_len=max_model_len,
                 model_max_model_len=model_max_model_len,
                 workload_max_model_len=policy.max_model_len,
+                serving_max_model_len=serving_max_model_len,
                 tokenizer_source="vllm_model_config",
                 tokenizer_name=tokenizer_name,
             )
@@ -550,6 +561,7 @@ def resolve_model_context_info(
     max_model_len = _effective_max_model_len(
         model_max_model_len=None,
         workload_max_model_len=policy.max_model_len,
+        serving_max_model_len=serving_max_model_len,
         default_max_model_len=default_max_model_len,
     )
     return ModelContextInfo(
@@ -558,6 +570,7 @@ def resolve_model_context_info(
         max_model_len=max_model_len,
         model_max_model_len=None,
         workload_max_model_len=policy.max_model_len,
+        serving_max_model_len=serving_max_model_len,
         tokenizer_source="fallback",
         tokenizer_name=fallback_tokenizer_name,
         fallback_used=True,
@@ -603,11 +616,12 @@ def _effective_max_model_len(
     *,
     model_max_model_len: int | None,
     workload_max_model_len: int | None,
+    serving_max_model_len: int | None,
     default_max_model_len: int,
 ) -> int:
     candidates = [
         value
-        for value in (model_max_model_len, workload_max_model_len)
+        for value in (model_max_model_len, workload_max_model_len, serving_max_model_len)
         if value is not None
     ]
     if candidates:

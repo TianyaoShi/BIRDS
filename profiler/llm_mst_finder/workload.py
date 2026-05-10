@@ -1608,6 +1608,7 @@ def prepare_workload_for_trial(
     *,
     model_name: str,
     endpoint: str | None = None,
+    serving_max_model_len: int | None = None,
 ) -> PreparedWorkload:
     config = load_workload_config(path)
     fallback_tokenizer_name = config.tokenizer or model_name
@@ -1656,6 +1657,7 @@ def prepare_workload_for_trial(
         fallback_tokenizer=fallback_tokenizer,
         fallback_tokenizer_key=fallback_tokenizer_key,
         fallback_tokenizer_name=fallback_tokenizer_name,
+        serving_max_model_len=serving_max_model_len,
     )
     effective_context_policy = model_context_info.effective_policy(config.context_policy)
     samples = generate_sample_requests(
