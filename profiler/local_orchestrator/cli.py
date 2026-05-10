@@ -74,6 +74,7 @@ def _dry_run_command(args: argparse.Namespace) -> int:
                 "max_model_len": job.launch.max_model_len,
                 "max_request_rate": job.search.max_request_rate,
                 "max_binary_steps": job.search.max_binary_steps,
+                "open_loop_bracket_growth_factor": job.search.open_loop_bracket_growth_factor,
                 "ttft_slo_ms": job.search.ttft_slo_ms,
                 "tpot_slo_ms": job.search.tpot_slo_ms,
                 "ttft_slo_mode": job.search.ttft_slo_mode,

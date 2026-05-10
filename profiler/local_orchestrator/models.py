@@ -225,6 +225,7 @@ class SearchConfig:
     max_request_rate: float | None = None
     max_binary_steps: int = 24
     max_bracket_trials: int = 16
+    open_loop_bracket_growth_factor: float = 2.0
     client_limited_retry_attempts: int = 1
     client_limited_retry_cooldown_s: float = 30.0
     closed_loop_initial_concurrency: int = 1
@@ -263,6 +264,9 @@ class SearchConfig:
                 raise ValueError("max_request_rate must be >= initial_request_rate")
         _require_positive_int("max_binary_steps", self.max_binary_steps)
         _require_positive_int("max_bracket_trials", self.max_bracket_trials)
+        _require_positive_float("open_loop_bracket_growth_factor", self.open_loop_bracket_growth_factor)
+        if self.open_loop_bracket_growth_factor <= 1.0:
+            raise ValueError("open_loop_bracket_growth_factor must be > 1.0")
         _require_non_negative_int("client_limited_retry_attempts", self.client_limited_retry_attempts)
         _require_non_negative_float(
             "client_limited_retry_cooldown_s",

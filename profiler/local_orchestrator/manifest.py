@@ -109,6 +109,7 @@ _SEARCH_KEYS = {
     "max_request_rate",
     "max_binary_steps",
     "max_bracket_trials",
+    "open_loop_bracket_growth_factor",
     "client_limited_retry_attempts",
     "client_limited_retry_cooldown_s",
     "closed_loop_initial_concurrency",
@@ -538,6 +539,7 @@ def _merge_search_config(base: SearchConfig, raw: Any, *, field_name: str) -> Se
         "max_request_rate": base.max_request_rate,
         "max_binary_steps": base.max_binary_steps,
         "max_bracket_trials": base.max_bracket_trials,
+        "open_loop_bracket_growth_factor": base.open_loop_bracket_growth_factor,
         "client_limited_retry_attempts": base.client_limited_retry_attempts,
         "client_limited_retry_cooldown_s": base.client_limited_retry_cooldown_s,
         "closed_loop_initial_concurrency": base.closed_loop_initial_concurrency,
@@ -567,6 +569,7 @@ def _merge_search_config(base: SearchConfig, raw: Any, *, field_name: str) -> Se
             "initial_request_rate",
             "metrics_interval_s",
             "window_s",
+            "open_loop_bracket_growth_factor",
         }:
             updated[key] = _expect_positive_float(value, f"{field_name}.{key}")
             continue

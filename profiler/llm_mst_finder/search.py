@@ -57,6 +57,7 @@ class SearchConfig:
     max_request_rate: float | None = None
     max_binary_steps: int = 24
     max_bracket_trials: int = 16
+    open_loop_bracket_growth_factor: float = 2.0
     client_limited_retry_attempts: int = 1
     client_limited_retry_cooldown_s: float = 30.0
     closed_loop_initial_concurrency: int = 1
@@ -109,6 +110,9 @@ class SearchConfig:
                 raise ValueError("max_request_rate must be >= initial_request_rate")
         _require_positive_int("max_binary_steps", self.max_binary_steps)
         _require_positive_int("max_bracket_trials", self.max_bracket_trials)
+        _require_positive("open_loop_bracket_growth_factor", self.open_loop_bracket_growth_factor)
+        if self.open_loop_bracket_growth_factor <= 1.0:
+            raise ValueError("open_loop_bracket_growth_factor must exceed 1.0")
         _require_non_negative_int("client_limited_retry_attempts", self.client_limited_retry_attempts)
         _require_non_negative("client_limited_retry_cooldown_s", self.client_limited_retry_cooldown_s)
         _require_positive_int("closed_loop_initial_concurrency", self.closed_loop_initial_concurrency)
@@ -364,10 +368,10 @@ class SearchController:
             first_rate = peak * config.closed_loop_start_rate_fraction
             second_rate = peak * config.closed_loop_high_rate_fraction
             if second_rate <= first_rate:
-                second_rate = first_rate * 2.0
+                second_rate = first_rate * config.open_loop_bracket_growth_factor
         else:
             first_rate = config.initial_request_rate
-            second_rate = first_rate * 2.0
+            second_rate = first_rate * config.open_loop_bracket_growth_factor
 
         bounds = _SearchBounds()
         if self._rate_exceeds_max_rate(config, first_rate):
@@ -426,7 +430,7 @@ class SearchController:
             await self._test_open_loop_rate(config, bounds, rate, purpose="open_loop_bracket_high")
             if bounds.high_rate is not None:
                 return
-            rate *= 2.0
+            rate *= config.open_loop_bracket_growth_factor
         raise SearchConvergenceError(
             f"open-loop bracketing did not find an unstable high bound after "
             f"{config.max_bracket_trials} trials"
@@ -435,14 +439,14 @@ class SearchController:
     async def _shrink_low_bound(self, config: SearchConfig, bounds: _SearchBounds) -> None:
         if bounds.high_rate is None:
             raise SearchConvergenceError("cannot shrink low bound before a high bound is known")
-        rate = bounds.high_rate / 2.0
+        rate = bounds.high_rate / config.open_loop_bracket_growth_factor
         for _ in range(config.max_bracket_trials):
             if rate <= 0.0:
                 raise SearchConvergenceError("open-loop low-bound search reached a non-positive rate")
             await self._test_open_loop_rate(config, bounds, rate, purpose="open_loop_bracket_low")
             if bounds.low_rate is not None:
                 return
-            rate /= 2.0
+            rate /= config.open_loop_bracket_growth_factor
         raise SearchConvergenceError(
             f"open-loop bracketing did not find a stable low bound below "
             f"{bounds.high_rate:.6g} req/s"

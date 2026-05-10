@@ -134,3 +134,49 @@ def test_mst_adapter_passes_request_reuse_policy(tmp_path: Path) -> None:
     assert result.success is True
     search_command = commands[0]
     assert search_command[search_command.index("--request-reuse-policy") + 1] == "cycle"
+
+
+def test_mst_adapter_passes_open_loop_bracket_growth_factor(tmp_path: Path) -> None:
+    job = _make_job(tmp_path)
+    job = ExpandedExperimentJob(
+        experiment_id=job.experiment_id,
+        source_index=job.source_index,
+        model=job.model,
+        workload=job.workload,
+        endpoint=job.endpoint,
+        launch=job.launch,
+        search=SearchConfig(open_loop_bracket_growth_factor=1.5),
+        hardware=job.hardware,
+        probe=job.probe,
+        result_dir=job.result_dir,
+        model_slug=job.model_slug,
+        dataset_slug=job.dataset_slug,
+        server_config_slug=job.server_config_slug,
+        server_signature_key=job.server_signature_key,
+        server_metadata_file=job.server_metadata_file,
+    )
+    server = _make_server(tmp_path)
+    commands: list[tuple[str, ...]] = []
+
+    def run_command(command, *, env, cwd):
+        del env, cwd
+        commands.append(tuple(command))
+        if "search" in command:
+            output_dir = Path(command[command.index("--output-dir") + 1])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "search_trace.json").write_text("{}\n", encoding="utf-8")
+        if "report" in command:
+            result_dir = Path(command[command.index("--result-dir") + 1])
+            (result_dir / "final_report.json").write_text("{}\n", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    adapter = MSTSearchAdapter(
+        python_executable="python",
+        profiler_root=Path(__file__).resolve().parents[2] / "profiler",
+        run_command=run_command,
+    )
+    result = adapter.invoke(job=job, server=server, logs_dir=tmp_path / "logs")
+
+    assert result.success is True
+    search_command = commands[0]
+    assert search_command[search_command.index("--open-loop-bracket-growth-factor") + 1] == "1.5"

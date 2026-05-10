@@ -52,6 +52,8 @@ def build_search_command(
         str(job.search.max_binary_steps),
         "--max-bracket-trials",
         str(job.search.max_bracket_trials),
+        "--open-loop-bracket-growth-factor",
+        f"{job.search.open_loop_bracket_growth_factor}",
         "--client-limited-retry-attempts",
         str(job.search.client_limited_retry_attempts),
         "--client-limited-retry-cooldown-s",

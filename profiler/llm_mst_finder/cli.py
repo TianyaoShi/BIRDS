@@ -129,6 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--max-request-rate", type=float, default=None)
     search.add_argument("--max-binary-steps", type=int, default=24)
     search.add_argument("--max-bracket-trials", type=int, default=16)
+    search.add_argument("--open-loop-bracket-growth-factor", type=float, default=2.0)
     search.add_argument("--client-limited-retry-attempts", type=int, default=1)
     search.add_argument("--client-limited-retry-cooldown-s", type=float, default=30.0)
     search.add_argument("--closed-loop-initial-concurrency", type=int, default=1)
@@ -339,6 +340,7 @@ async def _search_command(args: argparse.Namespace) -> int:
         max_request_rate=args.max_request_rate,
         max_binary_steps=args.max_binary_steps,
         max_bracket_trials=args.max_bracket_trials,
+        open_loop_bracket_growth_factor=args.open_loop_bracket_growth_factor,
         client_limited_retry_attempts=args.client_limited_retry_attempts,
         client_limited_retry_cooldown_s=args.client_limited_retry_cooldown_s,
         closed_loop_initial_concurrency=args.closed_loop_initial_concurrency,

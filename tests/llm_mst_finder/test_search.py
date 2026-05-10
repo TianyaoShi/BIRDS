@@ -233,6 +233,38 @@ def test_hybrid_search_reports_max_request_rate_limited_result(tmp_path: Path) -
     asyncio.run(run())
 
 
+def test_open_loop_search_uses_configured_bracket_growth_factor(tmp_path: Path) -> None:
+    async def run() -> None:
+        runner = FakeRunner(sustainable_rate=2.0)
+        controller = SearchController(
+            runner,
+            request_source=_source(),
+            output_dir=tmp_path / "search-growth-factor",
+            analyze_trial=lambda trial_dir: runner.analyses[Path(trial_dir).name],
+            write_analysis=lambda trial_dir, result: Path(trial_dir) / "analysis.json",
+        )
+        await controller.search(
+            SearchConfig(
+                search_id="fixture-growth-factor",
+                search_mode="open-loop",
+                model="fake-model",
+                trial_duration_s=1.0,
+                rate_precision=0.05,
+                initial_request_rate=1.0,
+                open_loop_bracket_growth_factor=1.5,
+            )
+        )
+
+        open_loop_calls = [call for call in runner.calls if call.mode == "open-loop"]
+        assert [call.request_rate for call in open_loop_calls[:3]] == [
+            pytest.approx(1.0),
+            pytest.approx(1.5),
+            pytest.approx(2.25),
+        ]
+
+    asyncio.run(run())
+
+
 def test_hybrid_search_caps_first_closed_loop_seed_rate(tmp_path: Path) -> None:
     async def run() -> None:
         runner = FakeRunner(sustainable_rate=20.0, closed_loop_peak=20.0)
