@@ -47,6 +47,8 @@ class SamplingConfig:
     burst_size: int
     policy: str | None
     samples_per_task: int | None
+    external_samples_per_dataset: int | None
+    max_external_group_reuse: int
     repeat_policy: str | None
     target_samples: int | None
 

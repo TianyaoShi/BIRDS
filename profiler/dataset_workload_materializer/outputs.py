@@ -250,6 +250,13 @@ def build_manifest(
         "profile_summaries": group_summaries(all_samples, group_key="profile"),
         "task_summaries": group_summaries(all_samples, group_key="task"),
         "unique_content_hashes": len({sample.metadata["content_hash"] for sample in all_samples}),
+        "unique_group_ids": len(
+            {
+                sample.metadata["group_id"]
+                for sample in all_samples
+                if sample.metadata.get("group_id") not in (None, "")
+            }
+        ),
         "unique_sample_ids": len(
             {
                 sample.metadata.get("original_sample_id", sample.sample_id)
@@ -305,6 +312,18 @@ def build_report(
         "profile_summaries": group_summaries(samples, group_key="profile"),
         "task_summaries": group_summaries(samples, group_key="task"),
     }
+    group_ids = [
+        str(sample.metadata["group_id"])
+        for sample in samples
+        if sample.metadata.get("group_id") not in (None, "")
+    ]
+    if group_ids:
+        group_counts = Counter(group_ids)
+        report["group_id_reuse"] = {
+            "unique_group_ids": len(group_counts),
+            "max_reuse": max(group_counts.values()),
+            "reused_group_ids": sum(1 for count in group_counts.values() if count > 1),
+        }
     unique_sample_ids = len(
         {sample.metadata.get("original_sample_id", sample.sample_id) for sample in samples}
     )

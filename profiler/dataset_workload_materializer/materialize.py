@@ -78,6 +78,12 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
     samples_per_task = sampling_payload.get("samples_per_task")
     if samples_per_task is not None:
         samples_per_task = positive_int(samples_per_task, "sampling.samples_per_task")
+    external_samples_per_dataset = sampling_payload.get("external_samples_per_dataset")
+    if external_samples_per_dataset is not None:
+        external_samples_per_dataset = positive_int(
+            external_samples_per_dataset,
+            "sampling.external_samples_per_dataset",
+        )
     repeat_policy = optional_string(sampling_payload.get("repeat_policy"), "sampling.repeat_policy")
     if repeat_policy is not None and repeat_policy != "epoch_shuffle":
         raise ValueError("sampling.repeat_policy must be 'epoch_shuffle' when provided")
@@ -93,6 +99,8 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
         burst_size=int_setting(sampling_payload, "burst_size", 8),
         policy=optional_string(sampling_payload.get("policy"), "sampling.policy"),
         samples_per_task=samples_per_task,
+        external_samples_per_dataset=external_samples_per_dataset,
+        max_external_group_reuse=int_setting(sampling_payload, "max_external_group_reuse", 1),
         repeat_policy=repeat_policy,
         target_samples=target_samples,
     )

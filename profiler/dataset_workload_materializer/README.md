@@ -295,6 +295,39 @@ consecutive trials before cycling through unique-key representatives; the
 post-exhaustion portion is cache-aware and should be paired with conservative
 closed-loop concurrency and request-rate ceilings.
 
+For H100-scale runs, synthetic replay of a 200-700 row corpus is still too
+small. The LongBench adapter can now extend each refined bucket with local
+JSONL/JSON exports from Hugging Face sources while preserving the same ordinary
+runner JSONL and workload YAML output format:
+
+| Bucket | External source | Hugging Face repo |
+| --- | --- | --- |
+| `long_output_summarization` | `gov_report_original` | `launch/gov_report` |
+| `medium_output_summarization` | `multi_news_original` | `tau/multi_news` |
+| `medium_output_summarization` | `qmsum_original` | `mattercalm/qmsum` |
+| `medium_output_summarization` | `meetingbank` | `huuuyeah/meetingbank` |
+| `medium_answer_rag_qa` | `dureader_full` | `PaddlePaddle/dureader_robust` |
+| `short_answer_document_qa` | `qasper_full` | `allenai/qasper` |
+
+The downloader writes the HF rows into the local JSONL layout expected by the
+materializer:
+
+```bash
+PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
+/local/scratch/a/shi676/.venv/bin/python \
+  -m dataset_workload_materializer.download_longbench_expansion_sources \
+  --output-dir data/raw/longbench_expansion
+```
+
+Expansion materialization configs live alongside the original bucket configs as
+`experiments/longbench_workloads/materialization/*_expanded_qwen3_8b.yaml`.
+They add `dataset.external_datasets`, use
+`sampling.external_samples_per_dataset`, and keep
+`sampling.max_external_group_reuse: 1` so a generated workload selects at most
+one request per source document/paper/meeting unless the config explicitly
+relaxes that. The materialization report includes `group_id_reuse` with unique
+group count, max reuse, and reused-group count.
+
 For current LongBench buckets, 1k-2k expanded samples are enough because each
 request carries long input and normally takes several seconds. The tracked
 configs use 1,024 rows for `long_output_summarization` and

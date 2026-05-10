@@ -271,6 +271,85 @@ def test_longbench_generated_workload_yaml_loads_through_llm_mst_finder(tmp_path
     assert prepared.samples[0].metadata["shard_id"] == "shard_000"
 
 
+def test_longbench_external_qasper_jsonl_materializes_and_reports_group_reuse(tmp_path: Path) -> None:
+    raw_path = _write_longbench_zip(
+        tmp_path,
+        {
+            "qasper": [_longbench_row("qasper-0", "qasper", "en", suffix="paper")],
+        },
+    )
+    external_path = tmp_path / "qasper_full.jsonl"
+    external_path.write_text(
+        json.dumps(
+            {
+                "id": "paper-001",
+                "title": "A compact paper",
+                "abstract": "This paper studies compact fixtures.",
+                "full_text": {
+                    "section_name": ["Introduction", "Method"],
+                    "paragraphs": [
+                        ["The introduction contains enough text for a useful prompt."],
+                        ["The method section describes deterministic materialization."],
+                    ],
+                },
+                "qas": {
+                    "question": ["What does the paper study?", "What does the method describe?"],
+                    "question_id": ["paper-001-q1", "paper-001-q2"],
+                    "answers": [
+                        {"answer": [{"free_form_answer": "compact fixtures"}]},
+                        {"answer": [{"free_form_answer": "deterministic materialization"}]},
+                    ],
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    config_path = _write_longbench_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_dir=tmp_path / "out",
+        profile="short_answer_document_qa",
+        configs=["qasper"],
+        samples_per_task=1,
+        external_datasets=[
+            {
+                "name": "qasper_full",
+                "raw_path": str(external_path),
+                "split": "train",
+                "hf_dataset": "allenai/qasper",
+            }
+        ],
+        external_samples_per_dataset=2,
+        max_external_group_reuse=1,
+    )
+
+    result = materialize_from_config(config_path)
+
+    assert result["num_samples"] == 2
+    report = json.loads((tmp_path / "out" / "materialization_report.json").read_text(encoding="utf-8"))
+    manifest = json.loads((tmp_path / "out" / "shards_manifest.json").read_text(encoding="utf-8"))
+    assert report["selected_tasks"] == ["qasper", "qasper_full"]
+    assert report["group_id_reuse"] == {
+        "unique_group_ids": 1,
+        "max_reuse": 1,
+        "reused_group_ids": 0,
+    }
+    assert manifest["unique_group_ids"] == 1
+
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "out" / "shards" / "shard_000.runner.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    external_rows = [row for row in rows if row["metadata"]["task"] == "qasper_full"]
+    assert len(external_rows) == 1
+    assert external_rows[0]["metadata"]["source_hf_dataset"] == "allenai/qasper"
+    assert external_rows[0]["metadata"]["group_id"] == "paper-001"
+    assert "Answer the question based on the document." in external_rows[0]["prompt"]
+
+
 def test_longbench_summarization_with_empty_input_synthesizes_task_instruction(tmp_path: Path) -> None:
     raw_path = _write_longbench_zip(
         tmp_path,
@@ -601,6 +680,9 @@ def _write_longbench_config(
     profile: str,
     configs: list[str],
     samples_per_task: int,
+    external_datasets: list[dict[str, object]] | None = None,
+    external_samples_per_dataset: int | None = None,
+    max_external_group_reuse: int | None = None,
     repeat_policy: str | None = None,
     target_samples: int | None = None,
     config_name: str = "longbench_materialize.yaml",
@@ -642,6 +724,12 @@ def _write_longbench_config(
         config["sampling"]["repeat_policy"] = repeat_policy
     if target_samples is not None:
         config["sampling"]["target_samples"] = target_samples
+    if external_datasets is not None:
+        config["dataset"]["external_datasets"] = external_datasets
+    if external_samples_per_dataset is not None:
+        config["sampling"]["external_samples_per_dataset"] = external_samples_per_dataset
+    if max_external_group_reuse is not None:
+        config["sampling"]["max_external_group_reuse"] = max_external_group_reuse
     config_path = tmp_path / config_name
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     return config_path
