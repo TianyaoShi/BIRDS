@@ -20,6 +20,11 @@ from .vllm_compat import (
 )
 
 
+CAPTURE_RESPONSE_TEXT_ENV = "LLM_MST_FINDER_CAPTURE_RESPONSE_TEXT"
+RESPONSE_TEXT_MAX_CHARS_ENV = "LLM_MST_FINDER_RESPONSE_TEXT_MAX_CHARS"
+DEFAULT_RESPONSE_TEXT_MAX_CHARS = 4096
+
+
 def _build_connector() -> aiohttp.TCPConnector:
     connector_kwargs = {
         "limit": 2000,
@@ -69,6 +74,8 @@ class RequestClient:
         self._provided_session = session
         self._session = session
         self._time_fn = time_fn
+        self._capture_response_text = os.environ.get(CAPTURE_RESPONSE_TEXT_ENV) == "1"
+        self._response_text_max_chars = _response_text_max_chars()
         detect_endpoint_kind(endpoint)
 
     @property
@@ -126,6 +133,7 @@ class RequestClient:
         output_token_timestamps: list[float] = []
         completion_tokens: int | None = None
         most_recent_token_ts: float | None = None
+        response_text_parts: list[str] = []
 
         try:
             async with self._session.post(
@@ -199,6 +207,8 @@ class RequestClient:
                     text = extract_text_from_chunk(self._endpoint, parsed_chunk)
                     if text is None:
                         continue
+                    if self._capture_response_text:
+                        response_text_parts.append(text)
                     now = self._time_fn()
                     if first_token_ts is None:
                         first_token_ts = now
@@ -215,6 +225,10 @@ class RequestClient:
                     completion_tokens = len(output_token_timestamps)
                 if completion_tokens > 1 and first_token_ts is not None:
                     tpot_s = (end_ts - first_token_ts) / (completion_tokens - 1)
+                metadata = self._metadata_with_response_text(
+                    sample_request.metadata,
+                    response_text_parts,
+                )
                 return RequestRecord(
                     request_id=request_id,
                     trial_id=trial_id,
@@ -232,10 +246,14 @@ class RequestClient:
                     tpot_s=tpot_s,
                     itl_s=itl_s,
                     output_token_timestamps=output_token_timestamps,
-                    metadata=sample_request.metadata,
+                    metadata=metadata,
                 )
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
             end_ts = self._time_fn()
+            metadata = self._metadata_with_response_text(
+                sample_request.metadata,
+                response_text_parts,
+            )
             return RequestRecord(
                 request_id=request_id,
                 trial_id=trial_id,
@@ -253,12 +271,31 @@ class RequestClient:
                 tpot_s=tpot_s,
                 itl_s=itl_s,
                 output_token_timestamps=output_token_timestamps,
-                metadata=sample_request.metadata,
+                metadata=metadata,
             )
         except Exception:
             if self._provided_session is None:
                 await self.close()
             raise
+
+    def _metadata_with_response_text(
+        self,
+        metadata: dict[str, Any],
+        response_text_parts: list[str],
+    ) -> dict[str, Any]:
+        if not self._capture_response_text:
+            return metadata
+        response_text = "".join(response_text_parts)
+        if len(response_text) <= self._response_text_max_chars:
+            captured = response_text
+            truncated = False
+        else:
+            captured = response_text[: self._response_text_max_chars]
+            truncated = True
+        enriched = dict(metadata)
+        enriched["response_text"] = captured
+        enriched["response_text_truncated"] = truncated
+        return enriched
 
 
 def _classify_stream_error(error: str) -> str | None:
@@ -269,3 +306,16 @@ def _classify_stream_error(error: str) -> str | None:
     ):
         return "model_server_harmony_stream_error"
     return None
+
+
+def _response_text_max_chars() -> int:
+    raw_value = os.environ.get(RESPONSE_TEXT_MAX_CHARS_ENV)
+    if raw_value is None:
+        return DEFAULT_RESPONSE_TEXT_MAX_CHARS
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{RESPONSE_TEXT_MAX_CHARS_ENV} must be an integer") from exc
+    if value <= 0:
+        raise ValueError(f"{RESPONSE_TEXT_MAX_CHARS_ENV} must be positive")
+    return value

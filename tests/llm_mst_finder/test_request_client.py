@@ -142,6 +142,39 @@ def test_request_client_parses_streaming_chat_reasoning_tokens() -> None:
     asyncio.run(run())
 
 
+def test_request_client_can_capture_response_text_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_MST_FINDER_CAPTURE_RESPONSE_TEXT", "1")
+    monkeypatch.setenv("LLM_MST_FINDER_RESPONSE_TEXT_MAX_CHARS", "8")
+
+    async def run() -> None:
+        response = FakeResponse(
+            status=200,
+            chunks=[
+                b'data: {"choices": [{"delta": {"content": "hello "}}]}\n\n',
+                b'data: {"choices": [{"delta": {"content": "world"}}]}\n\n',
+                b"data: [DONE]\n\n",
+            ],
+        )
+        session = FakeSession(response)
+        async with RequestClient(
+            base_url="http://unit-test",
+            endpoint="/v1/chat/completions",
+            model="fake-model",
+            session=session,
+        ) as client:
+            record = await client.send_request(
+                SampleRequest(prompt="hello", prompt_len=5, expected_output_len=4),
+                request_id="req-capture",
+                trial_id="trial-001",
+                scheduled_send_ts=0.0,
+            )
+        assert record.success is True
+        assert record.metadata["response_text"] == "hello wo"
+        assert record.metadata["response_text_truncated"] is True
+
+    asyncio.run(run())
+
+
 def test_request_client_returns_failed_record_for_http_error() -> None:
     async def run() -> None:
         session = FakeSession(FakeResponse(status=503, text="busy"))
