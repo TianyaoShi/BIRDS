@@ -135,6 +135,12 @@ def _expect_int(value: Any, field_name: str, *, positive: bool = False) -> int:
     return value
 
 
+def _expect_bool(value: Any, field_name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a boolean")
+    return value
+
+
 def _check_allowed_keys(payload: dict[str, Any], field_name: str, allowed: set[str]) -> None:
     unknown = set(payload) - allowed
     if unknown:
@@ -198,6 +204,11 @@ class SamplingConfig:
     prompt_len: LengthSpec
     output_len: LengthSpec
     entry_selection: str = "random_with_replacement"
+    conversation_mode: str = "single_turn"
+    turn_selection: str | None = None
+    include_assistant_history: bool = True
+    min_prompt_turns: int = 1
+    max_prompt_turns: int | None = None
 
     def __post_init__(self) -> None:
         if self.num_requests <= 0:
@@ -207,6 +218,46 @@ class SamplingConfig:
                 "sampling.entry_selection must be one of: "
                 "random_with_replacement, sequential"
             )
+        if self.conversation_mode not in {"single_turn", "multi_turn_prefix", "session_replay"}:
+            raise ValueError(
+                "sampling.conversation_mode must be one of: "
+                "single_turn, multi_turn_prefix, session_replay"
+            )
+        allowed_turn_selection = {"first_valid", "random_valid", "all_valid"}
+        if self.turn_selection is not None and self.turn_selection not in allowed_turn_selection:
+            raise ValueError(
+                "sampling.turn_selection must be one of: "
+                "first_valid, random_valid, all_valid"
+            )
+        if self.min_prompt_turns <= 0:
+            raise ValueError("sampling.min_prompt_turns must be positive")
+        if self.max_prompt_turns is not None and self.max_prompt_turns <= 0:
+            raise ValueError("sampling.max_prompt_turns must be positive")
+
+    @property
+    def effective_turn_selection(self) -> str:
+        if self.turn_selection is not None:
+            return self.turn_selection
+        if self.conversation_mode == "session_replay":
+            return "all_valid"
+        return "first_valid"
+
+
+@dataclass(frozen=True, slots=True)
+class TrafficConfig:
+    session_ordering: str = "preserve_within_session"
+    session_interleaving: str = "shuffled_sessions"
+    per_session_think_time_s: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.session_ordering != "preserve_within_session":
+            raise ValueError("traffic.session_ordering must be preserve_within_session")
+        if self.session_interleaving not in {"shuffled_sessions", "round_robin"}:
+            raise ValueError(
+                "traffic.session_interleaving must be one of: shuffled_sessions, round_robin"
+            )
+        if self.per_session_think_time_s < 0:
+            raise ValueError("traffic.per_session_think_time_s must be non-negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,6 +310,7 @@ class WorkloadConfig:
     request: RequestConfig
     context_policy: ContextPolicy | None
     source_path: Path
+    traffic: TrafficConfig = field(default_factory=TrafficConfig)
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,6 +348,12 @@ class LongBenchDatasetSample:
     usable_rows: int
     sample_size: int
     configs: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationTurn:
+    role: str
+    text: str
 
 
 _LONGBENCH_CONFIGS: tuple[str, ...] = (
@@ -485,6 +543,31 @@ def _parse_request(payload: Any) -> RequestConfig:
     return RequestConfig(extra_body=merged)
 
 
+def _parse_traffic(payload: Any) -> TrafficConfig:
+    if payload is None:
+        return TrafficConfig()
+    traffic_payload = _expect_mapping(payload, "traffic")
+    _check_allowed_keys(
+        traffic_payload,
+        "traffic",
+        {"session_ordering", "session_interleaving", "per_session_think_time_s"},
+    )
+    session_ordering = traffic_payload.get("session_ordering", "preserve_within_session")
+    if not isinstance(session_ordering, str):
+        raise ValueError("traffic.session_ordering must be a string")
+    session_interleaving = traffic_payload.get("session_interleaving", "shuffled_sessions")
+    if not isinstance(session_interleaving, str):
+        raise ValueError("traffic.session_interleaving must be a string")
+    per_session_think_time_s = traffic_payload.get("per_session_think_time_s", 0.0)
+    if not isinstance(per_session_think_time_s, (int, float)):
+        raise ValueError("traffic.per_session_think_time_s must be a number")
+    return TrafficConfig(
+        session_ordering=session_ordering,
+        session_interleaving=session_interleaving,
+        per_session_think_time_s=float(per_session_think_time_s),
+    )
+
+
 def load_workload_config(path: str | Path) -> WorkloadConfig:
     workload_path = Path(path)
     if not workload_path.exists():
@@ -495,7 +578,7 @@ def load_workload_config(path: str | Path) -> WorkloadConfig:
     _check_allowed_keys(
         root,
         "workload",
-        {"name", "dataset", "tokenizer", "sampling", "request", "context_policy"},
+        {"name", "dataset", "tokenizer", "sampling", "request", "context_policy", "traffic"},
     )
     name = _expect_string(root.get("name"), "name")
     tokenizer = root.get("tokenizer")
@@ -507,17 +590,53 @@ def load_workload_config(path: str | Path) -> WorkloadConfig:
     _check_allowed_keys(
         sampling_payload,
         "sampling",
-        {"seed", "num_requests", "prompt_len", "output_len", "entry_selection"},
+        {
+            "seed",
+            "num_requests",
+            "prompt_len",
+            "output_len",
+            "entry_selection",
+            "conversation_mode",
+            "turn_selection",
+            "include_assistant_history",
+            "min_prompt_turns",
+            "max_prompt_turns",
+        },
     )
     entry_selection = sampling_payload.get("entry_selection", "random_with_replacement")
     if not isinstance(entry_selection, str):
         raise ValueError("sampling.entry_selection must be a string")
+    conversation_mode = sampling_payload.get("conversation_mode", "single_turn")
+    if not isinstance(conversation_mode, str):
+        raise ValueError("sampling.conversation_mode must be a string")
+    turn_selection = sampling_payload.get("turn_selection")
+    if turn_selection is not None and not isinstance(turn_selection, str):
+        raise ValueError("sampling.turn_selection must be a string")
+    include_assistant_history = sampling_payload.get("include_assistant_history", True)
+    min_prompt_turns = sampling_payload.get("min_prompt_turns", 1)
+    max_prompt_turns = sampling_payload.get("max_prompt_turns")
+    if max_prompt_turns is not None:
+        max_prompt_turns = _expect_int(
+            max_prompt_turns,
+            "sampling.max_prompt_turns",
+            positive=True,
+        )
+    elif conversation_mode == "session_replay":
+        max_prompt_turns = 16
     sampling = SamplingConfig(
         seed=_expect_int(sampling_payload.get("seed"), "sampling.seed"),
         num_requests=_expect_int(sampling_payload.get("num_requests"), "sampling.num_requests", positive=True),
         prompt_len=_parse_length_spec(sampling_payload.get("prompt_len"), "sampling.prompt_len"),
         output_len=_parse_length_spec(sampling_payload.get("output_len"), "sampling.output_len"),
         entry_selection=entry_selection,
+        conversation_mode=conversation_mode,
+        turn_selection=turn_selection,
+        include_assistant_history=_expect_bool(
+            include_assistant_history,
+            "sampling.include_assistant_history",
+        ),
+        min_prompt_turns=_expect_int(min_prompt_turns, "sampling.min_prompt_turns", positive=True),
+        max_prompt_turns=max_prompt_turns,
     )
     config = WorkloadConfig(
         name=name,
@@ -527,7 +646,12 @@ def load_workload_config(path: str | Path) -> WorkloadConfig:
         request=_parse_request(root.get("request")),
         context_policy=parse_context_policy(root.get("context_policy")),
         source_path=workload_path.resolve(),
+        traffic=_parse_traffic(root.get("traffic")),
     )
+    if config.sampling.conversation_mode != "single_turn" and config.dataset.type not in {"sharegpt", "hf"}:
+        raise ValueError(
+            "multi-turn conversation modes are only supported for sharegpt and hf datasets"
+        )
     if config.dataset.type.startswith("synthetic") and config.sampling.prompt_len.mode == "from_dataset":
         raise ValueError("synthetic datasets do not support sampling.prompt_len.mode=from_dataset")
     if config.dataset.type.startswith("synthetic") and config.sampling.output_len.mode == "from_dataset":
@@ -591,7 +715,7 @@ def _manifest_cache_path(
 ) -> Path:
     source_fingerprint = _dataset_source_fingerprint(config.dataset)
     key_payload = {
-        "cache_version": 3,
+        "cache_version": 4,
         "dataset_path": config.dataset.path,
         "dataset_source_fingerprint": source_fingerprint,
         "dataset_subset": config.dataset.subset,
@@ -607,6 +731,14 @@ def _manifest_cache_path(
         "prompt_len_mode": config.sampling.prompt_len.mode,
         "sampling_seed": config.sampling.seed,
         "sampling_entry_selection": config.sampling.entry_selection,
+        "sampling_conversation_mode": config.sampling.conversation_mode,
+        "sampling_turn_selection": config.sampling.effective_turn_selection,
+        "sampling_include_assistant_history": config.sampling.include_assistant_history,
+        "sampling_min_prompt_turns": config.sampling.min_prompt_turns,
+        "sampling_max_prompt_turns": config.sampling.max_prompt_turns,
+        "traffic_session_interleaving": config.traffic.session_interleaving,
+        "traffic_session_ordering": config.traffic.session_ordering,
+        "traffic_per_session_think_time_s": config.traffic.per_session_think_time_s,
         "tokenizer_key": tokenizer_key,
     }
     digest = hashlib.sha256(
@@ -709,7 +841,7 @@ def _write_entries_to_manifest(
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     payload = {
-        "cache_version": 3,
+        "cache_version": 4,
         "dataset_path": config.dataset.path,
         "dataset_source_fingerprint": _dataset_source_fingerprint(config.dataset),
         "dataset_subset": config.dataset.subset,
@@ -725,6 +857,14 @@ def _write_entries_to_manifest(
         "prompt_len_mode": config.sampling.prompt_len.mode,
         "sampling_seed": config.sampling.seed,
         "sampling_entry_selection": config.sampling.entry_selection,
+        "sampling_conversation_mode": config.sampling.conversation_mode,
+        "sampling_turn_selection": config.sampling.effective_turn_selection,
+        "sampling_include_assistant_history": config.sampling.include_assistant_history,
+        "sampling_min_prompt_turns": config.sampling.min_prompt_turns,
+        "sampling_max_prompt_turns": config.sampling.max_prompt_turns,
+        "traffic_session_interleaving": config.traffic.session_interleaving,
+        "traffic_session_ordering": config.traffic.session_ordering,
+        "traffic_per_session_think_time_s": config.traffic.per_session_think_time_s,
         "tokenizer_key": tokenizer_key,
         "entries": [_dataset_entry_to_payload(entry) for entry in entries],
     }
@@ -793,6 +933,7 @@ def _load_sharegpt_entries_from_source(
     path: Path,
     tokenizer: PromptTokenizer,
     *,
+    sampling: SamplingConfig,
     include_prompt_len: bool,
     include_output_len: bool,
 ) -> list[DatasetEntry]:
@@ -811,37 +952,30 @@ def _load_sharegpt_entries_from_source(
         conversations = row_payload.get("conversations")
         if not isinstance(conversations, list):
             raise ValueError(f"sharegpt row {index}.conversations must be a list")
-        if len(conversations) < 2:
+        turns = _normalize_conversation_turns(
+            conversations,
+            f"sharegpt row {index}.conversations",
+        )
+        if len(turns) < 2:
             skipped_too_short += 1
             continue
-        first_turn = _expect_mapping(conversations[0], f"sharegpt row {index}.conversations[0]")
-        second_turn = _expect_mapping(conversations[1], f"sharegpt row {index}.conversations[1]")
-        first_role = first_turn.get("from", first_turn.get("role"))
-        second_role = second_turn.get("from", second_turn.get("role"))
-        if not (
-            isinstance(first_role, str)
-            and first_role.lower() in {"human", "user"}
-            and isinstance(second_role, str)
-            and second_role.lower() in {"gpt", "assistant"}
-        ):
+        if turns[0].role != "user" or turns[1].role != "assistant":
             skipped_non_user_assistant_prefix += 1
             continue
-        prompt = first_turn.get("value", first_turn.get("content"))
-        assistant = second_turn.get("value", second_turn.get("content"))
-        if not isinstance(prompt, str) or not prompt or not isinstance(assistant, str) or not assistant:
+        row_entries = _conversation_entries(
+            turns,
+            source_index=index,
+            session_id=str(row_payload.get("id") or index),
+            base_metadata={"row_id": row_payload.get("id")},
+            tokenizer=tokenizer,
+            sampling=sampling,
+            include_prompt_len=include_prompt_len,
+            include_output_len=include_output_len,
+        )
+        if not row_entries:
             skipped_empty_prompt_or_assistant += 1
             continue
-        prompt_len = len(tokenizer.encode(prompt)) if include_prompt_len else None
-        expected_output_len = len(tokenizer.encode(assistant)) if include_output_len else None
-        entries.append(
-            DatasetEntry(
-                prompt=prompt,
-                source_index=index,
-                prompt_len=prompt_len,
-                expected_output_len=expected_output_len,
-                metadata={"row_id": row_payload.get("id")},
-            )
-        )
+        entries.extend(row_entries)
     if not entries:
         raise ValueError(
             "sharegpt dataset has no usable rows with an ordered first-turn user prompt "
@@ -857,6 +991,7 @@ def _load_hf_entry_sample_from_source(
     dataset: DatasetConfig,
     tokenizer: PromptTokenizer,
     *,
+    sampling: SamplingConfig,
     include_prompt_len: bool,
     include_output_len: bool,
     sample_size: int,
@@ -878,6 +1013,7 @@ def _load_hf_entry_sample_from_source(
         streaming=True,
     )
     entries: list[DatasetEntry] = []
+    session_groups: list[list[DatasetEntry]] = []
     skipped_missing_prompt = 0
     skipped_missing_completion = 0
     scanned_rows = 0
@@ -889,35 +1025,55 @@ def _load_hf_entry_sample_from_source(
         scanned_rows += 1
         if not isinstance(row, dict):
             raise ValueError(f"hf row {index} must be a mapping")
-        prompt, completion = _extract_hf_prompt_completion(row, dataset, row_index=index)
-        if prompt is None:
+        row_entries = _extract_hf_entries(
+            row,
+            dataset,
+            row_index=index,
+            tokenizer=tokenizer,
+            sampling=sampling,
+            include_prompt_len=include_prompt_len,
+            include_output_len=include_output_len,
+        )
+        if not row_entries:
             skipped_missing_prompt += 1
             continue
-        if completion is None or (include_output_len and not completion):
-            skipped_missing_completion += 1
+        row_entries = [
+            DatasetEntry(
+                prompt=entry.prompt,
+                source_index=entry.source_index,
+                prompt_len=entry.prompt_len,
+                expected_output_len=entry.expected_output_len,
+                metadata={
+                    **entry.metadata,
+                    "hf_dataset_path": dataset.path,
+                    "hf_dataset_subset": dataset.subset,
+                    "hf_dataset_split": dataset.split,
+                    "hf_sampling_method": "reservoir_uniform",
+                },
+            )
+            for entry in row_entries
+        ]
+        if sampling.conversation_mode == "session_replay":
+            usable_rows += 1
+            if len(session_groups) < sample_size:
+                session_groups.append(row_entries)
+            else:
+                replacement_index = rng.randrange(usable_rows)
+                if replacement_index < sample_size:
+                    session_groups[replacement_index] = row_entries
             continue
-        prompt_len = len(tokenizer.encode(prompt)) if include_prompt_len else None
-        expected_output_len = len(tokenizer.encode(completion)) if include_output_len else None
-        entry = DatasetEntry(
-            prompt=prompt,
-            source_index=index,
-            prompt_len=prompt_len,
-            expected_output_len=expected_output_len,
-            metadata={
-                "hf_dataset_path": dataset.path,
-                "hf_dataset_subset": dataset.subset,
-                "hf_dataset_split": dataset.split,
-                "hf_sampling_method": "reservoir_uniform",
-            },
-        )
-        usable_rows += 1
-        if len(entries) < sample_size:
-            entries.append(entry)
-        else:
-            replacement_index = rng.randrange(usable_rows)
-            if replacement_index < sample_size:
-                entries[replacement_index] = entry
-    rng.shuffle(entries)
+        for entry in row_entries:
+            usable_rows += 1
+            if len(entries) < sample_size:
+                entries.append(entry)
+            else:
+                replacement_index = rng.randrange(usable_rows)
+                if replacement_index < sample_size:
+                    entries[replacement_index] = entry
+    if sampling.conversation_mode == "session_replay":
+        entries = [entry for group in session_groups for entry in group]
+    if sampling.conversation_mode != "session_replay":
+        rng.shuffle(entries)
     if not entries:
         raise ValueError(
             "hf dataset has no usable rows with prompt and completion: "
@@ -940,6 +1096,7 @@ def _load_hf_entries_from_source(
     dataset: DatasetConfig,
     tokenizer: PromptTokenizer,
     *,
+    sampling: SamplingConfig,
     include_prompt_len: bool,
     include_output_len: bool,
     sample_size: int,
@@ -949,6 +1106,7 @@ def _load_hf_entries_from_source(
     return _load_hf_entry_sample_from_source(
         dataset,
         tokenizer,
+        sampling=sampling,
         include_prompt_len=include_prompt_len,
         include_output_len=include_output_len,
         sample_size=sample_size,
@@ -1109,6 +1267,166 @@ def _longbench_reference_answer(answers: Any) -> str:
     return str(answers)
 
 
+def _normalize_role(role: Any) -> str | None:
+    if not isinstance(role, str):
+        return None
+    lowered = role.lower()
+    if lowered in {"human", "user"}:
+        return "user"
+    if lowered in {"gpt", "assistant"}:
+        return "assistant"
+    if lowered == "system":
+        return "system"
+    return None
+
+
+def _normalize_conversation_turns(conversations: list[Any], field_name: str) -> list[ConversationTurn]:
+    turns: list[ConversationTurn] = []
+    for index, turn in enumerate(conversations):
+        turn_payload = _expect_mapping(turn, f"{field_name}[{index}]")
+        role = _normalize_role(turn_payload.get("from", turn_payload.get("role")))
+        text = turn_payload.get("value", turn_payload.get("content", turn_payload.get("text")))
+        if role is None or not isinstance(text, str) or not text:
+            continue
+        turns.append(ConversationTurn(role=role, text=text))
+    return turns
+
+
+def _conversation_entries(
+    turns: list[ConversationTurn],
+    *,
+    source_index: int,
+    session_id: str,
+    base_metadata: dict[str, Any],
+    tokenizer: PromptTokenizer,
+    sampling: SamplingConfig,
+    include_prompt_len: bool,
+    include_output_len: bool,
+) -> list[DatasetEntry]:
+    if sampling.conversation_mode == "single_turn":
+        if len(turns) < 2 or turns[0].role != "user" or turns[1].role != "assistant":
+            return []
+        prompt = turns[0].text
+        assistant = turns[1].text
+        metadata = {
+            **base_metadata,
+            "conversation_mode": "single_turn",
+            "turn_selection": "first_valid",
+            "session_id": session_id,
+            "turn_index": 1,
+            "sample_id": f"{session_id}:turn:1",
+            "content_hash": _content_hash(session_id, 1, prompt, assistant),
+        }
+        return [
+            DatasetEntry(
+                prompt=prompt,
+                source_index=source_index,
+                prompt_len=len(tokenizer.encode(prompt)) if include_prompt_len else None,
+                expected_output_len=len(tokenizer.encode(assistant)) if include_output_len else None,
+                metadata=metadata,
+            )
+        ]
+
+    target_indexes = _valid_assistant_target_indexes(turns, sampling=sampling)
+    if not target_indexes:
+        return []
+    turn_selection = sampling.effective_turn_selection
+    if turn_selection == "first_valid":
+        target_indexes = target_indexes[:1]
+    elif turn_selection == "random_valid":
+        rng = random.Random(f"{sampling.seed}:{source_index}:{session_id}")
+        target_indexes = [rng.choice(target_indexes)]
+    elif turn_selection != "all_valid":
+        raise ValueError(f"unsupported turn selection {turn_selection!r}")
+
+    entries: list[DatasetEntry] = []
+    for target_index in target_indexes:
+        prefix_turns = _prompt_prefix_turns(turns[:target_index], sampling=sampling)
+        prompt = _render_chat_transcript(prefix_turns)
+        assistant = turns[target_index].text
+        metadata = {
+            **base_metadata,
+            "conversation_mode": sampling.conversation_mode,
+            "turn_selection": turn_selection,
+            "include_assistant_history": sampling.include_assistant_history,
+            "min_prompt_turns": sampling.min_prompt_turns,
+            "max_prompt_turns": sampling.max_prompt_turns,
+            "session_id": session_id,
+            "turn_index": target_index,
+            "sample_id": f"{session_id}:turn:{target_index}",
+            "content_hash": _content_hash(session_id, target_index, prompt, assistant),
+        }
+        if sampling.conversation_mode == "session_replay":
+            metadata["preserve_order_key"] = session_id
+            metadata["preserve_order_index"] = target_index
+        entries.append(
+            DatasetEntry(
+                prompt=prompt,
+                source_index=source_index,
+                prompt_len=len(tokenizer.encode(prompt)) if include_prompt_len else None,
+                expected_output_len=len(tokenizer.encode(assistant)) if include_output_len else None,
+                metadata=metadata,
+            )
+        )
+    return entries
+
+
+def _valid_assistant_target_indexes(
+    turns: list[ConversationTurn],
+    *,
+    sampling: SamplingConfig,
+) -> list[int]:
+    targets: list[int] = []
+    for index, turn in enumerate(turns):
+        if turn.role != "assistant" or index == 0:
+            continue
+        if turns[index - 1].role != "user":
+            continue
+        prompt_turns = turns[:index]
+        user_turns = sum(1 for prompt_turn in prompt_turns if prompt_turn.role == "user")
+        if user_turns < sampling.min_prompt_turns:
+            continue
+        targets.append(index)
+    return targets
+
+
+def _prompt_prefix_turns(
+    turns: list[ConversationTurn],
+    *,
+    sampling: SamplingConfig,
+) -> list[ConversationTurn]:
+    if not sampling.include_assistant_history:
+        turns = [turn for turn in turns if turn.role != "assistant"]
+    if sampling.max_prompt_turns is not None and len(turns) > sampling.max_prompt_turns:
+        turns = turns[-sampling.max_prompt_turns :]
+        while turns and turns[0].role == "assistant":
+            turns = turns[1:]
+    return turns
+
+
+def _render_chat_transcript(turns: list[ConversationTurn]) -> str:
+    rendered: list[str] = []
+    for turn in turns:
+        label = {"system": "System", "user": "User", "assistant": "Assistant"}[turn.role]
+        rendered.append(f"{label}: {turn.text}")
+    rendered.append("Assistant:")
+    return "\n".join(rendered)
+
+
+def _content_hash(session_id: str, turn_index: int, prompt: str, assistant: str) -> str:
+    payload = json.dumps(
+        {
+            "assistant": assistant,
+            "prompt": prompt,
+            "session_id": session_id,
+            "turn_index": turn_index,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _extract_hf_prompt_completion(
     row: dict[str, Any],
     dataset: DatasetConfig,
@@ -1147,6 +1465,64 @@ def _extract_hf_prompt_completion(
         f"hf row {row_index}.{conversation_field}",
     )
     return prompt, assistant
+
+
+def _extract_hf_entries(
+    row: dict[str, Any],
+    dataset: DatasetConfig,
+    *,
+    row_index: int,
+    tokenizer: PromptTokenizer,
+    sampling: SamplingConfig,
+    include_prompt_len: bool,
+    include_output_len: bool,
+) -> list[DatasetEntry]:
+    if dataset.prompt_field is not None:
+        prompt, completion = _extract_hf_prompt_completion(row, dataset, row_index=row_index)
+        if prompt is None or completion is None:
+            return []
+        return [
+            DatasetEntry(
+                prompt=prompt,
+                source_index=row_index,
+                prompt_len=len(tokenizer.encode(prompt)) if include_prompt_len else None,
+                expected_output_len=len(tokenizer.encode(completion)) if include_output_len else None,
+                metadata={
+                    "conversation_mode": "single_turn",
+                    "turn_selection": "first_valid",
+                    "sample_id": f"hf:{row_index}",
+                    "content_hash": _content_hash(f"hf:{row_index}", 0, prompt, completion),
+                },
+            )
+        ]
+
+    conversation_field = dataset.conversation_field
+    if conversation_field is None:
+        for candidate in ("conversations", "conversation", "messages"):
+            if candidate in row:
+                conversation_field = candidate
+                break
+    if conversation_field is None:
+        raise ValueError(
+            f"hf row {row_index} does not contain a conversation field; "
+            "set dataset.conversation_field or dataset.prompt_field"
+        )
+    conversations = row.get(conversation_field)
+    if not isinstance(conversations, list):
+        raise ValueError(f"hf row {row_index}.{conversation_field} must be a list")
+    turns = _normalize_conversation_turns(conversations, f"hf row {row_index}.{conversation_field}")
+    row_id = row.get("id", row.get("conversation_id", row.get("conversation_hash")))
+    session_id = f"hf:{row_id if isinstance(row_id, (str, int)) else row_index}"
+    return _conversation_entries(
+        turns,
+        source_index=row_index,
+        session_id=session_id,
+        base_metadata={"hf_row_id": row_id},
+        tokenizer=tokenizer,
+        sampling=sampling,
+        include_prompt_len=include_prompt_len,
+        include_output_len=include_output_len,
+    )
 
 
 def _find_hf_turn_text(
@@ -1213,6 +1589,7 @@ def _sample_dataset_entries(
         entries = _load_sharegpt_entries_from_source(
             Path(dataset.path),
             tokenizer,
+            sampling=config.sampling,
             include_prompt_len=config.sampling.prompt_len.mode == "from_dataset",
             include_output_len=config.sampling.output_len.mode == "from_dataset",
         )
@@ -1225,6 +1602,7 @@ def _sample_dataset_entries(
         entries = _load_hf_entries_from_source(
             dataset,
             tokenizer,
+            sampling=config.sampling,
             include_prompt_len=config.sampling.prompt_len.mode == "from_dataset",
             include_output_len=config.sampling.output_len.mode == "from_dataset",
             sample_size=config.sampling.num_requests,
@@ -1260,6 +1638,57 @@ def _resolve_output_len(spec: LengthSpec, entry: DatasetEntry, rng: random.Rando
     return spec.sample(rng)
 
 
+def _session_interleaved_entries(
+    entries: list[DatasetEntry],
+    *,
+    traffic: TrafficConfig,
+    seed: int,
+) -> list[DatasetEntry]:
+    groups: dict[str, list[DatasetEntry]] = {}
+    group_order: list[str] = []
+    for entry in entries:
+        key = entry.metadata.get("preserve_order_key")
+        if not isinstance(key, str) or not key:
+            raise ValueError("session_replay entries must include metadata.preserve_order_key")
+        if key not in groups:
+            groups[key] = []
+            group_order.append(key)
+        groups[key].append(entry)
+    for key, group in groups.items():
+        group.sort(key=_preserve_order_index)
+        indexes = [_preserve_order_index(entry) for entry in group]
+        if indexes != sorted(indexes):
+            raise ValueError(f"session {key!r} preserve_order_index values are not sortable")
+    if traffic.session_interleaving == "shuffled_sessions":
+        rng = random.Random(seed)
+        rng.shuffle(group_order)
+    elif traffic.session_interleaving != "round_robin":
+        raise ValueError(f"unsupported session_interleaving {traffic.session_interleaving!r}")
+
+    positions = {key: 0 for key in group_order}
+    ordered: list[DatasetEntry] = []
+    while len(ordered) < len(entries):
+        made_progress = False
+        for key in group_order:
+            position = positions[key]
+            group = groups[key]
+            if position >= len(group):
+                continue
+            ordered.append(group[position])
+            positions[key] = position + 1
+            made_progress = True
+        if not made_progress:
+            raise RuntimeError("session interleaving made no progress")
+    return ordered
+
+
+def _preserve_order_index(entry: DatasetEntry) -> int:
+    value = entry.metadata.get("preserve_order_index")
+    if not isinstance(value, int):
+        raise ValueError("session_replay entries must include integer metadata.preserve_order_index")
+    return value
+
+
 def generate_sample_requests(
     config: WorkloadConfig,
     *,
@@ -1273,12 +1702,25 @@ def generate_sample_requests(
         resolved_tokenizer,
         tokenizer_key=workload_tokenizer_key,
     )
+    if config.sampling.conversation_mode == "session_replay":
+        dataset_entries = _session_interleaved_entries(
+            dataset_entries,
+            traffic=config.traffic,
+            seed=config.sampling.seed,
+        )
     rng = random.Random(config.sampling.seed)
     samples: list[SampleRequest] = []
+    request_count = (
+        min(config.sampling.num_requests, len(dataset_entries))
+        if config.sampling.conversation_mode == "session_replay"
+        else config.sampling.num_requests
+    )
 
-    for request_index in range(config.sampling.num_requests):
+    for request_index in range(request_count):
         if config.dataset.type == "synthetic-fixed":
             entry = dataset_entries[0]
+        elif config.sampling.conversation_mode == "session_replay":
+            entry = dataset_entries[request_index]
         elif config.sampling.entry_selection == "sequential":
             entry = dataset_entries[request_index % len(dataset_entries)]
         elif config.dataset.type in {"hf", "longbench"}:
@@ -1319,6 +1761,11 @@ def generate_sample_requests(
                     "source_index": entry.source_index,
                     "seed": config.sampling.seed,
                     "sampling_entry_selection": config.sampling.entry_selection,
+                    "sampling_conversation_mode": config.sampling.conversation_mode,
+                    "sampling_turn_selection": config.sampling.effective_turn_selection,
+                    "traffic_session_interleaving": config.traffic.session_interleaving,
+                    "traffic_session_ordering": config.traffic.session_ordering,
+                    "traffic_per_session_think_time_s": config.traffic.per_session_think_time_s,
                     "sampling_prompt_len_mode": config.sampling.prompt_len.mode,
                     "sampling_output_len_mode": config.sampling.output_len.mode,
                     "sampling_output_len_is_cap": output_len_is_cap,
@@ -1393,6 +1840,7 @@ def inspect_workload_dataset(
         hf_sample = _load_hf_entry_sample_from_source(
             config.dataset,
             tokenizer,
+            sampling=config.sampling,
             include_prompt_len=True,
             include_output_len=True,
             sample_size=effective_sample_size,
@@ -1463,6 +1911,13 @@ def inspect_workload_dataset(
             "conversation_field": config.dataset.conversation_field,
             "prompt_field": config.dataset.prompt_field,
             "completion_field": config.dataset.completion_field,
+            "conversation_mode": config.sampling.conversation_mode,
+            "turn_selection": config.sampling.effective_turn_selection,
+            "include_assistant_history": config.sampling.include_assistant_history,
+            "min_prompt_turns": config.sampling.min_prompt_turns,
+            "max_prompt_turns": config.sampling.max_prompt_turns,
+            "session_ordering": config.traffic.session_ordering,
+            "session_interleaving": config.traffic.session_interleaving,
         },
         "model": model_name,
         "inspection_tokenizer": _normalized_tokenizer_spec(fallback_tokenizer_name),
@@ -1559,9 +2014,33 @@ def _summary_float(value: float | int | None) -> float | None:
     return float(value)
 
 
+def _conversation_sample_summary(samples: list[SampleRequest]) -> dict[str, Any]:
+    session_turns: dict[str, set[int]] = {}
+    ordered_indexes: dict[str, list[int]] = {}
+    for sample in samples:
+        metadata = sample.metadata or {}
+        session_id = metadata.get("session_id")
+        turn_index = metadata.get("turn_index")
+        if isinstance(session_id, str) and isinstance(turn_index, int):
+            session_turns.setdefault(session_id, set()).add(turn_index)
+        preserve_order_key = metadata.get("preserve_order_key")
+        preserve_order_index = metadata.get("preserve_order_index")
+        if isinstance(preserve_order_key, str) and isinstance(preserve_order_index, int):
+            ordered_indexes.setdefault(preserve_order_key, []).append(preserve_order_index)
+    turns_per_session = [len(indexes) for indexes in session_turns.values()]
+    order_preserved = all(indexes == sorted(indexes) for indexes in ordered_indexes.values())
+    return {
+        "sessions": len(session_turns),
+        "valid_target_turns": sum(turns_per_session),
+        "turns_per_session": _summarize_int_values(turns_per_session),
+        "session_order_preserved": order_preserved,
+    }
+
+
 def _build_workload_metadata(
     config: WorkloadConfig,
     *,
+    samples: list[SampleRequest] | None = None,
     sample_count: int,
     context_validation_report: ContextValidationReport | None,
     effective_context_policy: ContextPolicy | None = None,
@@ -1573,8 +2052,18 @@ def _build_workload_metadata(
             "source_path": str(config.source_path),
             "dataset_type": config.dataset.type,
             "num_requests": sample_count,
+            "conversation_mode": config.sampling.conversation_mode,
+            "turn_selection": config.sampling.effective_turn_selection,
+            "include_assistant_history": config.sampling.include_assistant_history,
+            "min_prompt_turns": config.sampling.min_prompt_turns,
+            "max_prompt_turns": config.sampling.max_prompt_turns,
+            "session_ordering": config.traffic.session_ordering,
+            "session_interleaving": config.traffic.session_interleaving,
+            "per_session_think_time_s": config.traffic.per_session_think_time_s,
         }
     }
+    if samples is not None and config.sampling.conversation_mode in {"multi_turn_prefix", "session_replay"}:
+        metadata["workload"]["conversation_summary"] = _conversation_sample_summary(samples)
     if config.context_policy is not None:
         policy = effective_context_policy or config.context_policy
         report = context_validation_report
@@ -1629,6 +2118,7 @@ def prepare_workload_for_trial(
             samples=samples,
             metadata=_build_workload_metadata(
                 config,
+                samples=samples,
                 sample_count=len(samples),
                 context_validation_report=None,
             ),
@@ -1678,6 +2168,7 @@ def prepare_workload_for_trial(
         samples=validation_result.samples,
         metadata=_build_workload_metadata(
             config,
+            samples=validation_result.samples,
             sample_count=len(validation_result.samples),
             context_validation_report=validation_result.report,
             effective_context_policy=effective_context_policy,

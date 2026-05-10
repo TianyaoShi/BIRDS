@@ -120,6 +120,32 @@ def test_request_source_factory_can_avoid_repeats_across_search() -> None:
         raise AssertionError("cross-search unique source should exhaust")
 
 
+def test_request_source_factory_preserves_session_replay_order_across_trials() -> None:
+    samples = [
+        SampleRequest(
+            prompt=f"{session}-{turn}",
+            prompt_len=5,
+            expected_output_len=3,
+            metadata={
+                "preserve_order_key": session,
+                "preserve_order_index": turn,
+                "sample_id": f"{session}:{turn}",
+            },
+        )
+        for session, turn in (("a", 1), ("b", 1), ("a", 3), ("b", 3))
+    ]
+    factory = request_source_factory_for_reuse_policy(
+        samples,
+        reuse_policy="no-repeat-across-search",
+    )
+
+    first_trial = factory()
+    second_trial = factory()
+
+    assert [first_trial().prompt for _ in range(2)] == ["a-1", "b-1"]
+    assert [second_trial().prompt for _ in range(2)] == ["a-3", "b-3"]
+
+
 def test_unique_then_cycle_exhausts_unique_content_before_reuse() -> None:
     samples = [
         SampleRequest(

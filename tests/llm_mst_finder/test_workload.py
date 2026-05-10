@@ -302,6 +302,127 @@ def test_sharegpt_skips_reversed_or_system_prefixed_rows(tmp_path: Path) -> None
     assert all(sample.prompt == "ordered prompt" for sample in samples)
 
 
+def test_sharegpt_session_replay_emits_all_valid_turns_in_session_order(tmp_path: Path) -> None:
+    dataset_path = tmp_path / "sharegpt_sessions.json"
+    dataset_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "session-a",
+                    "conversations": [
+                        {"from": "human", "value": "A user 1"},
+                        {"from": "gpt", "value": "A assistant 1"},
+                        {"from": "human", "value": "A user 2"},
+                        {"from": "gpt", "value": "A assistant 2"},
+                    ],
+                },
+                {
+                    "id": "session-b",
+                    "conversations": [
+                        {"from": "human", "value": "B user 1"},
+                        {"from": "gpt", "value": "B assistant 1"},
+                        {"from": "human", "value": "B user 2"},
+                        {"from": "gpt", "value": "B assistant 2"},
+                    ],
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    workload_path = tmp_path / "sharegpt_session_replay.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: sharegpt-session-replay",
+                "dataset:",
+                "  type: sharegpt",
+                f"  path: {dataset_path}",
+                "tokenizer: character",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 4",
+                "  conversation_mode: session_replay",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+                "traffic:",
+                "  session_interleaving: round_robin",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    samples = load_workload_samples_for_sampling_only(workload_path)
+
+    assert len(samples) == 4
+    assert [
+        (sample.metadata["preserve_order_key"], sample.metadata["preserve_order_index"])
+        for sample in samples
+    ] == [
+        ("session-a", 1),
+        ("session-b", 1),
+        ("session-a", 3),
+        ("session-b", 3),
+    ]
+    assert samples[0].prompt == "User: A user 1\nAssistant:"
+    assert samples[2].prompt == (
+        "User: A user 1\nAssistant: A assistant 1\nUser: A user 2\nAssistant:"
+    )
+    assert samples[2].expected_output_len == len("A assistant 2")
+    assert all(sample.metadata["conversation_mode"] == "session_replay" for sample in samples)
+    assert all(sample.metadata["sampling_conversation_mode"] == "session_replay" for sample in samples)
+
+
+def test_sharegpt_multi_turn_prefix_can_choose_random_valid_target(tmp_path: Path) -> None:
+    dataset_path = tmp_path / "sharegpt_multi_turn.json"
+    dataset_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "session-a",
+                    "conversations": [
+                        {"from": "human", "value": "A user 1"},
+                        {"from": "gpt", "value": "A assistant 1"},
+                        {"from": "human", "value": "A user 2"},
+                        {"from": "gpt", "value": "A assistant 2"},
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    workload_path = tmp_path / "sharegpt_multi_turn_prefix.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: sharegpt-multi-turn-prefix",
+                "dataset:",
+                "  type: sharegpt",
+                f"  path: {dataset_path}",
+                "tokenizer: character",
+                "sampling:",
+                "  seed: 11",
+                "  num_requests: 1",
+                "  conversation_mode: multi_turn_prefix",
+                "  turn_selection: random_valid",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    sample = load_workload_samples_for_sampling_only(workload_path)[0]
+
+    assert sample.metadata["conversation_mode"] == "multi_turn_prefix"
+    assert sample.metadata["turn_selection"] == "random_valid"
+    assert sample.prompt.startswith("User: A user")
+    assert sample.prompt.endswith("Assistant:")
+
+
 def test_hf_dataset_uses_conversation_rows(monkeypatch, tmp_path: Path) -> None:
     rows = [
         {
@@ -362,6 +483,72 @@ def test_hf_dataset_uses_conversation_rows(monkeypatch, tmp_path: Path) -> None:
     assert all(sample.metadata["dataset_type"] == "hf" for sample in samples)
     assert all(sample.metadata["hf_dataset_path"] == "allenai/WildChat" for sample in samples)
     assert all(sample.expected_output_len > 0 for sample in samples)
+
+
+def test_hf_session_replay_uses_all_valid_wildchat_turns(monkeypatch, tmp_path: Path) -> None:
+    rows = [
+        {
+            "conversation_hash": "wild-1",
+            "conversation": [
+                {"role": "user", "content": "first question"},
+                {"role": "assistant", "content": "first answer"},
+                {"role": "user", "content": "follow up"},
+                {"role": "assistant", "content": "second answer"},
+            ],
+        }
+    ]
+
+    def load_dataset(path, *, name, split, streaming):
+        assert path == "allenai/WildChat"
+        assert name is None
+        assert split == "train"
+        assert streaming is True
+        return rows
+
+    monkeypatch.setitem(sys.modules, "datasets", types.SimpleNamespace(load_dataset=load_dataset))
+    monkeypatch.setattr("llm_mst_finder.workload._manifest_cache_root", lambda: tmp_path / "cache")
+    workload_path = tmp_path / "hf_wildchat_session_replay.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: hf-wildchat-session-replay",
+                "dataset:",
+                "  type: hf",
+                "  path: allenai/WildChat",
+                "  split: train",
+                "  conversation_field: conversation",
+                "tokenizer: character",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 2",
+                "  conversation_mode: session_replay",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+                "context_policy:",
+                "  max_model_len: 4096",
+                "  tokenizer_source: workload_tokenizer",
+                "  unsafe_allow_workload_tokenizer_for_real_datasets: true",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    prepared = prepare_workload_for_trial(workload_path, model_name="fake-model")
+    samples = prepared.samples
+
+    assert [sample.metadata["turn_index"] for sample in samples] == [1, 3]
+    assert samples[0].prompt == "User: first question\nAssistant:"
+    assert samples[1].prompt == (
+        "User: first question\nAssistant: first answer\nUser: follow up\nAssistant:"
+    )
+    assert samples[1].expected_output_len == len("second answer")
+    assert all(sample.metadata["preserve_order_key"] == "hf:wild-1" for sample in samples)
+    conversation_summary = prepared.metadata["workload"]["conversation_summary"]
+    assert conversation_summary["sessions"] == 1
+    assert conversation_summary["valid_target_turns"] == 2
+    assert conversation_summary["session_order_preserved"] is True
 
 
 def test_hf_dataset_uses_reservoir_uniform_sample_not_first_rows(

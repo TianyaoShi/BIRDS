@@ -30,6 +30,10 @@ def request_reuse_key(sample: SampleRequest) -> str:
         value = metadata.get(field_name)
         if isinstance(value, str) and value:
             return f"{field_name}:{value}"
+    preserve_order_key = metadata.get("preserve_order_key")
+    preserve_order_index = metadata.get("preserve_order_index")
+    if isinstance(preserve_order_key, str) and isinstance(preserve_order_index, int):
+        return f"preserve_order:{preserve_order_key}:{preserve_order_index}"
     source_index = metadata.get("source_index")
     if isinstance(source_index, int):
         return f"source_index:{source_index}"
@@ -137,10 +141,11 @@ def request_source_factory_for_reuse_policy(
     trial_counter = itertools.count()
     start_offset_stride = _start_offset_stride(len(requests))
     shared_used_keys: set[str] = set()
+    preserve_session_order = _requires_preserved_session_order(requests)
 
     def make_request_source() -> RequestSource:
         trial_index = next(trial_counter)
-        start_offset = trial_index * start_offset_stride
+        start_offset = 0 if preserve_session_order else trial_index * start_offset_stride
         if reuse_policy == "cycle":
             return cycling_request_source(requests, start_offset=start_offset)
         if reuse_policy == "no-repeat-per-trial":
@@ -152,6 +157,13 @@ def request_source_factory_for_reuse_policy(
         )
 
     return make_request_source
+
+
+def _requires_preserved_session_order(requests: Sequence[SampleRequest]) -> bool:
+    return any(
+        isinstance((sample.metadata or {}).get("preserve_order_key"), str)
+        for sample in requests
+    )
 
 
 def _start_offset_stride(request_count: int) -> int:
