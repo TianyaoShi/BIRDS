@@ -1,0 +1,98 @@
+run:
+  run_id: single-gpu-model-loop-run-longbench-openloop-e2b-followup-000
+  output_root: ../results/orchestrator
+  allowed_gpu_ids: [0, 1, 2]
+  max_active_gpus: 3
+  keep_one_gpu_spare: false
+  default_endpoint: /v1/completions
+  base_port_start: 8300
+  base_port_end: 8399
+  metrics_port_offset: 1000
+  python_executable: /local/scratch/a/shi676/.venv/bin/python
+
+hardware:
+  name: l40-48gb
+  gpu_memory_gb: 48
+  gpu_memory_utilization: 0.90
+
+probe:
+  enabled: true
+  auto_gpu_count: false
+  default_context_tokens: 4096
+  activation_memory_gb: 2.0
+  memory_safety_factor: 1.20
+  kv_cache_request_count: 1
+
+launch:
+  executable: vllm
+  tensor_parallel_size: 1
+  gpu_count: 1
+  dtype: float16
+  gpu_memory_utilization: 0.90
+  max_model_len: 32768
+
+search:
+  search_mode: hybrid
+  trial_min_duration_s: 600
+  trial_max_duration_s: 900
+  final_confirmation_duration_s: 1200
+  rate_precision: 0.03
+  initial_request_rate: 0.25
+  max_request_rate: 4
+  max_binary_steps: 12
+  max_bracket_trials: 20
+  open_loop_bracket_growth_factor: 1.5
+  metrics_interval_s: 1.0
+  window_s: 50.0
+  ttft_slo_ms: 15000
+  tpot_slo_ms: 150
+  ttft_slo_field: ttft_p90_ms
+  tpot_slo_field: tpot_p90_ms
+  ttft_slo_mode: length_scaled
+  request_reuse_policy: unique-then-cycle
+  closed_loop_min_trials: 3
+  max_closed_loop_concurrency: 16
+  closed_loop_plateau_relative_gain: 0.05
+  max_num_seqs: 256
+  max_num_batched_tokens: 2048
+
+experiments:
+  # Only unresolved in run -002. Keep hybrid and rerun the same envelope; the
+  # previous result was boundary flapping around ~0.52 req/s.
+  - id: gemma-4-e4b-medium-output-summarization-followup-openloop-e2b-run
+    model: google/gemma-4-E4B-it
+    workload: ./workloads/longbench_medium_output_summarization.yaml
+    search:
+      initial_request_rate: 0.25
+      max_request_rate: 0.75
+
+  # Gemma E2B reached high cycle-mode rates that heavily reused content hashes.
+  # Skip closed-loop seeding and probe around the unique-then-cycle content budget:
+  # medium-answer has ~200 unique content hashes over a 900s trial (~0.22 rps).
+  - id: gemma-4-e2b-medium-answer-rag-qa-openloop-conservative
+    model: google/gemma-4-E2B-it
+    workload: ./workloads/longbench_medium_answer_rag_qa.yaml
+    launch:
+      max_num_seqs: 1024
+      max_num_batched_tokens: 8192
+    search:
+      search_mode: open-loop
+      initial_request_rate: 0.10
+      max_request_rate: 1
+      max_num_seqs: 1024
+      max_num_batched_tokens: 8192
+
+  # short-answer has ~722 unique content hashes over a 900s trial (~0.80 rps),
+  # but the 1500s confirmation window is closer to ~0.48 rps.
+  - id: gemma-4-e2b-short-answer-document-qa-openloop-conservative
+    model: google/gemma-4-E2B-it
+    workload: ./workloads/longbench_short_answer_document_qa.yaml
+    launch:
+      max_num_seqs: 1024
+      max_num_batched_tokens: 8192
+    search:
+      search_mode: open-loop
+      initial_request_rate: 0.30
+      max_request_rate: 3.00
+      max_num_seqs: 1024
+      max_num_batched_tokens: 8192

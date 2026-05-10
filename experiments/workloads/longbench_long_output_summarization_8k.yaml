@@ -1,0 +1,23 @@
+name: longbench_long_output_summarization_8k
+dataset:
+  type: jsonl
+  path: ../longbench_workloads/materialization/longbench_long_output_summarization_expanded_qwen3_8b/shards/shard_000.runner.jsonl
+tokenizer: Qwen/Qwen3-8B
+sampling:
+  seed: 42
+  num_requests: 4549
+  entry_selection: sequential
+  prompt_len:
+    mode: from_dataset
+  output_len:
+    mode: from_dataset
+request:
+  stream: true
+  temperature: 0.0
+  ignore_eos: false
+context_policy:
+  max_model_len: 8192
+  tokenizer_source: vllm_model_config
+  unsafe_allow_workload_tokenizer_for_real_datasets: true
+  over_limit: truncate_prompt
+  truncation_side: left
