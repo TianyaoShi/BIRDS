@@ -306,7 +306,7 @@ runner JSONL and workload YAML output format:
 | `medium_output_summarization` | `multi_news_original` | `alexfabbri/multi_news` |
 | `medium_output_summarization` | `qmsum_original` | `mattercalm/qmsum` |
 | `medium_output_summarization` | `meetingbank` | `huuuyeah/meetingbank` |
-| `medium_answer_rag_qa` | `dureader_full` | `PaddlePaddle/dureader_robust` |
+| `medium_answer_rag_qa` | `dureader_full` | `baidu/DuReader` |
 | `short_answer_document_qa` | `qasper_full` | `allenai/qasper` |
 
 The downloader writes the HF rows into the local JSONL layout expected by the
@@ -318,6 +318,16 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
   -m dataset_workload_materializer.download_longbench_expansion_sources \
   --output-dir data/raw/longbench_expansion
 ```
+
+The `medium_answer_rag_qa` expansion deliberately targets Baidu DuReader 2.0
+preprocessed rows from `baidu/DuReader`, not `PaddlePaddle/dureader_robust`.
+The adapter requires a non-empty `documents` list and rejects paragraph-only
+`context` rows. The active expanded config also sets
+`filtering.min_prompt_chars: 4096` and `filtering.min_prompt_tokens: 4096` to
+screen out short DuReader rows that would otherwise collapse this bucket back
+into a short-context QA workload. The character floor is an intentional cheap
+prefilter before exact tokenizer counting; rows that pass it still must satisfy
+the token floor.
 
 Expansion materialization configs live alongside the original bucket configs as
 `experiments/longbench_workloads/materialization/*_expanded_qwen3_8b.yaml`.

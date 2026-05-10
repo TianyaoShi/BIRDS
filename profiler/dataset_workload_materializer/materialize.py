@@ -65,9 +65,17 @@ def prepare(config: dict[str, Any], *, config_source: Path | None = None) -> dic
     tokenizer = resolve_tokenizer(tokenizer_name)
 
     filtering_payload = optional_mapping(config.get("filtering"), "filtering")
+    min_prompt_chars = filtering_payload.get("min_prompt_chars")
+    if min_prompt_chars is not None:
+        min_prompt_chars = positive_int(min_prompt_chars, "filtering.min_prompt_chars")
+    max_prompt_chars = filtering_payload.get("max_prompt_chars")
+    if max_prompt_chars is not None:
+        max_prompt_chars = positive_int(max_prompt_chars, "filtering.max_prompt_chars")
     filtering = FilteringConfig(
         min_prompt_tokens=int_setting(filtering_payload, "min_prompt_tokens", 128),
         max_prompt_tokens=int_setting(filtering_payload, "max_prompt_tokens", 8192),
+        min_prompt_chars=min_prompt_chars,
+        max_prompt_chars=max_prompt_chars,
         min_target_tokens=int_setting(filtering_payload, "min_target_tokens", 1),
         max_target_tokens=int_setting(filtering_payload, "max_target_tokens", 128),
         language_filter=language_filter(filtering_payload.get("languages", {})),

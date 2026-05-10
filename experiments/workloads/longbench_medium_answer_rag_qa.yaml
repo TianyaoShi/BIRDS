@@ -5,7 +5,7 @@ dataset:
 tokenizer: Qwen/Qwen3-8B
 sampling:
   seed: 42
-  num_requests: 4296
+  num_requests: 1024
   entry_selection: sequential
   prompt_len:
     mode: from_dataset

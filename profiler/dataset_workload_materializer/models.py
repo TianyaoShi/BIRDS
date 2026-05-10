@@ -35,6 +35,8 @@ class LongBenchProfileSpec:
 class FilteringConfig:
     min_prompt_tokens: int
     max_prompt_tokens: int
+    min_prompt_chars: int | None
+    max_prompt_chars: int | None
     min_target_tokens: int
     max_target_tokens: int
     language_filter: dict[str, set[str]]

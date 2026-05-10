@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import zipfile
 from collections import Counter
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +83,7 @@ LONGBENCH_EXTERNAL_HF_DATASETS: dict[str, str] = {
     "multi_news_original": "alexfabbri/multi_news",
     "qmsum_original": "mattercalm/qmsum",
     "meetingbank": "huuuyeah/meetingbank",
-    "dureader_full": "PaddlePaddle/dureader_robust",
+    "dureader_full": "baidu/DuReader",
     "qasper_full": "allenai/qasper",
 }
 
@@ -283,7 +284,12 @@ def load_longbench_external_samples(
         external_name = str(source_config["name"])
         source_samples: list[MaterializedSample] = []
         group_counts: Counter[str] = Counter()
-        for row_index, row, source in iter_external_rows(Path(source_config["raw_path"])):
+        rows = iter_external_rows(Path(source_config["raw_path"]))
+        for row_index, row, source in progress_iter(
+            rows,
+            total=len(rows),
+            desc=f"materialize {external_name}",
+        ):
             counters.total_rows += 1
             row_samples = external_longbench_row_to_samples(
                 row,
@@ -343,7 +349,13 @@ def iter_external_rows_from_file(path: Path) -> list[tuple[int, dict[str, Any], 
     if path.suffix == ".jsonl":
         rows: list[tuple[int, dict[str, Any], str]] = []
         with path.open("r", encoding="utf-8") as handle:
-            for row_index, raw_line in enumerate(handle):
+            line_iter = enumerate(handle)
+            for row_index, raw_line in progress_iter(
+                line_iter,
+                total=None,
+                desc=f"read {path.name}",
+                enable=path.stat().st_size >= 10 * 1024 * 1024,
+            ):
                 stripped = raw_line.strip()
                 if not stripped:
                     continue
@@ -445,6 +457,8 @@ def longbench_row_to_sample(
         counters.drops["missing_empty_task_input"] += 1
         return None
     prompt = render_longbench_prompt(row, task_input=task_input)
+    if prompt_fails_char_filter(prompt, filtering=filtering, counters=counters):
+        return None
     prompt_token_count = len(tokenizer.encode(prompt))
     target_token_count = len(tokenizer.encode(target))
     if prompt_token_count < filtering.min_prompt_tokens:
@@ -529,6 +543,8 @@ def external_longbench_row_to_samples(
     for normalized_index, normalized in enumerate(normalized_rows):
         prompt = expect_string(normalized.get("prompt"), f"{source}.prompt")
         target = optional_string(normalized.get("target"), f"{source}.target") or " "
+        if prompt_fails_char_filter(prompt, filtering=filtering, counters=counters):
+            continue
         prompt_token_count = len(tokenizer.encode(prompt))
         target_token_count = len(tokenizer.encode(target))
         if prompt_token_count < filtering.min_prompt_tokens:
@@ -590,6 +606,17 @@ def external_longbench_row_to_samples(
             )
         )
     return samples
+
+
+def prompt_fails_char_filter(prompt: str, *, filtering, counters) -> bool:
+    prompt_chars = len(prompt)
+    if filtering.min_prompt_chars is not None and prompt_chars < filtering.min_prompt_chars:
+        counters.drops["prompt_char_too_short"] += 1
+        return True
+    if filtering.max_prompt_chars is not None and prompt_chars > filtering.max_prompt_chars:
+        counters.drops["prompt_char_too_long"] += 1
+        return True
+    return False
 
 
 def normalize_external_longbench_row(
@@ -660,16 +687,21 @@ def normalize_external_longbench_row(
         return [record] if record is not None else []
     if external_name == "dureader_full":
         question = first_external_text(row, ("question", "query", "input"))
-        documents = first_external_text(row, ("documents", "document", "context", "contexts", "paragraphs"))
+        raw_documents = row.get("documents")
+        if not isinstance(raw_documents, list) or not raw_documents:
+            raise ValueError(
+                "dureader_full rows must come from Baidu DuReader 2.0 and include a non-empty documents list; "
+                "single-context paragraph QA sources such as DuReader Robust are not accepted"
+            )
+        documents = text_value(raw_documents)
         if question is None or documents is None:
-            raise ValueError("dureader_full rows require question/query and documents/context")
+            raise ValueError("dureader_full rows require question/query and non-empty documents")
         target = external_reference_answer(row.get("answers")) or first_external_text(
             row,
             ("answer", "response", "target", "output"),
         )
-        record_id = first_external_scalar(row, ("id", "question_id", "qid"))
-        group_seed = first_external_text(row, ("documents", "document", "context", "contexts", "paragraphs")) or question
-        group_id = first_external_scalar(row, ("document_id", "doc_id", "question_id", "qid", "id")) or hash_text(group_seed)
+        record_id = first_external_scalar(row, ("question_id", "id", "qid"))
+        group_id = first_external_scalar(row, ("document_id", "doc_id")) or hash_text(documents)
         return [
             {
                 "prompt": EXTERNAL_RAG_QA_PROMPT.format(question=question, documents=documents),
@@ -1017,6 +1049,22 @@ def list_value(value: Any, index: int) -> Any:
     if isinstance(value, list) and 0 <= index < len(value):
         return value[index]
     return None
+
+
+def progress_iter(
+    iterable: Iterable[Any],
+    *,
+    total: int | None,
+    desc: str,
+    enable: bool | None = None,
+) -> Iterable[Any]:
+    if enable is None:
+        enable = total is not None and total >= 10_000
+    if not enable:
+        return iterable
+    from tqdm import tqdm
+
+    return tqdm(iterable, total=total, desc=desc, unit="rows", mininterval=5)
 
 
 def longbench_selection(dataset: dict[str, Any]) -> tuple[str, LongBenchProfileSpec, list[str]]:

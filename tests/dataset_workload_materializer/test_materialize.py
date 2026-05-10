@@ -350,6 +350,128 @@ def test_longbench_external_qasper_jsonl_materializes_and_reports_group_reuse(tm
     assert "Answer the question based on the document." in external_rows[0]["prompt"]
 
 
+def test_longbench_dureader_external_rejects_paragraph_context_source(tmp_path: Path) -> None:
+    raw_path = _write_longbench_zip(
+        tmp_path,
+        {
+            "dureader": [_longbench_row("dureader-0", "dureader", "zh", suffix="base")],
+        },
+    )
+    external_path = tmp_path / "dureader_full.jsonl"
+    external_path.write_text(
+        json.dumps(
+            {
+                "id": "robust-style-0",
+                "question": "short paragraph source?",
+                "context": "This is the DuReader Robust style, not Baidu DuReader 2.0 documents.",
+                "answers": ["no"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    config_path = _write_longbench_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_dir=tmp_path / "out",
+        profile="medium_answer_rag_qa",
+        configs=["dureader"],
+        samples_per_task=1,
+        external_datasets=[
+            {
+                "name": "dureader_full",
+                "raw_path": str(external_path),
+                "split": "all_available",
+                "hf_dataset": "PaddlePaddle/dureader_robust",
+            }
+        ],
+        external_samples_per_dataset=1,
+        max_external_group_reuse=1,
+    )
+
+    with pytest.raises(ValueError, match="Baidu DuReader 2.0"):
+        materialize_from_config(config_path)
+
+
+def test_longbench_dureader_external_screens_short_baidu_documents(tmp_path: Path) -> None:
+    long_context = " ".join(["long-context-token"] * 20)
+    raw_path = _write_longbench_zip(
+        tmp_path,
+        {
+            "dureader": [
+                {
+                    "_id": "dureader-0",
+                    "dataset": "dureader",
+                    "input": "Answer from the long document.",
+                    "context": long_context,
+                    "answers": ["long answer"],
+                    "language": "zh",
+                    "all_classes": [],
+                }
+            ],
+        },
+    )
+    external_path = tmp_path / "dureader_full.jsonl"
+    external_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "question_id": "baidu-short-0",
+                        "question": "short source?",
+                        "documents": [{"title": "short", "paragraphs": ["too short"]}],
+                        "answers": ["short answer"],
+                        "source_dataset": "baidu_dureader_2_0",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "question_id": "baidu-long-0",
+                        "question": "long source?",
+                        "documents": [
+                            {
+                                "title": "long",
+                                "paragraphs": [" ".join(["baidu-document-token"] * 20)],
+                            }
+                        ],
+                        "answers": ["long external answer"],
+                        "source_dataset": "baidu_dureader_2_0",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    config_path = _write_longbench_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_dir=tmp_path / "out",
+        profile="medium_answer_rag_qa",
+        configs=["dureader"],
+        samples_per_task=1,
+        external_datasets=[
+            {
+                "name": "dureader_full",
+                "raw_path": str(external_path),
+                "split": "all_available",
+                "hf_dataset": "baidu/DuReader",
+            }
+        ],
+        external_samples_per_dataset=1,
+        max_external_group_reuse=1,
+        min_prompt_tokens=4,
+        min_prompt_chars=150,
+    )
+
+    result = materialize_from_config(config_path)
+
+    assert result["num_samples"] == 2
+    report = json.loads((tmp_path / "out" / "materialization_report.json").read_text(encoding="utf-8"))
+    assert report["selected_tasks"] == ["dureader", "dureader_full"]
+    assert report["rows"]["drops"]["prompt_char_too_short"] == 1
+
+
 def test_longbench_summarization_with_empty_input_synthesizes_task_instruction(tmp_path: Path) -> None:
     raw_path = _write_longbench_zip(
         tmp_path,
@@ -685,6 +807,8 @@ def _write_longbench_config(
     max_external_group_reuse: int | None = None,
     repeat_policy: str | None = None,
     target_samples: int | None = None,
+    min_prompt_tokens: int = 4,
+    min_prompt_chars: int | None = None,
     config_name: str = "longbench_materialize.yaml",
 ) -> Path:
     config = {
@@ -698,7 +822,7 @@ def _write_longbench_config(
         },
         "tokenization": {"tokenizer": "character"},
         "filtering": {
-            "min_prompt_tokens": 4,
+            "min_prompt_tokens": min_prompt_tokens,
             "max_prompt_tokens": 512,
             "min_target_tokens": 1,
             "max_target_tokens": 64,
@@ -720,6 +844,8 @@ def _write_longbench_config(
             }
         },
     }
+    if min_prompt_chars is not None:
+        config["filtering"]["min_prompt_chars"] = min_prompt_chars
     if repeat_policy is not None:
         config["sampling"]["repeat_policy"] = repeat_policy
     if target_samples is not None:

@@ -30,8 +30,8 @@ SOURCES: dict[str, dict[str, Any]] = {
         "files": ("train.json", "validation.json", "test.json"),
     },
     "dureader_full": {
-        "repo_id": "PaddlePaddle/dureader_robust",
-        "kind": "dureader",
+        "repo_id": "baidu/DuReader",
+        "kind": "baidu_dureader2",
     },
     "qasper_full": {
         "repo_id": "allenai/qasper",
@@ -39,7 +39,8 @@ SOURCES: dict[str, dict[str, Any]] = {
     },
 }
 
-DUREADER_URL = "https://bj.bcebos.com/paddlenlp/datasets/dureader_robust-data.tar.gz"
+DUREADER2_RAW_URL = "https://dataset-bj.cdn.bcebos.com/dureader/dureader_raw.zip"
+DUREADER2_PREPROCESSED_URL = "https://dataset-bj.cdn.bcebos.com/dureader/dureader_preprocessed.zip"
 QASPER_TRAIN_DEV_URL = "https://qasper-dataset.s3.us-west-2.amazonaws.com/qasper-train-dev-v0.3.tgz"
 QASPER_TEST_URL = "https://qasper-dataset.s3.us-west-2.amazonaws.com/qasper-test-and-evaluator-v0.3.tgz"
 
@@ -83,8 +84,8 @@ def download_source(name: str, source: dict[str, Any], *, output_dir: Path) -> d
         row_count, split_counts = download_multi_news_hf(output_path)
     elif kind == "hf_files":
         row_count, split_counts = download_hf_files(output_path, repo_id=str(source["repo_id"]), files=source["files"])
-    elif kind == "dureader":
-        row_count, split_counts = download_dureader(output_path)
+    elif kind == "baidu_dureader2":
+        row_count, split_counts = download_baidu_dureader2(output_path)
     elif kind == "qasper":
         row_count, split_counts = download_qasper(output_path)
     else:
@@ -217,41 +218,69 @@ def download_multi_news_hf(output_path: Path) -> tuple[int, dict[str, int]]:
     return write_jsonl(output_path, rows), split_counts
 
 
-def download_dureader(output_path: Path) -> tuple[int, dict[str, int]]:
+def download_baidu_dureader2(output_path: Path) -> tuple[int, dict[str, int]]:
+    archive_dir = output_path.parent / "baidu_dureader_2_0"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    raw_archive_path = archive_dir / "dureader_raw.zip"
+    preprocessed_archive_path = archive_dir / "dureader_preprocessed.zip"
+    download_url(DUREADER2_RAW_URL, raw_archive_path)
+    download_url(DUREADER2_PREPROCESSED_URL, preprocessed_archive_path)
+
     with tempfile.TemporaryDirectory() as temp_dir_name:
-        temp_dir = Path(temp_dir_name)
-        archive_path = temp_dir / "dureader_robust-data.tar.gz"
-        download_url(DUREADER_URL, archive_path)
-        extract_dir = temp_dir / "extract"
-        extract_archive(archive_path, extract_dir)
-        root = extract_dir / "dureader_robust-data"
+        extract_dir = Path(temp_dir_name) / "preprocessed"
+        extract_archive(preprocessed_archive_path, extract_dir)
         rows: list[dict[str, Any]] = []
         split_counts: dict[str, int] = {}
-        for split_name, file_name in (("train", "train.json"), ("validation", "dev.json"), ("test", "test.json")):
-            payload = json.loads((root / file_name).read_text(encoding="utf-8"))
+        for split_name, pattern in (
+            ("train", "trainset/*.json"),
+            ("validation", "devset/*.json"),
+            ("test", "testset/*.json"),
+        ):
+            files = sorted((extract_dir / "preprocessed").glob(pattern))
+            if not files:
+                files = sorted(extract_dir.glob(f"**/{pattern}"))
+            if not files:
+                raise FileNotFoundError(f"DuReader 2.0 preprocessed split files missing: {pattern}")
             before = len(rows)
-            for article in payload["data"]:
-                title = article.get("title", "")
-                for paragraph in article["paragraphs"]:
-                    context = paragraph["context"]
-                    for qa in paragraph["qas"]:
-                        rows.append(
-                            {
-                                "title": title,
-                                "context": context,
-                                "question": qa["question"],
-                                "id": qa["id"],
-                                "answers": {
-                                    "answer_start": [
-                                        answer["answer_start"] for answer in qa.get("answers", [])
-                                    ],
-                                    "text": [answer["text"] for answer in qa.get("answers", [])],
-                                },
-                                "_hf_split": split_name,
-                            }
-                        )
+            for file_path in files:
+                source_name = file_path.stem
+                for row in load_jsonl(file_path):
+                    normalized = normalize_baidu_dureader2_row(
+                        row,
+                        split_name=split_name,
+                        source_name=source_name,
+                    )
+                    if normalized is not None:
+                        rows.append(normalized)
             split_counts[split_name] = len(rows) - before
         return write_jsonl(output_path, rows), split_counts
+
+
+def normalize_baidu_dureader2_row(
+    row: dict[str, Any],
+    *,
+    split_name: str,
+    source_name: str,
+) -> dict[str, Any] | None:
+    documents = row.get("documents")
+    if not isinstance(documents, list) or not documents:
+        return None
+    question = row.get("question")
+    if not isinstance(question, str) or not question:
+        return None
+    answers = row.get("answers")
+    question_id = row.get("question_id") or row.get("id")
+    return {
+        "question_id": str(question_id) if question_id not in (None, "") else None,
+        "question": question,
+        "answers": answers if answers is not None else [],
+        "documents": documents,
+        "question_type": row.get("question_type"),
+        "fact_or_opinion": row.get("fact_or_opinion"),
+        "source": source_name,
+        "_hf_split": split_name,
+        "source_dataset": "baidu_dureader_2_0",
+    }
 
 
 def download_qasper(output_path: Path) -> tuple[int, dict[str, int]]:
@@ -323,6 +352,8 @@ def expect_row(row: Any, source: str) -> dict[str, Any]:
 def download_url(url: str, output_path: Path) -> None:
     import requests
 
+    if output_path.is_file() and output_path.stat().st_size > 0:
+        return
     with requests.get(url, stream=True, timeout=120) as response:
         response.raise_for_status()
         with output_path.open("wb") as handle:
