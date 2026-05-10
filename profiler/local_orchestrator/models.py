@@ -301,6 +301,7 @@ class SearchConfig:
             "cycle",
             "no-repeat-per-trial",
             "no-repeat-across-search",
+            "unique-then-cycle",
         }:
             raise ValueError(f"unsupported request_reuse_policy {self.request_reuse_policy!r}")
         if self.max_num_seqs is not None:

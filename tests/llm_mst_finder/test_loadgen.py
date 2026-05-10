@@ -120,6 +120,27 @@ def test_request_source_factory_can_avoid_repeats_across_search() -> None:
         raise AssertionError("cross-search unique source should exhaust")
 
 
+def test_unique_then_cycle_exhausts_unique_content_before_reuse() -> None:
+    samples = [
+        SampleRequest(
+            prompt=f"prompt-{index}",
+            prompt_len=5,
+            expected_output_len=3,
+            metadata={"content_hash": content_hash},
+        )
+        for index, content_hash in enumerate(("a", "b", "a", "c"))
+    ]
+    factory = request_source_factory_for_reuse_policy(
+        samples,
+        reuse_policy="unique-then-cycle",
+    )
+
+    first_trial = factory()
+    second_trial = factory()
+    assert [first_trial().prompt for _ in range(2)] == ["prompt-0", "prompt-1"]
+    assert [second_trial().prompt for _ in range(3)] == ["prompt-3", "prompt-0", "prompt-1"]
+
+
 def test_cycling_factory_rotates_trial_start_offset() -> None:
     samples = [
         SampleRequest(prompt=f"prompt-{index}", prompt_len=5, expected_output_len=3)

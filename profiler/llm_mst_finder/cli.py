@@ -81,7 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_trial.add_argument("--safety-max-outstanding", type=int, default=None)
     run_trial.add_argument(
         "--request-reuse-policy",
-        choices=("cycle", "no-repeat-per-trial"),
+        choices=("cycle", "no-repeat-per-trial", "unique-then-cycle"),
         default="cycle",
         help="request reuse policy for this single trial",
     )
@@ -145,7 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--safety-max-outstanding", type=int, default=None)
     search.add_argument(
         "--request-reuse-policy",
-        choices=("cycle", "no-repeat-per-trial", "no-repeat-across-search"),
+        choices=("cycle", "no-repeat-per-trial", "no-repeat-across-search", "unique-then-cycle"),
         default="no-repeat-across-search",
         help="request reuse policy across search trials",
     )

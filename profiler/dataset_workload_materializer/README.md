@@ -289,11 +289,11 @@ and dataset-specific behavior remains in materialization.
 
 At search time, `llm_mst_finder` now defaults to no repeated request content
 across a search run. LongBench bucket manifests explicitly opt into
-`request_reuse_policy: cycle` because the buckets are small and expanded. The
-load generator rotates the trial start offset, but repeated content is still
-allowed for these manifests; this is a cache-aware production-style choice and
-should be paired with conservative closed-loop concurrency and request-rate
-ceilings.
+`request_reuse_policy: unique-then-cycle` because the buckets are small and
+expanded. The load generator sends every unique `content_hash` once across
+consecutive trials before cycling through unique-key representatives; the
+post-exhaustion portion is cache-aware and should be paired with conservative
+closed-loop concurrency and request-rate ceilings.
 
 For current LongBench buckets, 1k-2k expanded samples are enough because each
 request carries long input and normally takes several seconds. The tracked

@@ -12,7 +12,12 @@ from .records import RequestRecord, SampleRequest, ScheduledRequest
 
 RequestSource = Callable[[], SampleRequest]
 DispatchCallable = Callable[[ScheduledRequest], Awaitable[RequestRecord]]
-RequestReusePolicy = Literal["cycle", "no-repeat-per-trial", "no-repeat-across-search"]
+RequestReusePolicy = Literal[
+    "cycle",
+    "no-repeat-per-trial",
+    "no-repeat-across-search",
+    "unique-then-cycle",
+]
 
 
 class RequestSourceExhausted(RuntimeError):
@@ -77,6 +82,41 @@ def unique_request_source(
     return next_unique_request
 
 
+def unique_then_cycling_request_source_factory(
+    requests: Sequence[SampleRequest],
+) -> Callable[[], RequestSource]:
+    if not requests:
+        raise ValueError("requests must be non-empty")
+    unique_requests: list[SampleRequest] = []
+    seen_keys: set[str] = set()
+    for sample in requests:
+        key = request_reuse_key(sample)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        unique_requests.append(sample)
+    if not unique_requests:
+        raise ValueError("requests must contain at least one reusable request")
+
+    unique_index = 0
+    cycle_index = 0
+
+    def make_request_source() -> RequestSource:
+        def next_request() -> SampleRequest:
+            nonlocal unique_index, cycle_index
+            if unique_index < len(unique_requests):
+                sample = unique_requests[unique_index]
+                unique_index += 1
+                return sample
+            sample = unique_requests[cycle_index % len(unique_requests)]
+            cycle_index += 1
+            return sample
+
+        return next_request
+
+    return make_request_source
+
+
 def request_source_factory_for_reuse_policy(
     requests: Sequence[SampleRequest],
     *,
@@ -84,8 +124,15 @@ def request_source_factory_for_reuse_policy(
 ) -> Callable[[], RequestSource]:
     if not requests:
         raise ValueError("requests must be non-empty")
-    if reuse_policy not in {"cycle", "no-repeat-per-trial", "no-repeat-across-search"}:
+    if reuse_policy not in {
+        "cycle",
+        "no-repeat-per-trial",
+        "no-repeat-across-search",
+        "unique-then-cycle",
+    }:
         raise ValueError(f"unsupported request reuse policy {reuse_policy!r}")
+    if reuse_policy == "unique-then-cycle":
+        return unique_then_cycling_request_source_factory(requests)
 
     trial_counter = itertools.count()
     start_offset_stride = _start_offset_stride(len(requests))

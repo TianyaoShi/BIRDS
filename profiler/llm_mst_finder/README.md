@@ -159,16 +159,19 @@ Other policies are explicit opt-ins:
 
 - `no-repeat-per-trial`: allow reuse across different trials, but not inside
   one trial.
+- `unique-then-cycle`: send each request reuse key once across the search, then
+  cycle through the unique-key representatives after the pool is exhausted.
 - `cycle`: legacy cycling. The source still rotates its start offset for each
   trial so consecutive trials do not all start at sample zero.
 
-Small expanded datasets such as LongBench buckets may need `cycle`, because the
+Small expanded datasets such as LongBench buckets may need `unique-then-cycle`, because the
 source buckets intentionally contain 1k-2k materialized rows and some buckets
 have only a few hundred unique originals. The LongBench experiment manifests set
-`request_reuse_policy: cycle` explicitly for that reason. Treat those results as
-cache-aware production measurements, not as no-repeat prompt sweeps; keep
-closed-loop concurrency and max request rate low enough that repeated long
-prompts are not sent by many workers at the same instant.
+`request_reuse_policy: unique-then-cycle` explicitly for that reason. Treat any
+post-exhaustion portion of those results as cache-aware production measurement,
+not as a no-repeat prompt sweep; keep closed-loop concurrency and max request
+rate low enough that repeated long prompts are not sent by many workers at the
+same instant.
 
 ## SLO Policy
 
