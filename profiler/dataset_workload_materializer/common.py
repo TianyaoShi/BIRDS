@@ -12,7 +12,9 @@ SUPPORTED_DATASET_KINDS: dict[str, str] = {
     "longbench": "long_context_nlp",
     "mmlu": "reasoning_qa",
     "mmlu_pro": "reasoning_qa",
+    "natural_reasoning": "reasoning_qa",
     "repobench": "code_completion",
+    "supergpqa": "reasoning_qa",
 }
 
 

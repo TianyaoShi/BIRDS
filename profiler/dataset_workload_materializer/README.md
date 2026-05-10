@@ -96,6 +96,9 @@ experiments/reasoning_workloads/mmlu_reasoning.yaml
 experiments/reasoning_workloads/mmlu_pro_reasoning.yaml
 experiments/reasoning_workloads/aime_2024_2026_reasoning.yaml
 experiments/reasoning_workloads/hard_reasoning_small_mixed.yaml
+experiments/reasoning_workloads/supergpqa_reasoning.yaml
+experiments/reasoning_workloads/supergpqa_hard_reasoning.yaml
+experiments/reasoning_workloads/natural_reasoning.yaml
 ```
 
 Download and normalize the public source artifacts with:
@@ -104,6 +107,15 @@ Download and normalize the public source artifacts with:
 PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 /local/scratch/a/shi676/.venv/bin/python -m dataset_workload_materializer.download_reasoning_sources \
   --output-dir data/raw/reasoning
+```
+
+To fetch only the larger replacement reasoning sources:
+
+```bash
+PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
+/local/scratch/a/shi676/.venv/bin/python -m dataset_workload_materializer.download_reasoning_sources \
+  --output-dir data/raw/reasoning \
+  --datasets supergpqa natural_reasoning
 ```
 
 The downloader currently uses:
@@ -115,6 +127,8 @@ The downloader currently uses:
 - AIME 2024: `sea-snell/aime-2024`, split `test`.
 - AIME 2025: `test-time-compute/aime_2025`, split `test`.
 - AIME 2026: `MathArena/aime_2026`, split `train`.
+- SuperGPQA: `m-a-p/SuperGPQA`, split `train`.
+- NaturalReasoning: `facebook/natural_reasoning`, split `train`.
 
 ## Materialize
 
@@ -158,8 +172,11 @@ may be multiple-choice or free-response. Supported common fields include:
   fields such as `A`, `B`, `C`, `D`.
 - GPQA-style rows with `Correct Answer` and `Incorrect Answer 1` through
   `Incorrect Answer 3`.
-- Answer labels or values: `answer`, `Answer`, `target`, `correct_answer`,
-  `label`, `answer_idx`, `answer_index`, `gold`, `final_answer`.
+- Answer labels or values: `answer`, `Answer`, `reference_answer`, `target`,
+  `correct_answer`, `answer_letter`, `label`, `answer_idx`, `answer_index`,
+  `gold`, `final_answer`.
+- Difficulty filtering: set `dataset.difficulties` to any non-empty subset of
+  the dataset's difficulty labels. SuperGPQA uses `easy`, `middle`, and `hard`.
 
 The generated JSONL keeps final answers in `metadata.ground_truth` and
 `metadata.ground_truth_text`, but generated workload YAMLs should use:
@@ -173,14 +190,18 @@ request:
   ignore_eos: false
 ```
 
-This is deliberate: GPQA, MMLU/MMLU-Pro, and AIME provide final answers, not
-reference reasoning traces. The generation length is therefore a safety cap for
-natural EOS stopping, not a target derived from the final-answer token count.
+This is deliberate: GPQA, MMLU/MMLU-Pro, AIME, and SuperGPQA provide final
+answers, not reference reasoning traces. NaturalReasoning includes reference
+responses, but its default workload still uses natural EOS stopping because the
+profiling question is how long each model takes to produce its own reasoning.
+The generation length is therefore a safety cap, not a target derived from
+ground-truth or reference-response token counts.
 
-For profiling, MMLU and MMLU-Pro are the statistically robust reasoning
-workloads. GPQA Diamond and AIME 2024-2026 are too small by themselves. GPQA
-Extended and AIME 2024-2026 have similar prompt-length distributions in the
-current materialization:
+For profiling, MMLU, MMLU-Pro, SuperGPQA, and NaturalReasoning are the
+statistically robust reasoning workloads. GPQA Diamond and AIME 2024-2026 are
+kept as small smoke/debug inputs and are deprecated as standalone profiling
+workloads. GPQA Extended and AIME 2024-2026 have similar prompt-length
+distributions in the current materialization:
 
 | Workload | Samples | Input p50 | Input p90 | Input p95 |
 | --- | ---: | ---: | ---: | ---: |

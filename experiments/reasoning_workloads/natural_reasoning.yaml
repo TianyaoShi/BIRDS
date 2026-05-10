@@ -1,0 +1,42 @@
+name: natural_reasoning
+
+dataset:
+  name: natural_reasoning
+  raw_path: ../../data/raw/reasoning/natural_reasoning.jsonl
+  split: train
+  task: natural_reasoning
+  prompt_template: reasoning_free_response
+
+tokenization:
+  tokenizer: Qwen/Qwen3-8B
+
+filtering:
+  min_prompt_tokens: 8
+  max_prompt_tokens: 4096
+  min_target_tokens: 1
+  max_target_tokens: 32768
+  dedup:
+    content_hash: false
+
+sampling:
+  seed: 31
+  burst_size: 1
+
+request:
+  endpoint: /v1/completions
+  temperature: 0.0
+  stream: true
+  ignore_eos: false
+
+sharding:
+  output_dir: natural_reasoning
+  samples_per_shard: 8192
+
+workload_yaml:
+  output_len:
+    mode: natural_until_eos
+    max_tokens: 4096
+  context_policy:
+    max_model_len: 32768
+    tokenizer_source: vllm_model_config
+    over_limit: fail

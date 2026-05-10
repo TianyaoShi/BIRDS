@@ -4,7 +4,19 @@ import argparse
 import csv
 import json
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
+
+
+DOWNLOADERS: dict[str, Callable[[Path], dict[str, Any]]] = {
+    "gpqa_diamond": lambda output_dir: download_gpqa_diamond(output_dir),
+    "gpqa_extended": lambda output_dir: download_gpqa_csv(output_dir, config_name="gpqa_extended"),
+    "mmlu": lambda output_dir: download_mmlu(output_dir),
+    "mmlu_pro": lambda output_dir: download_mmlu_pro(output_dir),
+    "aime_2024_2026": lambda output_dir: download_aime_2024_2026(output_dir),
+    "hard_reasoning_small_mixed": lambda output_dir: write_hard_reasoning_small_mixed(output_dir),
+    "supergpqa": lambda output_dir: download_supergpqa(output_dir),
+    "natural_reasoning": lambda output_dir: download_natural_reasoning(output_dir),
+}
 
 
 def main() -> None:
@@ -15,18 +27,18 @@ def main() -> None:
         default=Path("data/raw/reasoning"),
         help="Directory for normalized JSONL outputs.",
     )
+    parser.add_argument(
+        "--datasets",
+        nargs="+",
+        choices=sorted(DOWNLOADERS),
+        default=list(DOWNLOADERS),
+        help="Reasoning sources to download or derive.",
+    )
     args = parser.parse_args()
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    summary = {
-        "gpqa_diamond": download_gpqa_diamond(output_dir),
-        "gpqa_extended": download_gpqa_csv(output_dir, config_name="gpqa_extended"),
-        "mmlu": download_mmlu(output_dir),
-        "mmlu_pro": download_mmlu_pro(output_dir),
-        "aime_2024_2026": download_aime_2024_2026(output_dir),
-    }
-    summary["hard_reasoning_small_mixed"] = write_hard_reasoning_small_mixed(output_dir)
+    summary = {name: DOWNLOADERS[name](output_dir) for name in args.datasets}
     (output_dir / "download_manifest.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -96,6 +108,50 @@ def download_mmlu_pro(output_dir: Path) -> dict[str, Any]:
         "output_path": str(output_path),
         "rows": len(rows),
     }
+
+
+def download_supergpqa(output_dir: Path) -> dict[str, Any]:
+    return download_hf_split_jsonl(
+        output_dir / "supergpqa.jsonl",
+        repo_id="m-a-p/SuperGPQA",
+        split="train",
+    )
+
+
+def download_natural_reasoning(output_dir: Path) -> dict[str, Any]:
+    return download_hf_split_jsonl(
+        output_dir / "natural_reasoning.jsonl",
+        repo_id="facebook/natural_reasoning",
+        split="train",
+    )
+
+
+def download_hf_split_jsonl(
+    output_path: Path,
+    *,
+    repo_id: str,
+    split: str,
+    config_name: str | None = None,
+) -> dict[str, Any]:
+    from datasets import load_dataset
+
+    if config_name is None:
+        dataset = load_dataset(repo_id, split=split)
+    else:
+        dataset = load_dataset(repo_id, config_name, split=split)
+    rows = write_dataset_jsonl(output_path, dataset)
+    if rows == 0:
+        label = f"{repo_id} {config_name or ''} {split}".strip()
+        raise ValueError(f"{label} produced no rows")
+    metadata: dict[str, Any] = {
+        "source": repo_id,
+        "split": split,
+        "output_path": str(output_path),
+        "rows": rows,
+    }
+    if config_name is not None:
+        metadata["config"] = config_name
+    return metadata
 
 
 def download_aime_2024_2026(output_dir: Path) -> dict[str, Any]:
@@ -222,9 +278,16 @@ def first_value(row: dict[str, Any], keys: Iterable[str]) -> Any:
 
 
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    write_dataset_jsonl(path, rows)
+
+
+def write_dataset_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> int:
+    count = 0
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n")
+            count += 1
+    return count
 
 
 if __name__ == "__main__":

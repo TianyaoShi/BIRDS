@@ -18,7 +18,9 @@ DATASET_LOADERS: dict[str, DatasetLoader] = {
     "longbench": load_longbench_dataset,
     "mmlu": load_reasoning_dataset,
     "mmlu_pro": load_reasoning_dataset,
+    "natural_reasoning": load_reasoning_dataset,
     "repobench": load_code_dataset,
+    "supergpqa": load_reasoning_dataset,
 }
 
 

@@ -14,6 +14,7 @@ from ..common import (
     jsonl_files,
     optional_mapping,
     optional_string,
+    string_list,
 )
 from ..models import DatasetLoadResult, MaterializationContext, MaterializedSample
 from .code import lookup_alias, metadata_alias
@@ -25,18 +26,31 @@ DEFAULT_REASONING_FIELD_ALIASES: dict[str, list[str]] = {
     "answer": [
         "answer",
         "Answer",
+        "reference_answer",
         "target",
         "correct_answer",
         "Correct Answer",
+        "answer_letter",
         "label",
         "answer_idx",
         "answer_index",
         "gold",
         "final_answer",
     ],
-    "subject": ["subject", "category", "discipline", "subdomain", "Subject", "Subdomain", "High-level domain"],
-    "record_id": ["id", "_id", "question_id", "problem_id", "record_id", "Record ID", "problem_idx"],
+    "subject": [
+        "subject",
+        "category",
+        "discipline",
+        "field",
+        "subfield",
+        "subdomain",
+        "Subject",
+        "Subdomain",
+        "High-level domain",
+    ],
+    "record_id": ["id", "_id", "uuid", "question_id", "problem_id", "record_id", "Record ID", "problem_idx"],
     "year": ["year", "contest_year"],
+    "difficulty": ["difficulty", "Difficulty", "level"],
 }
 
 GPQA_INCORRECT_ALIASES = ("Incorrect Answer 1", "Incorrect Answer 2", "Incorrect Answer 3")
@@ -54,9 +68,11 @@ def load_reasoning_dataset(dataset: dict[str, Any], ctx: MaterializationContext)
     )
     prompt_template_name = reasoning_prompt_template(dataset.get("prompt_template"))
     aliases = reasoning_field_aliases(dataset.get("field_aliases", {}))
+    difficulty_filter = reasoning_difficulty_filter(dataset)
     samples = load_reasoning_samples(
         ctx.raw_path,
         aliases=aliases,
+        difficulty_filter=difficulty_filter,
         dataset_name=ctx.dataset_name,
         dataset_kind=ctx.dataset_kind,
         split=ctx.split,
@@ -74,6 +90,7 @@ def load_reasoning_samples(
     raw_path: Path,
     *,
     aliases: dict[str, list[str]],
+    difficulty_filter: set[str] | None,
     dataset_name: str,
     dataset_kind: str,
     split: str,
@@ -102,6 +119,7 @@ def load_reasoning_samples(
                     row_index=global_index,
                     input_path=file_path,
                     aliases=aliases,
+                    difficulty_filter=difficulty_filter,
                     dataset_name=dataset_name,
                     dataset_kind=dataset_kind,
                     split=split,
@@ -127,6 +145,7 @@ def reasoning_row_to_sample(
     row_index: int,
     input_path: Path,
     aliases: dict[str, list[str]],
+    difficulty_filter: set[str] | None,
     dataset_name: str,
     dataset_kind: str,
     split: str,
@@ -142,6 +161,11 @@ def reasoning_row_to_sample(
     question = string_alias(row, aliases["question"], field_name="question", source=source)
     if question is None:
         counters.drops["missing_empty_prompt"] += 1
+        return None
+    difficulty = metadata_alias(row, aliases["difficulty"], "")
+    difficulty_text = "" if difficulty in (None, "") else str(difficulty)
+    if difficulty_filter is not None and difficulty_text.strip().lower() not in difficulty_filter:
+        counters.drops["difficulty_not_selected"] += 1
         return None
 
     choices, answer_text_from_choices = reasoning_choices(row, aliases=aliases, row_index=row_index, seed=seed)
@@ -215,6 +239,8 @@ def reasoning_row_to_sample(
         metadata["answer_label"] = answer.ground_truth
     if year not in (None, ""):
         metadata["year"] = year
+    if difficulty_text:
+        metadata["difficulty"] = difficulty_text
     return MaterializedSample(
         sample_id=sample_id,
         prompt=prompt,
@@ -379,6 +405,20 @@ def reasoning_prompt_template(value: Any) -> str:
             "reasoning_mcq, reasoning_free_response"
         )
     return template
+
+
+def reasoning_difficulty_filter(dataset: dict[str, Any]) -> set[str] | None:
+    raw_value = dataset.get("difficulties", dataset.get("difficulty"))
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, str):
+        values = [raw_value]
+    else:
+        values = string_list(raw_value, "dataset.difficulties")
+    selected = {value.strip().lower() for value in values if value.strip()}
+    if not selected:
+        raise ValueError("dataset.difficulties must contain at least one non-empty value")
+    return selected
 
 
 def reasoning_field_aliases(payload: Any) -> dict[str, list[str]]:

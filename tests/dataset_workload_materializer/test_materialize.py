@@ -403,6 +403,113 @@ def test_reasoning_gpqa_and_aime_like_rows_materialize_from_local_directory(tmp_
     assert "Answer: <letter>" in mcq["prompt"]
 
 
+def test_supergpqa_materialization_filters_difficulty_subset(tmp_path: Path) -> None:
+    raw_path = tmp_path / "supergpqa.jsonl"
+    rows = [
+        {
+            "uuid": "sg-easy",
+            "question": "Easy question?",
+            "options": ["A. no", "B. yes"],
+            "answer": "yes",
+            "difficulty": "easy",
+            "discipline": "general",
+            "field": "logic",
+        },
+        {
+            "uuid": "sg-middle",
+            "question": "Middle question?",
+            "options": ["A. false", "B. true"],
+            "answer_letter": "B",
+            "difficulty": "middle",
+            "discipline": "general",
+            "field": "logic",
+        },
+        {
+            "uuid": "sg-hard",
+            "question": "Hard question?",
+            "options": ["A. incorrect", "B. correct"],
+            "answer": "correct",
+            "difficulty": "hard",
+            "discipline": "general",
+            "field": "logic",
+        },
+    ]
+    raw_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    output_dir = tmp_path / "out"
+    config_path = _write_reasoning_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_dir=output_dir,
+        dataset_name="supergpqa",
+        task="supergpqa_selected",
+        max_tokens=4096,
+        dataset_extra={"difficulties": ["middle", "hard"]},
+    )
+
+    result = materialize_from_config(config_path)
+
+    assert result["num_samples"] == 2
+    shard_rows = [
+        json.loads(line)
+        for line in (output_dir / "shards" / "shard_000.runner.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+    ]
+    report = json.loads((output_dir / "materialization_report.json").read_text(encoding="utf-8"))
+    assert [row["metadata"]["record_id"] for row in shard_rows] == ["sg-middle", "sg-hard"]
+    assert {row["metadata"]["difficulty"] for row in shard_rows} == {"middle", "hard"}
+    assert report["rows"]["drops"]["difficulty_not_selected"] == 1
+
+
+def test_natural_reasoning_materialization_uses_reference_answer_as_metadata_only(tmp_path: Path) -> None:
+    raw_path = tmp_path / "natural_reasoning.jsonl"
+    reference_answer = "A careful derivation gives 42."
+    raw_path.write_text(
+        json.dumps(
+            {
+                "question": "Work through the calculation and give the result.",
+                "reference_answer": reference_answer,
+                "responses": [
+                    {
+                        "response_model": "reference-model",
+                        "response": "This is a non-canonical sampled response.",
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "out"
+    config_path = _write_reasoning_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_dir=output_dir,
+        dataset_name="natural_reasoning",
+        task="natural_reasoning",
+        max_tokens=4096,
+        dataset_extra={"prompt_template": "reasoning_free_response"},
+    )
+
+    materialize_from_config(config_path)
+
+    shard_row = json.loads(
+        (output_dir / "shards" / "shard_000.runner.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert shard_row["expected_output_len"] == len(reference_answer)
+    assert shard_row["metadata"]["dataset"] == "natural_reasoning"
+    assert shard_row["metadata"]["ground_truth"] == reference_answer
+    assert "responses" not in shard_row["metadata"]
+
+    prepared = prepare_workload_for_trial(
+        output_dir / "workload_yamls" / "shard_000.yaml",
+        model_name="fake-model",
+    )
+    assert prepared.samples[0].expected_output_len == 4096
+    assert prepared.samples[0].metadata["sampling_output_len_mode"] == "natural_until_eos"
+    assert prepared.samples[0].metadata["sampling_output_len_is_cap"] is True
+
+
 def test_longbench_epoch_shuffle_expansion_preserves_unique_corpus_metadata(tmp_path: Path) -> None:
     raw_path = _write_longbench_zip(
         tmp_path,
@@ -548,6 +655,7 @@ def _write_reasoning_config(
     dataset_name: str,
     task: str,
     max_tokens: int,
+    dataset_extra: dict[str, object] | None = None,
 ) -> Path:
     config = {
         "name": f"{task}_tiny",
@@ -581,6 +689,8 @@ def _write_reasoning_config(
             },
         },
     }
+    if dataset_extra:
+        config["dataset"].update(dataset_extra)
     config_path = tmp_path / f"{task}_materialize.yaml"
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     return config_path
