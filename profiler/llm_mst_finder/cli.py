@@ -100,6 +100,11 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_workload = subparsers.add_parser("inspect-workload")
     inspect_workload.add_argument("--workload", type=Path, required=True)
     inspect_workload.add_argument("--model", required=True)
+    inspect_workload.add_argument(
+        "--tokenizer",
+        default=None,
+        help="tokenizer to use as the inspection/workload fallback; defaults to workload.tokenizer",
+    )
     inspect_workload.add_argument("--sample-size", type=int, default=None)
     inspect_workload.add_argument("--max-scan-rows", type=int, default=None)
     inspect_workload.add_argument("--output", type=Path, default=None)
@@ -273,6 +278,7 @@ async def _inspect_workload_command(args: argparse.Namespace) -> int:
     result = inspect_workload_dataset(
         args.workload,
         model_name=args.model,
+        tokenizer_name=args.tokenizer,
         sample_size=args.sample_size,
         max_scan_rows=args.max_scan_rows,
     )

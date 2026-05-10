@@ -424,6 +424,45 @@ def test_inspect_workload_dataset_reports_hf_length_distribution(
     assert "trial_min_duration_s" in report["suggested_search_overrides"]
 
 
+def test_inspect_workload_dataset_accepts_tokenizer_override_without_workload_tokenizer(
+    tmp_path: Path,
+) -> None:
+    dataset_path = tmp_path / "requests.jsonl"
+    dataset_path.write_text(
+        json.dumps({"prompt": "abc", "expected_output_len": 2}) + "\n",
+        encoding="utf-8",
+    )
+    workload_path = tmp_path / "jsonl_inspect_no_tokenizer.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: jsonl-inspect-no-tokenizer",
+                "dataset:",
+                "  type: jsonl",
+                f"  path: {dataset_path}",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 1",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    report = inspect_workload_dataset(
+        workload_path,
+        model_name="fake-model",
+        tokenizer_name="character",
+    )
+
+    assert report["inspection_tokenizer"] == "character"
+    assert report["tokenizer_key"] == "tokenizer:character"
+    assert report["lengths"]["prompt_tokens"]["p50"] == 3.0
+
+
 def test_longbench_dataset_reads_zip_and_formats_prompts(
     monkeypatch,
     tmp_path: Path,

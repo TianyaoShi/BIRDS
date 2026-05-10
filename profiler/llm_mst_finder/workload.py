@@ -14,6 +14,7 @@ from .model_context import (
     ContextPolicy,
     ContextValidationReport,
     ModelContextInfo,
+    _force_hf_offline_mode,
     parse_context_policy,
     resolve_model_context_info,
     resolve_model_tokenizer_for_policy,
@@ -57,12 +58,14 @@ class HuggingFaceTokenizer:
             raise RuntimeError(
                 "transformers is required for non-built-in tokenizers"
             ) from exc
+        resolved_name_or_path = _resolve_cached_hf_snapshot(model_name_or_path)
         try:
-            self._tokenizer = AutoTokenizer.from_pretrained(
-                model_name_or_path,
-                local_files_only=True,
-                trust_remote_code=False,
-            )
+            with _force_hf_offline_mode():
+                self._tokenizer = AutoTokenizer.from_pretrained(
+                    resolved_name_or_path,
+                    local_files_only=True,
+                    trust_remote_code=False,
+                )
         except Exception as exc:  # pragma: no cover - optional dependency path
             raise RuntimeError(
                 "failed to load tokenizer from local cache: "
@@ -84,6 +87,26 @@ def resolve_tokenizer(tokenizer_spec: str | None) -> PromptTokenizer:
     if tokenizer_spec == "character":
         return CharacterTokenizer()
     return HuggingFaceTokenizer(tokenizer_spec)
+
+
+def _resolve_cached_hf_snapshot(model_name_or_path: str) -> str:
+    path = Path(model_name_or_path)
+    if path.exists():
+        return str(path)
+    if "/" not in model_name_or_path:
+        return model_name_or_path
+    try:
+        from huggingface_hub import constants
+    except ImportError:  # pragma: no cover - optional dependency path
+        return model_name_or_path
+    repo_cache_name = f"models--{model_name_or_path.replace('/', '--')}"
+    snapshots_dir = Path(constants.HF_HUB_CACHE) / repo_cache_name / "snapshots"
+    if not snapshots_dir.is_dir():
+        return model_name_or_path
+    snapshots = sorted(candidate for candidate in snapshots_dir.iterdir() if candidate.is_dir())
+    if not snapshots:
+        return model_name_or_path
+    return str(snapshots[-1])
 
 
 def _expect_mapping(value: Any, field_name: str) -> dict[str, Any]:
@@ -476,9 +499,7 @@ def load_workload_config(path: str | Path) -> WorkloadConfig:
     )
     name = _expect_string(root.get("name"), "name")
     tokenizer = root.get("tokenizer")
-    if tokenizer is None:
-        raise ValueError("tokenizer is required")
-    if not isinstance(tokenizer, str):
+    if tokenizer is not None and not isinstance(tokenizer, str):
         raise ValueError("tokenizer must be a string")
     if tokenizer == "whitespace":
         raise ValueError("tokenizer must not be 'whitespace'")
@@ -1339,12 +1360,14 @@ def inspect_workload_dataset(
     path: str | Path,
     *,
     model_name: str,
+    tokenizer_name: str | None = None,
     sample_size: int | None = None,
     max_scan_rows: int | None = None,
 ) -> dict[str, Any]:
     config = load_workload_config(path)
-    fallback_tokenizer = resolve_tokenizer(config.tokenizer)
-    fallback_tokenizer_key = _tokenizer_cache_key(config.tokenizer, tokenizer=fallback_tokenizer)
+    fallback_tokenizer_name = tokenizer_name or config.tokenizer
+    fallback_tokenizer = resolve_tokenizer(fallback_tokenizer_name)
+    fallback_tokenizer_key = _tokenizer_cache_key(fallback_tokenizer_name, tokenizer=fallback_tokenizer)
     tokenizer = fallback_tokenizer
     tokenizer_key = fallback_tokenizer_key
     model_context: dict[str, Any] | None = None
@@ -1356,7 +1379,7 @@ def inspect_workload_dataset(
             model_name=model_name,
             fallback_tokenizer=fallback_tokenizer,
             fallback_tokenizer_key=fallback_tokenizer_key,
-            fallback_tokenizer_name=_normalized_tokenizer_spec(config.tokenizer),
+            fallback_tokenizer_name=_normalized_tokenizer_spec(fallback_tokenizer_name),
         )
         tokenizer = model_context_info.tokenizer
         tokenizer_key = model_context_info.tokenizer_key
@@ -1445,6 +1468,7 @@ def inspect_workload_dataset(
             "completion_field": config.dataset.completion_field,
         },
         "model": model_name,
+        "inspection_tokenizer": _normalized_tokenizer_spec(fallback_tokenizer_name),
         "tokenizer_key": tokenizer_key,
         "model_context": model_context,
         "source_summary": source_summary,
@@ -1586,9 +1610,10 @@ def prepare_workload_for_trial(
     endpoint: str | None = None,
 ) -> PreparedWorkload:
     config = load_workload_config(path)
-    fallback_tokenizer = resolve_tokenizer(config.tokenizer)
-    fallback_tokenizer_key = _tokenizer_cache_key(config.tokenizer, tokenizer=fallback_tokenizer)
-    fallback_tokenizer_name = _normalized_tokenizer_spec(config.tokenizer)
+    fallback_tokenizer_name = config.tokenizer or model_name
+    fallback_tokenizer = resolve_tokenizer(fallback_tokenizer_name)
+    fallback_tokenizer_key = _tokenizer_cache_key(fallback_tokenizer_name, tokenizer=fallback_tokenizer)
+    fallback_tokenizer_name = _normalized_tokenizer_spec(fallback_tokenizer_name)
     requires_context_validation = config.dataset.type in {"jsonl", "sharegpt", "hf", "longbench"}
 
     if config.context_policy is None:
