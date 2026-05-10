@@ -97,6 +97,46 @@ context_policy:
   over_limit: fail
 ```
 
+### ShareGPT Role Ordering
+
+The `sharegpt` loader treats ShareGPT as a single-turn chat workload. It only
+keeps rows whose first two turns are ordered:
+
+```text
+conversations[0].from in {human, user}
+conversations[1].from in {gpt, assistant}
+```
+
+Rows starting with `gpt -> human` are skipped. They are usually truncated
+mid-conversation continuations where the original user prompt is missing. Using
+the later human follow-up as the prompt and the earlier assistant text as the
+target creates an invalid prompt/response pair.
+
+This differs from `profiler/benchmark_serving.py::sample_sharegpt_requests`,
+which blindly used `conversations[0]` as prompt and `conversations[1]` as
+completion, then wrapped the prompt with the model chat template and filtered
+short/long samples. On
+`data/raw/sharegpt/ShareGPT_V3_unfiltered_cleaned_split_no_imsorry.json` with
+the Llama-2-7b-chat tokenizer:
+
+```text
+first two roles:
+  human -> gpt: 58637 rows
+  gpt -> human: 33730 rows
+
+benchmark_serving exact chat-template + filter:
+  input p50 ~= 155 tokens, input mean ~= 321
+  output p50 ~= 148 tokens, output mean ~= 236
+
+current ordered first-two-turn semantics without chat-template wrapping:
+  prompt p50 ~= 36 tokens, prompt mean ~= 300
+  output p50 ~= 282 tokens, output mean ~= 326
+```
+
+The old benchmark statistics are therefore reproducible for the old sampling
+method, but that method is not semantically equivalent to a valid single-turn
+user prompt followed by an assistant response on this ShareGPT raw data.
+
 Reasoning datasets with only final-answer labels should not use
 `output_len.mode: from_dataset`, because the final answer length is not the
 reasoning trace length. Use a natural-stop cap instead:

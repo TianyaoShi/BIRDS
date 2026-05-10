@@ -226,9 +226,9 @@ def test_sharegpt_from_dataset_uses_assistant_output_length() -> None:
     assert len(samples) == 4
     for sample in samples:
         row = dataset[sample.metadata["source_index"]]
-        assistant_turn = next(
-            turn for turn in row["conversations"] if turn.get("from", "").lower() == "gpt"
-        )
+        assert row["conversations"][0].get("from", "").lower() == "human"
+        assert row["conversations"][1].get("from", "").lower() == "gpt"
+        assistant_turn = row["conversations"][1]
         assert sample.expected_output_len == len(assistant_turn["value"])
     assert all(sample.metadata["dataset_type"] == "sharegpt" for sample in samples)
 
@@ -240,6 +240,66 @@ def test_sharegpt_skips_rows_missing_prompt_or_assistant() -> None:
     assert len(samples) == 3
     assert all(sample.prompt == "valid prompt text" for sample in samples)
     assert all(sample.expected_output_len == len("valid assistant text here") for sample in samples)
+
+
+def test_sharegpt_skips_reversed_or_system_prefixed_rows(tmp_path: Path) -> None:
+    dataset_path = tmp_path / "sharegpt_reversed.json"
+    dataset_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "reversed",
+                    "conversations": [
+                        {"from": "gpt", "value": "orphaned assistant continuation"},
+                        {"from": "human", "value": "follow-up without original prompt"},
+                        {"from": "gpt", "value": "reply to follow-up"},
+                    ],
+                },
+                {
+                    "id": "system-prefixed",
+                    "conversations": [
+                        {"from": "system", "value": "system preface"},
+                        {"from": "human", "value": "prompt after system"},
+                        {"from": "gpt", "value": "assistant reply"},
+                    ],
+                },
+                {
+                    "id": "ordered",
+                    "conversations": [
+                        {"from": "human", "value": "ordered prompt"},
+                        {"from": "gpt", "value": "ordered assistant reply"},
+                    ],
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    workload_path = tmp_path / "sharegpt_reversed.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: sharegpt-reversed-test",
+                "dataset:",
+                "  type: sharegpt",
+                f"  path: {dataset_path}",
+                "tokenizer: character",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 3",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    samples = load_workload_samples_for_sampling_only(workload_path)
+
+    assert len(samples) == 3
+    assert {sample.metadata["row_id"] for sample in samples} == {"ordered"}
+    assert all(sample.prompt == "ordered prompt" for sample in samples)
 
 
 def test_hf_dataset_uses_conversation_rows(monkeypatch, tmp_path: Path) -> None:

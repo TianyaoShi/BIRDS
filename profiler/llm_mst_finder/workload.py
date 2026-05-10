@@ -789,20 +789,6 @@ def _load_jsonl_entries_from_source(
     return entries
 
 
-def _find_sharegpt_text(
-    conversations: list[Any],
-    accepted_roles: set[str],
-    field_name: str,
-) -> str | None:
-    for index, turn in enumerate(conversations):
-        turn_payload = _expect_mapping(turn, f"{field_name}[{index}]")
-        role = turn_payload.get("from", turn_payload.get("role"))
-        text = turn_payload.get("value", turn_payload.get("content"))
-        if isinstance(role, str) and role.lower() in accepted_roles and isinstance(text, str) and text:
-            return text
-    return None
-
-
 def _load_sharegpt_entries_from_source(
     path: Path,
     tokenizer: PromptTokenizer,
@@ -817,24 +803,33 @@ def _load_sharegpt_entries_from_source(
     if not isinstance(payload, list):
         raise ValueError("sharegpt dataset must be a JSON list")
     entries: list[DatasetEntry] = []
-    skipped_missing_prompt = 0
-    skipped_missing_assistant = 0
+    skipped_too_short = 0
+    skipped_non_user_assistant_prefix = 0
+    skipped_empty_prompt_or_assistant = 0
     for index, row in enumerate(payload):
         row_payload = _expect_mapping(row, f"sharegpt row {index}")
         conversations = row_payload.get("conversations")
         if not isinstance(conversations, list):
             raise ValueError(f"sharegpt row {index}.conversations must be a list")
-        prompt = _find_sharegpt_text(conversations, {"human", "user"}, f"sharegpt row {index}.conversations")
-        if prompt is None:
-            skipped_missing_prompt += 1
+        if len(conversations) < 2:
+            skipped_too_short += 1
             continue
-        assistant = _find_sharegpt_text(
-            conversations,
-            {"gpt", "assistant"},
-            f"sharegpt row {index}.conversations",
-        )
-        if assistant is None:
-            skipped_missing_assistant += 1
+        first_turn = _expect_mapping(conversations[0], f"sharegpt row {index}.conversations[0]")
+        second_turn = _expect_mapping(conversations[1], f"sharegpt row {index}.conversations[1]")
+        first_role = first_turn.get("from", first_turn.get("role"))
+        second_role = second_turn.get("from", second_turn.get("role"))
+        if not (
+            isinstance(first_role, str)
+            and first_role.lower() in {"human", "user"}
+            and isinstance(second_role, str)
+            and second_role.lower() in {"gpt", "assistant"}
+        ):
+            skipped_non_user_assistant_prefix += 1
+            continue
+        prompt = first_turn.get("value", first_turn.get("content"))
+        assistant = second_turn.get("value", second_turn.get("content"))
+        if not isinstance(prompt, str) or not prompt or not isinstance(assistant, str) or not assistant:
+            skipped_empty_prompt_or_assistant += 1
             continue
         prompt_len = len(tokenizer.encode(prompt)) if include_prompt_len else None
         expected_output_len = len(tokenizer.encode(assistant)) if include_output_len else None
@@ -849,9 +844,11 @@ def _load_sharegpt_entries_from_source(
         )
     if not entries:
         raise ValueError(
-            "sharegpt dataset has no usable rows with both prompt and assistant reply: "
-            f"{path} (missing_prompt={skipped_missing_prompt}, "
-            f"missing_assistant={skipped_missing_assistant})"
+            "sharegpt dataset has no usable rows with an ordered first-turn user prompt "
+            "followed by an assistant reply: "
+            f"{path} (too_short={skipped_too_short}, "
+            f"non_user_assistant_prefix={skipped_non_user_assistant_prefix}, "
+            f"empty_prompt_or_assistant={skipped_empty_prompt_or_assistant})"
         )
     return entries
 
