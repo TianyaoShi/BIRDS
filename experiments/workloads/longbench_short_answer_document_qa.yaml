@@ -1,11 +1,11 @@
 name: longbench_short_answer_document_qa
 dataset:
   type: jsonl
-  path: ../longbench_workloads/materialization/longbench_short_answer_document_qa_qwen3_8b/shards/shard_000.runner.jsonl
+  path: ../longbench_workloads/materialization/longbench_short_answer_document_qa_expanded_qwen3_8b/shards/shard_000.runner.jsonl
 tokenizer: Qwen/Qwen3-8B
 sampling:
   seed: 42
-  num_requests: 2048
+  num_requests: 2500
   entry_selection: sequential
   prompt_len:
     mode: from_dataset

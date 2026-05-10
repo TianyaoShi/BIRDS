@@ -303,7 +303,7 @@ runner JSONL and workload YAML output format:
 | Bucket | External source | Hugging Face repo |
 | --- | --- | --- |
 | `long_output_summarization` | `gov_report_original` | `launch/gov_report` |
-| `medium_output_summarization` | `multi_news_original` | `tau/multi_news` |
+| `medium_output_summarization` | `multi_news_original` | `alexfabbri/multi_news` |
 | `medium_output_summarization` | `qmsum_original` | `mattercalm/qmsum` |
 | `medium_output_summarization` | `meetingbank` | `huuuyeah/meetingbank` |
 | `medium_answer_rag_qa` | `dureader_full` | `PaddlePaddle/dureader_robust` |

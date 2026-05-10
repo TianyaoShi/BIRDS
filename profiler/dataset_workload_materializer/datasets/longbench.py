@@ -79,7 +79,7 @@ LONGBENCH_EXTERNAL_DATASETS: dict[str, tuple[str, ...]] = {
 
 LONGBENCH_EXTERNAL_HF_DATASETS: dict[str, str] = {
     "gov_report_original": "launch/gov_report",
-    "multi_news_original": "tau/multi_news",
+    "multi_news_original": "alexfabbri/multi_news",
     "qmsum_original": "mattercalm/qmsum",
     "meetingbank": "huuuyeah/meetingbank",
     "dureader_full": "PaddlePaddle/dureader_robust",
@@ -522,6 +522,9 @@ def external_longbench_row_to_samples(
     counters,
 ) -> list[MaterializedSample]:
     normalized_rows = normalize_external_longbench_row(row, external_name=external_name, row_index=row_index)
+    if not normalized_rows:
+        counters.drops["missing_empty_task_input"] += 1
+        return []
     samples: list[MaterializedSample] = []
     for normalized_index, normalized in enumerate(normalized_rows):
         prompt = expect_string(normalized.get("prompt"), f"{source}.prompt")
@@ -599,8 +602,7 @@ def normalize_external_longbench_row(
         document = first_external_text(row, ("document", "report", "text", "article"))
         target = first_external_text(row, ("summary", "target", "reference", "output"))
         record_id = first_external_scalar(row, ("id", "report_id", "doc_id"))
-        return [
-            external_summary_record(
+        record = external_summary_record(
                 external_name=external_name,
                 document=document,
                 target=target,
@@ -608,13 +610,12 @@ def normalize_external_longbench_row(
                 row_index=row_index,
                 language="en",
             )
-        ]
+        return [record] if record is not None else []
     if external_name == "multi_news_original":
         document = first_external_text(row, ("document", "documents", "article", "articles", "text"))
         target = first_external_text(row, ("summary", "target", "reference", "output"))
         record_id = first_external_scalar(row, ("id", "article_cluster_id", "document_id"))
-        return [
-            external_summary_record(
+        record = external_summary_record(
                 external_name=external_name,
                 document=document,
                 target=target,
@@ -622,7 +623,7 @@ def normalize_external_longbench_row(
                 row_index=row_index,
                 language="en",
             )
-        ]
+        return [record] if record is not None else []
     if external_name == "qmsum_original":
         prompt = first_external_text(row, ("input", "prompt"))
         target = first_external_text(row, ("output", "summary", "answer", "target", "reference"))
@@ -648,8 +649,7 @@ def normalize_external_longbench_row(
         document = first_external_text(row, ("transcript", "document", "text"))
         target = first_external_text(row, ("summary", "target", "reference", "output"))
         record_id = first_external_scalar(row, ("uid", "id", "meeting_id"))
-        return [
-            external_summary_record(
+        record = external_summary_record(
                 external_name=external_name,
                 document=document,
                 target=target,
@@ -657,7 +657,7 @@ def normalize_external_longbench_row(
                 row_index=row_index,
                 language="en",
             )
-        ]
+        return [record] if record is not None else []
     if external_name == "dureader_full":
         question = first_external_text(row, ("question", "query", "input"))
         documents = first_external_text(row, ("documents", "document", "context", "contexts", "paragraphs"))
@@ -693,9 +693,9 @@ def external_summary_record(
     record_id: Any,
     row_index: int,
     language: str,
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     if document is None:
-        raise ValueError(f"{external_name} rows require a document/transcript field")
+        return None
     group_id = str(record_id) if record_id not in (None, "") else hash_text(document)
     return {
         "prompt": EXTERNAL_SUMMARIZATION_PROMPT.format(document=document),
@@ -711,7 +711,30 @@ def external_summary_record(
 def normalize_qasper_external_rows(row: dict[str, Any], *, row_index: int) -> list[dict[str, Any]]:
     paper_id = first_external_scalar(row, ("id", "paper_id", "doc_id")) or f"qasper-row-{row_index}"
     document = qasper_document_text(row)
-    qas = optional_mapping(row.get("qas"), "qasper row.qas")
+    raw_qas = row.get("qas")
+    if isinstance(raw_qas, list):
+        normalized = []
+        for question_index, qa in enumerate(raw_qas):
+            if not isinstance(qa, dict):
+                raise ValueError(f"qasper row.qas[{question_index}] must be a mapping")
+            question = optional_string(qa.get("question"), f"qasper row.qas[{question_index}].question")
+            if question is None:
+                continue
+            question_id = first_external_scalar(qa, ("question_id", "id")) or f"{paper_id}-q{question_index}"
+            normalized.append(
+                {
+                    "prompt": EXTERNAL_DOCUMENT_QA_PROMPT.format(question=question, document=document),
+                    "target": qasper_answer_text(qa.get("answers")),
+                    "record_id": str(question_id),
+                    "group_id": str(paper_id),
+                    "prompt_template": "external_document_qa",
+                    "language": "en",
+                }
+            )
+        if not normalized:
+            raise ValueError("qasper_full row produced no question records")
+        return normalized
+    qas = optional_mapping(raw_qas, "qasper row.qas")
     questions = qas.get("question")
     question_ids = qas.get("question_id")
     answers = qas.get("answers")
