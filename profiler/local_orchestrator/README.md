@@ -139,6 +139,16 @@ When `probe.auto_gpu_count: true`, expansion raises `launch.gpu_count` to the es
 
 Dry-run output includes the final launch/search values and probe payload for each expanded job. This expanded job representation is the intended reuse point for a future Slurm adapter: Slurm should submit the already-expanded job plan and let the cluster manager allocate the requested GPUs.
 
+### Local GPU scheduling
+
+The local scheduler bin-packs pending jobs onto `run.max_active_gpus` from `run.allowed_gpu_ids`. Each running job leases `launch.gpu_count` GPUs and one base/metrics port pair. When multiple jobs fit, the scheduler starts the largest pending job that fits the currently free GPU pool, then backfills with smaller jobs where possible. Jobs whose `launch.gpu_count` exceeds `run.max_active_gpus` fail preflight without starting vLLM.
+
+For example, with TP1, TP2, and TP4 jobs pending:
+
+- 2 available GPUs: TP2 can run, then TP1 can backfill if 1 GPU remains free; TP4 waits or fails preflight when `max_active_gpus` is 2.
+- 3 available GPUs: TP2 and TP1 can run concurrently; TP4 waits or fails preflight when `max_active_gpus` is 3.
+- 4 available GPUs: TP4 runs when selected as the largest fitting job; TP2 and TP1 can co-run after enough GPUs are free.
+
 For local raw launch templates, `{gpu_id}` expands to the first leased GPU and `{gpu_ids}` expands to the comma-separated leased set. The lifecycle manager also sets `CUDA_VISIBLE_DEVICES` to that same comma-separated set.
 
 `launch.max_model_len` is passed to vLLM as `--max-model-len`. Keep this aligned with the workload context cap when using long-context model cards; workload `context_policy.max_model_len` filters or truncates requests for MST, but it does not constrain the vLLM engine allocation by itself.
@@ -211,7 +221,7 @@ The V1 orchestrator intentionally omits:
 ## Development notes
 
 - `MSTSearchAdapter` relies on `PYTHONPATH` to find `llm_mst_finder` when invoked as a module.
-- The scheduler uses a thread-per-slot model for parallel jobs; each slot owns its own lifecycle manager.
+- The scheduler uses a thread per active local job; each active job owns its GPU lease, port reservation, and lifecycle manager.
 - Resume logic requires that the manifest expands to exactly the same experiment IDs as the stored run.
 
 If you extend this package, update this README and keep manifest/model keys consistent across validation, search command construction, and summary output.

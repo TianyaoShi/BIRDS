@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from queue import Empty, Queue
+from queue import Queue
 import shutil
 from threading import Lock, Thread
 from typing import Any, Callable, Protocol
@@ -51,6 +51,9 @@ class GPULeaseManagerProtocol(Protocol):
     def release(self, lease: GPULease) -> None:
         ...
 
+    def snapshot(self) -> dict[str, object]:
+        ...
+
 
 class PortAllocatorProtocol(Protocol):
     def reserve(self) -> PortReservation:
@@ -67,6 +70,13 @@ class _WorkerSlot:
     ports: PortReservation
     lifecycle: LifecycleProtocol
     active_reuse_key: str | None = None
+
+
+@dataclass(slots=True)
+class _RunningJob:
+    thread: Thread
+    slot: _WorkerSlot
+    job: ExpandedExperimentJob
 
 
 class OrchestratorScheduler:
@@ -199,84 +209,144 @@ class OrchestratorScheduler:
             self._lifecycle_factory is not None
             and self._run_config.max_active_gpus > 1
             and len(pending_jobs) > 1
-            and all(job.launch.gpu_count == 1 for job in pending_jobs)
         )
 
     def _run_parallel_jobs(self, *, jobs: list[ExpandedExperimentJob], state: dict[str, Any]) -> None:
-        slot_count = min(self._run_config.max_active_gpus, len(jobs))
-        slots = self._build_worker_slots(slot_count)
+        if self._lifecycle_factory is None:
+            raise RuntimeError("parallel execution requires lifecycle_factory")
 
-        work_queue: Queue[ExpandedExperimentJob] = Queue()
-        for job in jobs:
-            work_queue.put(job)
-
+        pending_jobs = list(jobs)
+        completion_queue: Queue[tuple[_WorkerSlot, ExpandedExperimentJob, Exception | None]] = Queue()
+        running_jobs: list[_RunningJob] = []
         worker_failures: list[Exception] = []
-        worker_failures_lock = Lock()
+        next_slot_index = 0
 
-        def _worker(slot: _WorkerSlot) -> None:
-            while True:
-                try:
-                    job = work_queue.get_nowait()
-                except Empty:
-                    return
-                try:
-                    self._run_single_job_on_slot(job=job, state=state, slot=slot)
-                except Exception as exc:  # pragma: no cover - defensive safety
-                    with worker_failures_lock:
-                        worker_failures.append(exc)
-                finally:
-                    work_queue.task_done()
+        try:
+            while pending_jobs or running_jobs:
+                launched_any = False
+                while True:
+                    free_gpu_count = len(self._gpu_manager.snapshot()["free_gpu_ids"])
+                    next_job_index = self._next_schedulable_job_index(
+                        pending_jobs,
+                        free_gpu_count=free_gpu_count,
+                    )
+                    if next_job_index is None:
+                        break
 
-        threads = [
-            Thread(
-                target=_worker,
-                args=(slot,),
-                name=f"orchestrator-worker-{slot.slot_index}",
-                daemon=True,
-            )
-            for slot in slots
-        ]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
+                    job = pending_jobs.pop(next_job_index)
+                    slot = self._build_job_slot(slot_index=next_slot_index, gpu_count=job.launch.gpu_count)
+                    next_slot_index += 1
+                    thread = Thread(
+                        target=self._run_job_on_dynamic_slot,
+                        args=(job, state, slot, completion_queue),
+                        name=f"orchestrator-worker-{slot.slot_index}",
+                        daemon=True,
+                    )
+                    running_jobs.append(_RunningJob(thread=thread, slot=slot, job=job))
+                    thread.start()
+                    launched_any = True
 
-        for slot in slots:
-            self._release_slot(slot, reason="parallel_slot_shutdown")
+                if not running_jobs:
+                    failed_jobs = pending_jobs
+                    pending_jobs = []
+                    for job in failed_jobs:
+                        preflight_error = self._preflight_error(job)
+                        error = preflight_error or (
+                            f"job requires gpu_count={job.launch.gpu_count}, "
+                            f"but no schedulable GPU lease is available"
+                        )
+                        self._mark_job_failed(state, experiment_id=job.experiment_id, error=error)
+                        self._append_event(
+                            state,
+                            event_type="job_failed_preflight",
+                            experiment_id=job.experiment_id,
+                            payload={"error": error},
+                        )
+                    break
+
+                if launched_any:
+                    continue
+
+                slot, job, exc = completion_queue.get()
+                matching_running_job = next(
+                    (
+                        running_job
+                        for running_job in running_jobs
+                        if running_job.slot is slot and running_job.job is job
+                    ),
+                    None,
+                )
+                if matching_running_job is not None:
+                    matching_running_job.thread.join()
+                    running_jobs.remove(matching_running_job)
+                self._release_slot(slot, reason="parallel_job_finished")
+                if exc is not None:
+                    worker_failures.append(exc)
+        finally:
+            for running_job in list(running_jobs):
+                running_job.thread.join()
+                self._release_slot(running_job.slot, reason="parallel_scheduler_shutdown")
+                running_jobs.remove(running_job)
 
         if worker_failures:
             first_failure = worker_failures[0]
             raise RuntimeError(f"parallel scheduler worker failed: {first_failure}") from first_failure
 
-    def _build_worker_slots(self, slot_count: int) -> list[_WorkerSlot]:
+    def _next_schedulable_job_index(
+        self,
+        pending_jobs: list[ExpandedExperimentJob],
+        *,
+        free_gpu_count: int,
+    ) -> int | None:
+        best_index: int | None = None
+        best_gpu_count = -1
+        for index, job in enumerate(pending_jobs):
+            if job.launch.gpu_count > self._run_config.max_active_gpus:
+                continue
+            if job.launch.gpu_count > free_gpu_count:
+                continue
+            if job.launch.gpu_count > best_gpu_count:
+                best_index = index
+                best_gpu_count = job.launch.gpu_count
+        return best_index
+
+    def _run_job_on_dynamic_slot(
+        self,
+        job: ExpandedExperimentJob,
+        state: dict[str, Any],
+        slot: _WorkerSlot,
+        completion_queue: Queue[tuple[_WorkerSlot, ExpandedExperimentJob, Exception | None]],
+    ) -> None:
+        failure: Exception | None = None
+        try:
+            self._run_single_job_on_slot(job=job, state=state, slot=slot)
+        except Exception as exc:  # pragma: no cover - defensive safety
+            failure = exc
+        finally:
+            completion_queue.put((slot, job, failure))
+
+    def _build_job_slot(self, *, slot_index: int, gpu_count: int) -> _WorkerSlot:
         if self._lifecycle_factory is None:
             raise RuntimeError("parallel execution requires lifecycle_factory")
 
-        slots: list[_WorkerSlot] = []
-        for index in range(slot_count):
-            lease: GPULease | None = None
-            ports: PortReservation | None = None
-            try:
-                lease = self._gpu_manager.acquire()
-                ports = self._port_allocator.reserve()
-                lifecycle = self._lifecycle if index == 0 else self._lifecycle_factory()
-                slots.append(
-                    _WorkerSlot(
-                        slot_index=index,
-                        lease=lease,
-                        ports=ports,
-                        lifecycle=lifecycle,
-                    )
-                )
-            except Exception:
-                if ports is not None:
-                    self._port_allocator.release(ports)
-                if lease is not None:
-                    self._gpu_manager.release(lease)
-                for slot in slots:
-                    self._release_slot(slot, reason="slot_initialization_failed")
-                raise
-        return slots
+        lease: GPULease | None = None
+        ports: PortReservation | None = None
+        try:
+            lease = self._gpu_manager.acquire(gpu_count)
+            ports = self._port_allocator.reserve()
+            lifecycle = self._lifecycle if slot_index == 0 else self._lifecycle_factory()
+            return _WorkerSlot(
+                slot_index=slot_index,
+                lease=lease,
+                ports=ports,
+                lifecycle=lifecycle,
+            )
+        except Exception:
+            if ports is not None:
+                self._port_allocator.release(ports)
+            if lease is not None:
+                self._gpu_manager.release(lease)
+            raise
 
     def _run_single_job(self, *, job: ExpandedExperimentJob, state: dict[str, Any]) -> None:
         preflight_error = self._preflight_error(job)
