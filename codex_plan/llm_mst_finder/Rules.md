@@ -54,6 +54,9 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler /local/scratch/a/shi676/.venv/
 - Do not use workload sampling tokenizers such as `whitespace` as proof that a prompt fits a production model context. Context validation must use the serving/model-compatible tokenizer.
 - `whitespace` and other toy tokenizers are allowed only in synthetic/offline unit tests or clearly labeled example workloads. They must not be used as production context validators for JSONL, ShareGPT, or any live profiling run.
 - If model max context length or a compatible tokenizer cannot be determined for a real dataset run, fail before trial dispatch unless the user explicitly disables validation and accepts the invalid-workload risk in recorded metadata.
+- Chat dataset conversation semantics must be explicit. `single_turn`, `multi_turn_prefix`, and `session_replay` are distinct workload identities and must be recorded in metadata/reports.
+- `session_replay` must preserve request order within each conversation/session. Do not shuffle turns inside one `session_id`; interleave different sessions instead.
+- Do not claim prefix-cache reuse from session replay by assumption alone. The workload may preserve reuse opportunity, but actual reuse is server-state dependent unless directly measured.
 
 ## Measurement Rules
 

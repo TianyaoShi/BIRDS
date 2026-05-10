@@ -165,6 +165,33 @@ Rules:
 - If tokenizer or max context length cannot be determined for real dataset validation, fail before starting the trial.
 - If a live server still returns model context-length validation errors, mark the trial as `invalid_workload` in analysis and exclude it from search bounds.
 
+### Chat workload conversation contract
+
+ShareGPT and WildChat-style datasets may be profiled as either independent single-turn requests or ordered multi-turn chat sessions. The selected mode is part of workload identity and must be recorded in trial/search/report metadata.
+
+Supported modes:
+
+- `single_turn`: default compatibility mode. Use the first ordered user/human -> assistant/gpt pair as one independent request per conversation.
+- `multi_turn_prefix`: construct independent requests from conversation prefixes and the next assistant response. This measures longer prompts but does not by itself preserve prefix-cache locality.
+- `session_replay`: realistic chat mode. Emit every valid assistant-target turn from a conversation, preserve request order within that conversation, and interleave multiple sessions across the stream.
+
+`session_replay` defaults:
+
+```YAML
+sampling:
+  conversation_mode: session_replay
+  turn_selection: all_valid
+  include_assistant_history: true
+  min_prompt_turns: 1
+  max_prompt_turns: 16
+traffic:
+  session_ordering: preserve_within_session
+  session_interleaving: shuffled_sessions
+  per_session_think_time_s: 0
+```
+
+Every session replay sample must carry `session_id`, `turn_index`, `preserve_order_key`, `preserve_order_index`, and `conversation_mode` metadata. The load generator/request source must not shuffle within a `preserve_order_key`. Preserving order only creates prefix-cache reuse opportunity; actual cache hits remain server/load dependent and should not be assumed in analysis unless exposed by metrics.
+
 ### Minimal CLI surface
 ```bash
 # One open-loop trial

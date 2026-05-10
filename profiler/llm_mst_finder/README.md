@@ -84,6 +84,7 @@ tokenizer: Qwen/Qwen3-8B
 sampling:
   seed: 1
   num_requests: 3000
+  conversation_mode: single_turn
   prompt_len:
     mode: from_dataset
   output_len:
@@ -165,7 +166,46 @@ dataset:
 
 HF datasets are sampled with deterministic reservoir sampling over the streamed split, using `sampling.seed`. This avoids the previous prefix bias from taking the first streamed rows. Add `dataset.max_scan_rows` only when you intentionally want to cap the scan and accept uniformity over the scanned prefix rather than the full split.
 
-For conversation-style HF rows, the current adapter uses the first user/human turn as the prompt and the first assistant/gpt turn as the reference completion length. It does not serialize full multi-round chat history into the request prompt.
+For conversation-style HF rows, the default adapter uses the first user/human turn as the prompt and the first assistant/gpt turn as the reference completion length.
+
+### Chat Conversation Modes
+
+Chat datasets are allowed to expose multi-round structure. The workload config must make the intended semantics explicit:
+
+```yaml
+sampling:
+  conversation_mode: single_turn        # single_turn | multi_turn_prefix | session_replay
+  turn_selection: first_valid           # first_valid | random_valid | all_valid
+  include_assistant_history: true
+  min_prompt_turns: 1
+  max_prompt_turns: 16
+traffic:
+  session_ordering: preserve_within_session
+  session_interleaving: shuffled_sessions
+  per_session_think_time_s: 0
+```
+
+Mode contract:
+
+- `single_turn`: current default. Use the first ordered user/human -> assistant/gpt pair as one independent request per conversation.
+- `multi_turn_prefix`: materialize independent requests whose prompt is the previous conversation prefix and whose expected output length comes from the next assistant turn. This is useful for length-distribution studies and cold-prefix load tests.
+- `session_replay`: replay all valid assistant-target turns from each conversation in conversation order. This is the realistic chatbot mode because it preserves the opportunity for prefix-cache hits across consecutive turns in the same session.
+
+For `session_replay`, `turn_selection` defaults to `all_valid`, `include_assistant_history` defaults to `true`, and the request source must preserve order within each `session_id` while interleaving different sessions. Replaying one complete conversation at a time is not the default because production traffic usually has many active sessions. The default interleaving is shuffled sessions with per-session order preserved.
+
+Each emitted sample in `session_replay` must include stable metadata:
+
+```json
+{
+  "session_id": "conversation-id",
+  "turn_index": 5,
+  "preserve_order_key": "conversation-id",
+  "preserve_order_index": 5,
+  "conversation_mode": "session_replay"
+}
+```
+
+Reports must record the conversation mode, turn-selection policy, number of sessions, valid target turns, turns-per-session distribution, and whether per-session order was preserved. `single_turn`, `multi_turn_prefix`, and `session_replay` results are different workloads and must not be compared unless that difference is intentional.
 
 Context policy rules:
 

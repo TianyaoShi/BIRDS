@@ -75,6 +75,7 @@ tokenizer: google/gemma-4-E4B-it
 sampling:
   seed: 1
   num_requests: 3000
+  conversation_mode: single_turn
   prompt_len:
     mode: from_dataset
   output_len:
@@ -99,6 +100,31 @@ dataset:
 ```
 
 If `over_limit` is `skip_sample` or `truncate_prompt`, skipped/truncated counts are recorded in metadata. Silent skip/truncate is not allowed.
+
+### Chat Conversation Workloads
+
+For ShareGPT/WildChat-style datasets, conversation semantics are workload identity. Supported modes are:
+
+- `single_turn`: first valid user/human -> assistant/gpt pair, independent requests.
+- `multi_turn_prefix`: independent prefix -> next assistant requests, useful for longer-prompt studies.
+- `session_replay`: realistic chatbot workload. Emit all valid assistant-target turns, preserve order within a session, and interleave sessions.
+
+Recommended realistic chat config:
+
+```yaml
+sampling:
+  conversation_mode: session_replay
+  turn_selection: all_valid
+  include_assistant_history: true
+  min_prompt_turns: 1
+  max_prompt_turns: 16
+traffic:
+  session_ordering: preserve_within_session
+  session_interleaving: shuffled_sessions
+  per_session_think_time_s: 0
+```
+
+The orchestrator should treat different `conversation_mode` values as different workloads. `session_replay` preserves prefix-cache reuse opportunity but does not guarantee cache hits; cache behavior remains a serving/runtime property.
 
 ### SLO Policy
 
