@@ -215,7 +215,7 @@ class OrchestratorScheduler:
         if self._lifecycle_factory is None:
             raise RuntimeError("parallel execution requires lifecycle_factory")
 
-        pending_jobs = list(jobs)
+        pending_jobs = self._filter_preflight_valid_jobs(jobs=jobs, state=state)
         completion_queue: Queue[tuple[_WorkerSlot, ExpandedExperimentJob, Exception | None]] = Queue()
         running_jobs: list[_RunningJob] = []
         worker_failures: list[Exception] = []
@@ -291,6 +291,27 @@ class OrchestratorScheduler:
         if worker_failures:
             first_failure = worker_failures[0]
             raise RuntimeError(f"parallel scheduler worker failed: {first_failure}") from first_failure
+
+    def _filter_preflight_valid_jobs(
+        self,
+        *,
+        jobs: list[ExpandedExperimentJob],
+        state: dict[str, Any],
+    ) -> list[ExpandedExperimentJob]:
+        valid_jobs: list[ExpandedExperimentJob] = []
+        for job in jobs:
+            preflight_error = self._preflight_error(job)
+            if preflight_error is None:
+                valid_jobs.append(job)
+                continue
+            self._mark_job_failed(state, experiment_id=job.experiment_id, error=preflight_error)
+            self._append_event(
+                state,
+                event_type="job_failed_preflight",
+                experiment_id=job.experiment_id,
+                payload={"error": preflight_error},
+            )
+        return valid_jobs
 
     def _next_schedulable_job_index(
         self,

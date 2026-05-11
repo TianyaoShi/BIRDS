@@ -557,6 +557,23 @@ def test_scheduler_parallel_bin_packs_mixed_gpu_counts(tmp_path: Path) -> None:
     assert tp4_state["status"] == "failed"
     assert "gpu_count=4" in tp4_state["last_error"]
 
+    events = [
+        json.loads(line)
+        for line in (state_store.run_root / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    tp4_preflight_index = next(
+        index
+        for index, event in enumerate(events)
+        if event["event_type"] == "job_failed_preflight"
+        and event["experiment_id"] == "job-tp4"
+    )
+    first_startup_index = next(
+        index
+        for index, event in enumerate(events)
+        if event["event_type"] == "startup_attempt"
+    )
+    assert tp4_preflight_index < first_startup_index
+
 
 def test_scheduler_force_rerun_resets_and_reexecutes(tmp_path: Path) -> None:
     job = _make_job(tmp_path, experiment_id="job-force", signature="sig-force")
