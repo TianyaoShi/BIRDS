@@ -6,7 +6,7 @@ dataset:
 
 sampling:
   seed: 42
-  num_requests: 5000
+  num_requests: 8000
   prompt_len:
     mode: from_dataset
   output_len:
