@@ -97,6 +97,17 @@ context_policy:
   over_limit: fail
 ```
 
+Tracked experiment workload templates should not contain cluster-specific raw
+dataset paths. For the standard ShareGPT workload, keep the tracked YAML pointed
+at `data/local/sharegpt/...` and set the local symlink once on each cluster:
+
+```bash
+mkdir -p data/local
+ln -sfn /actual/cluster/sharegpt/dir data/local/sharegpt
+```
+
+`data/` is ignored, so this keeps multi-cluster worktrees clean.
+
 ### ShareGPT Role Ordering
 
 The `sharegpt` loader treats ShareGPT as a single-turn chat workload. It only
