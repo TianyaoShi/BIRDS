@@ -39,8 +39,12 @@ def build_parser() -> argparse.ArgumentParser:
     resume.set_defaults(handler=_resume_command)
 
     status = subparsers.add_parser("status")
-    status.add_argument("--run-root", type=Path, required=True)
+    _add_run_root_arg(status)
     status.set_defaults(handler=_status_command)
+
+    progress = subparsers.add_parser("progress")
+    _add_run_root_arg(progress)
+    progress.set_defaults(handler=_status_command)
     return parser
 
 
@@ -145,6 +149,10 @@ def _status_command(args: argparse.Namespace) -> int:
     summary = state_store.summarize(state)
     print(json.dumps({"run_root": str(run_root), "summary": summary}, sort_keys=True))
     return 0
+
+
+def _add_run_root_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--run-root", "--runroot", dest="run_root", type=Path, required=True)
 
 
 def _build_scheduler(*, state_store: RunStateStore, manifest) -> OrchestratorScheduler:

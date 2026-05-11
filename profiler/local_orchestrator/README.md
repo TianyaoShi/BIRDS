@@ -50,6 +50,11 @@ PYTHONPATH=/path/to/arr26/profiler \
   --run-root /path/to/results/orchestrator/my-run-id
 ```
 
+The `status` output includes aggregate counts, per-job summaries, and a `progress`
+object with `total_jobs`, `terminal_jobs`, `remaining_jobs`, `active_jobs`, and
+`percent_complete`. `progress` is also available as an alias for `status`, and
+both commands accept `--run-root` or `--runroot`.
+
 ## Manifest overview
 
 The manifest has these top-level sections: `run`, optional `slurm`, `hardware`, `probe`, `launch`, `search`, `overrides`, `experiments`.

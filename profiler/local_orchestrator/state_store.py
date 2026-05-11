@@ -338,6 +338,7 @@ class RunStateStore:
             "status": state.get("status"),
             "updated_at": state.get("updated_at"),
             "counts": counts,
+            "progress": self._progress_from_counts(counts),
             "aggregate": {
                 "termination_reason_counts": dict(sorted(termination_reason_counts.items())),
                 "bottleneck_class_counts": dict(sorted(bottleneck_class_counts.items())),
@@ -366,6 +367,8 @@ class RunStateStore:
             f"- Succeeded: {summary['counts']['succeeded']}",
             f"- Failed: {summary['counts']['failed']}",
             f"- Skipped: {summary['counts']['skipped']}",
+            f"- Progress: {summary['progress']['terminal_jobs']}/{summary['progress']['total_jobs']} "
+            f"({summary['progress']['percent_complete']:.2f}%)",
             f"- Termination Reasons: {json.dumps(summary['aggregate']['termination_reason_counts'], sort_keys=True)}",
             f"- Bottleneck Classes: {json.dumps(summary['aggregate']['bottleneck_class_counts'], sort_keys=True)}",
             "",
@@ -410,6 +413,20 @@ class RunStateStore:
             )
         self.summary_md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return summary
+
+    @staticmethod
+    def _progress_from_counts(counts: dict[str, int]) -> dict[str, Any]:
+        total = sum(counts.values())
+        terminal = counts["succeeded"] + counts["failed"] + counts["skipped"]
+        remaining = counts["planned"] + counts["running"]
+        percent_complete = 100.0 if total == 0 else round((terminal / total) * 100.0, 2)
+        return {
+            "total_jobs": total,
+            "terminal_jobs": terminal,
+            "remaining_jobs": remaining,
+            "active_jobs": counts["running"],
+            "percent_complete": percent_complete,
+        }
 
     @staticmethod
     def _extract_search_result(job: dict[str, Any]) -> dict[str, Any] | None:
