@@ -138,6 +138,7 @@ def write_outputs(
             for sample in shard:
                 metadata = dict(sample.metadata)
                 metadata["shard_id"] = shard_id
+                metadata["prompt_tokenizer_key"] = f"materialized:{tokenizer_name}"
                 handle.write(
                     json.dumps(
                         {
@@ -184,8 +185,6 @@ def workload_yaml_payload(
     context_policy: dict[str, Any],
     output_len: dict[str, Any],
 ) -> dict[str, Any]:
-    if tokenizer_name == "whitespace":
-        raise ValueError("tokenizer_name must not be 'whitespace'")
     request_payload: dict[str, Any] = {
         "stream": request.get("stream", True),
         "temperature": request.get("temperature", 0.0),
@@ -205,7 +204,6 @@ def workload_yaml_payload(
             "type": "jsonl",
             "path": f"../shards/{shard_id}.runner.jsonl",
         },
-        "tokenizer": tokenizer_name,
         "sampling": {
             "seed": 42,
             "num_requests": shard_size,

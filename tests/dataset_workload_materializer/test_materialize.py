@@ -107,11 +107,11 @@ def test_generated_workload_yaml_loads_through_llm_mst_finder(tmp_path: Path) ->
     generated_workload = yaml.safe_load(
         (output_dir / "workload_yamls" / "shard_000.yaml").read_text(encoding="utf-8")
     )
-    assert generated_workload["tokenizer"] == "character"
+    assert "tokenizer" not in generated_workload
 
     prepared = prepare_workload_for_trial(
         output_dir / "workload_yamls" / "shard_000.yaml",
-        model_name="fake-model",
+        model_name="character",
     )
 
     assert len(prepared.samples) == 1
@@ -260,7 +260,7 @@ def test_longbench_generated_workload_yaml_loads_through_llm_mst_finder(tmp_path
 
     prepared = prepare_workload_for_trial(
         tmp_path / "out" / "workload_yamls" / "shard_000.yaml",
-        model_name="fake-model",
+        model_name="character",
     )
 
     assert len(prepared.samples) == 1
@@ -539,7 +539,7 @@ def test_reasoning_mcq_materialization_uses_final_answer_as_metadata_only(tmp_pa
 
     prepared = prepare_workload_for_trial(
         output_dir / "workload_yamls" / "shard_000.yaml",
-        model_name="fake-model",
+        model_name="character",
     )
     assert len(prepared.samples) == 1
     assert prepared.samples[0].expected_output_len == 2048
@@ -704,7 +704,7 @@ def test_natural_reasoning_materialization_uses_reference_answer_as_metadata_onl
 
     prepared = prepare_workload_for_trial(
         output_dir / "workload_yamls" / "shard_000.yaml",
-        model_name="fake-model",
+        model_name="character",
     )
     assert prepared.samples[0].expected_output_len == 4096
     assert prepared.samples[0].metadata["sampling_output_len_mode"] == "natural_until_eos"

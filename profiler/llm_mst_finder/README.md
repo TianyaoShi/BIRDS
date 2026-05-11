@@ -80,7 +80,6 @@ name: live_sharegpt
 dataset:
   type: sharegpt
   path: /path/to/ShareGPT.json
-tokenizer: Qwen/Qwen3-8B
 sampling:
   seed: 1
   num_requests: 3000

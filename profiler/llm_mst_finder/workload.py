@@ -908,6 +908,9 @@ def _load_jsonl_entries_from_source(
             metadata = row.get("metadata", {})
             if not isinstance(metadata, dict):
                 raise ValueError(f"jsonl row {index}.metadata must be a mapping")
+            metadata = dict(metadata)
+            if prompt_len is not None and "prompt_tokenizer_key" not in metadata:
+                metadata["prompt_tokenizer_key"] = "materialized:unknown"
             if include_prompt_len:
                 if prompt_len is not None:
                     pass
@@ -1747,31 +1750,32 @@ def generate_sample_requests(
         expected_output_len = _resolve_output_len(config.sampling.output_len, entry, rng)
         output_len_is_cap = config.sampling.output_len.mode == "natural_until_eos"
         output_cap_metadata = {"max_output_tokens": expected_output_len} if output_len_is_cap else {}
+        metadata = {
+            **entry.metadata,
+            "workload_name": config.name,
+            "dataset_type": config.dataset.type,
+            "request_index": request_index,
+            "source_index": entry.source_index,
+            "seed": config.sampling.seed,
+            "sampling_entry_selection": config.sampling.entry_selection,
+            "sampling_conversation_mode": config.sampling.conversation_mode,
+            "sampling_turn_selection": config.sampling.effective_turn_selection,
+            "traffic_session_interleaving": config.traffic.session_interleaving,
+            "traffic_session_ordering": config.traffic.session_ordering,
+            "traffic_per_session_think_time_s": config.traffic.per_session_think_time_s,
+            "sampling_prompt_len_mode": config.sampling.prompt_len.mode,
+            "sampling_output_len_mode": config.sampling.output_len.mode,
+            "sampling_output_len_is_cap": output_len_is_cap,
+            **output_cap_metadata,
+        }
+        metadata.setdefault("prompt_tokenizer_key", workload_tokenizer_key)
         samples.append(
             SampleRequest(
                 prompt=prompt,
                 prompt_len=prompt_len,
                 expected_output_len=expected_output_len,
                 extra_body=dict(config.request.extra_body) or None,
-                metadata={
-                    **entry.metadata,
-                    "workload_name": config.name,
-                    "dataset_type": config.dataset.type,
-                    "request_index": request_index,
-                    "source_index": entry.source_index,
-                    "seed": config.sampling.seed,
-                    "sampling_entry_selection": config.sampling.entry_selection,
-                    "sampling_conversation_mode": config.sampling.conversation_mode,
-                    "sampling_turn_selection": config.sampling.effective_turn_selection,
-                    "traffic_session_interleaving": config.traffic.session_interleaving,
-                    "traffic_session_ordering": config.traffic.session_ordering,
-                    "traffic_per_session_think_time_s": config.traffic.per_session_think_time_s,
-                    "sampling_prompt_len_mode": config.sampling.prompt_len.mode,
-                    "sampling_output_len_mode": config.sampling.output_len.mode,
-                    "sampling_output_len_is_cap": output_len_is_cap,
-                    **output_cap_metadata,
-                    "prompt_tokenizer_key": workload_tokenizer_key,
-                },
+                metadata=metadata,
             )
         )
     return samples
