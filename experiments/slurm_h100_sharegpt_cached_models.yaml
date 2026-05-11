@@ -16,7 +16,7 @@ slurm:
   setup_commands:
     - source /scratch/gautschi/shi676/BioLLM/helper_scripts/activate_vllm_h100.sh
   python_executable: /scratch/gautschi/shi676/BioLLM/.venv-h100/bin/python
-  array_concurrency_limit: 1
+  array_concurrency_limit: 3
   base_port: 9200
 
 hardware:
@@ -144,6 +144,17 @@ overrides:
 
   - match:
       models:
+        - Qwen/Qwen3-235B-A22B-Instruct-2507
+        - Qwen/Qwen3-235B-A22B-Thinking-2507
+    reason: Qwen3-235B-A22B requires TP8; keep the ShareGPT search ceiling conservative for full-node runs.
+    search:
+      initial_request_rate: 0.5
+      max_request_rate: 20
+      max_binary_steps: 8
+      max_bracket_trials: 10
+
+  - match:
+      models:
         - meta-llama/Llama-2-7b-chat-hf
         - meta-llama/Llama-2-13b-chat-hf
         - meta-llama/Llama-2-70b-chat-hf
@@ -168,7 +179,6 @@ overrides:
 experiments:
   # Excluded from helper_scripts/hf_cached_models.txt:
   # - <3B models: Qwen3-0.6B, Qwen3-1.7B, gemma-4-E2B-it, Llama-3.2-1B-Instruct.
-  # - Qwen3-235B-A22B Instruct/Thinking, which needs at least 8 GPUs.
 
   - id: qwen3-4b-instruct-h100-tp1
     model: Qwen/Qwen3-4B-Instruct-2507
@@ -239,6 +249,20 @@ experiments:
     launch:
       gpu_count: 4
       tensor_parallel_size: 4
+
+  - id: qwen3-235b-a22b-instruct-h100-tp8
+    model: Qwen/Qwen3-235B-A22B-Instruct-2507
+    workload: ./workloads/live_sharegpt_workload_context.yaml
+    launch:
+      gpu_count: 8
+      tensor_parallel_size: 8
+
+  - id: qwen3-235b-a22b-thinking-h100-tp8
+    model: Qwen/Qwen3-235B-A22B-Thinking-2507
+    workload: ./workloads/live_sharegpt_workload_context.yaml
+    launch:
+      gpu_count: 8
+      tensor_parallel_size: 8
 
   - id: gemma-4-e4b-it-h100-tp1
     model: google/gemma-4-E4B-it
