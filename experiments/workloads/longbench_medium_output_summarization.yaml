@@ -2,7 +2,6 @@ name: longbench_medium_output_summarization
 dataset:
   type: jsonl
   path: ../longbench_workloads/materialization/longbench_medium_output_summarization_expanded_qwen3_8b/shards/shard_000.runner.jsonl
-tokenizer: Qwen/Qwen3-8B
 sampling:
   seed: 42
   num_requests: 5245
