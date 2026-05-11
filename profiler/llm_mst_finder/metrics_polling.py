@@ -215,16 +215,18 @@ class PrometheusMetricsPoller:
             async with self._session.get(self._metrics_url) as response:
                 if response.status != 200:
                     body = await response.text()
-                    raise RuntimeError(
+                    return _poll_error_sample(
+                        ts,
                         "Prometheus metrics poll failed: "
                         f"HTTP {response.status}: "
-                        f"{body.strip() or response.reason or 'metrics poll failed'}"
+                        f"{body.strip() or response.reason or 'metrics poll failed'}",
                     )
                 payload = await response.text()
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
-            raise RuntimeError(
-                "Prometheus metrics poll failed: " f"{type(exc).__name__}: {exc}"
-            ) from exc
+            return _poll_error_sample(
+                ts,
+                "Prometheus metrics poll failed: " f"{type(exc).__name__}: {exc}",
+            )
         return parse_server_metrics_sample(ts=ts, payload=payload)
 
     async def run(
@@ -257,3 +259,18 @@ class PrometheusMetricsPoller:
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, sort_keys=True))
             handle.write("\n")
+
+
+def _poll_error_sample(ts: float, error: str) -> ServerMetricSample:
+    return ServerMetricSample(
+        ts=ts,
+        raw={"poll_error": error},
+        num_running=None,
+        num_waiting=None,
+        num_swapped=None,
+        kv_cache_usage=None,
+        prompt_tokens_total=None,
+        generation_tokens_total=None,
+        request_success_total=None,
+        request_abort_total=None,
+    )

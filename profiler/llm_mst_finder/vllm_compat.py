@@ -145,6 +145,8 @@ def decode_sse_line(raw_chunk: bytes) -> str | None:
         return None
     text = remove_prefix(text, "data: ")
     text = remove_prefix(text, "data:")
+    if not text.strip():
+        return None
     return text
 
 

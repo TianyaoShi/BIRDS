@@ -134,7 +134,7 @@ def test_prometheus_metrics_poller_writes_samples(
     asyncio.run(run())
 
 
-def test_prometheus_metrics_poller_raises_http_failures(tmp_path: Path) -> None:
+def test_prometheus_metrics_poller_records_http_failures(tmp_path: Path) -> None:
     async def run() -> None:
         class FakeResponse:
             status = 500
@@ -161,12 +161,18 @@ def test_prometheus_metrics_poller_raises_http_failures(tmp_path: Path) -> None:
             session=FakeSession(),
         )
 
-        with pytest.raises(RuntimeError, match="Prometheus metrics poll failed: HTTP 500"):
-            await poller.run(
-                output_path=output_path,
-                stop_event=stop_event,
-                trial_id="trial-prometheus",
-            )
-        assert not output_path.exists()
+        stop_event.set()
+        samples = await poller.run(
+            output_path=output_path,
+            stop_event=stop_event,
+            trial_id="trial-prometheus",
+        )
+
+        assert len(samples) == 1
+        assert samples[0].raw == {
+            "poll_error": "Prometheus metrics poll failed: HTTP 500: server exploded"
+        }
+        decoded = json.loads(output_path.read_text(encoding="utf-8"))
+        assert decoded["raw"] == samples[0].raw
 
     asyncio.run(run())

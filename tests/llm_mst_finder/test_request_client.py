@@ -106,6 +106,35 @@ def test_request_client_parses_streaming_chat_response() -> None:
     asyncio.run(run())
 
 
+def test_request_client_skips_empty_sse_data_events() -> None:
+    async def run() -> None:
+        response = FakeResponse(
+            status=200,
+            chunks=[
+                b"data:\n\n",
+                b'data: {"choices": [{"delta": {"content": "ok"}}]}\n\n',
+                b"data: [DONE]\n\n",
+            ],
+        )
+        session = FakeSession(response)
+        async with RequestClient(
+            base_url="http://unit-test",
+            endpoint="/v1/chat/completions",
+            model="fake-model",
+            session=session,
+        ) as client:
+            record = await client.send_request(
+                SampleRequest(prompt="hello", prompt_len=5, expected_output_len=4),
+                request_id="req-empty-sse",
+                trial_id="trial-001",
+                scheduled_send_ts=0.0,
+            )
+        assert record.success is True
+        assert record.actual_output_len == 1
+
+    asyncio.run(run())
+
+
 def test_request_client_parses_streaming_chat_reasoning_tokens() -> None:
     async def run() -> None:
         response = FakeResponse(
