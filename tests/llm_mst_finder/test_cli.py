@@ -281,6 +281,7 @@ def test_cli_search_records_server_metadata_file(
     assert config.final_confirmation_duration_s == 25.0
     assert config.closed_loop_min_trials == 4
     assert config.request_reuse_policy == "no-repeat-per-trial"
+    assert config.request_reuse_strict_unique_threshold == 4096
     metadata = config.metadata
     assert metadata["stability_policy"]["ttft_slo_ms"] == 1500.0
     assert metadata["stability_policy"]["ttft_slo_field"] == "ttft_p99_ms"
@@ -294,6 +295,68 @@ def test_cli_search_records_server_metadata_file(
     assert metadata["request_reuse"]["policy"] == "no-repeat-per-trial"
     assert metadata["request_reuse"]["sample_rows"] > 0
     assert metadata["request_reuse"]["unique_reuse_keys"] > 0
+    assert metadata["request_reuse"]["strict_unique_threshold"] == 4096
+    assert metadata["request_reuse"]["effective_exhaustion_behavior"] == "policy_defined"
+
+
+def test_cli_search_records_request_reuse_threshold_override(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    class StubSearchResult:
+        def __init__(self, search_id: str) -> None:
+            self.search_id = search_id
+
+        def to_dict(self) -> dict[str, object]:
+            return {"search_id": self.search_id, "max_no_drift_request_rate": 1.0}
+
+    class StubSearchController:
+        instances: list["StubSearchController"] = []
+
+        def __init__(self, *args, **kwargs) -> None:
+            self.config = None
+            StubSearchController.instances.append(self)
+
+        async def search(self, config) -> StubSearchResult:
+            self.config = config
+            return StubSearchResult(config.search_id)
+
+    monkeypatch.setattr("llm_mst_finder.cli.RequestClient", StubRequestClient)
+    monkeypatch.setattr("llm_mst_finder.cli.SearchController", StubSearchController)
+    workload_path = FIXTURES_ROOT / "workloads" / "synthetic_fixed_512_128.yaml"
+
+    exit_code = main(
+        [
+            "search",
+            "--search-id",
+            "cli-search-reuse-threshold",
+            "--search-mode",
+            "open-loop",
+            "--output-dir",
+            str(tmp_path / "search"),
+            "--model",
+            "fake-model",
+            "--workload",
+            str(workload_path),
+            "--trial-min-duration-s",
+            "10",
+            "--request-reuse-policy",
+            "no-repeat-across-search",
+            "--request-reuse-strict-unique-threshold",
+            "none",
+        ]
+    )
+
+    assert exit_code == 0
+    captured = json.loads(capsys.readouterr().out.strip())
+    assert captured["search_id"] == "cli-search-reuse-threshold"
+    config = StubSearchController.instances[-1].config
+    assert config.request_reuse_policy == "no-repeat-across-search"
+    assert config.request_reuse_strict_unique_threshold is None
+    metadata = config.metadata["request_reuse"]
+    assert metadata["strict_unique_threshold"] is None
+    assert metadata["effective_exhaustion_behavior"] == "fail_when_unique_content_exhausted"
 
 
 def test_cli_rejects_conflicting_server_metadata(

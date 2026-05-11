@@ -106,6 +106,7 @@ def test_request_source_factory_can_avoid_repeats_across_search() -> None:
     factory = request_source_factory_for_reuse_policy(
         samples,
         reuse_policy="no-repeat-across-search",
+        no_repeat_across_search_strict_unique_threshold=None,
     )
 
     first_trial = factory()
@@ -118,6 +119,28 @@ def test_request_source_factory_can_avoid_repeats_across_search() -> None:
         pass
     else:
         raise AssertionError("cross-search unique source should exhaust")
+
+
+def test_request_source_factory_cycles_after_exhaustion_for_large_unique_pool() -> None:
+    samples = [
+        SampleRequest(
+            prompt=f"prompt-{index}",
+            prompt_len=5,
+            expected_output_len=3,
+            metadata={"content_hash": str(index)},
+        )
+        for index in range(4)
+    ]
+    factory = request_source_factory_for_reuse_policy(
+        samples,
+        reuse_policy="no-repeat-across-search",
+        no_repeat_across_search_strict_unique_threshold=4,
+    )
+
+    first_trial = factory()
+    second_trial = factory()
+    assert [first_trial().prompt for _ in range(2)] == ["prompt-0", "prompt-1"]
+    assert [second_trial().prompt for _ in range(4)] == ["prompt-2", "prompt-3", "prompt-0", "prompt-1"]
 
 
 def test_request_source_factory_preserves_session_replay_order_across_trials() -> None:

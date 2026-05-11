@@ -241,9 +241,11 @@ Search defaults to:
 
 This policy uses `metadata.content_hash` when present, then sample identity
 metadata, and finally a prompt hash. A content hash is sent at most once during
-the whole search run. If the workload runs out of unused content, the trial is
-aborted and marked with a request-source exhaustion reason rather than silently
-cycling through cached prompts.
+the whole search run. By default it stays strict only for small unique pools;
+once the workload has at least 4,096 unique reuse keys it degrades to
+rotate-after-exhaustion instead of hard-failing the search. Use
+`--request-reuse-strict-unique-threshold none` to keep strict exhaustion, or
+set a different positive threshold explicitly.
 
 Other policies are explicit opt-ins:
 

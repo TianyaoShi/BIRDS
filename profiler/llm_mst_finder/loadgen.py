@@ -19,6 +19,8 @@ RequestReusePolicy = Literal[
     "unique-then-cycle",
 ]
 
+DEFAULT_NO_REPEAT_ACROSS_SEARCH_STRICT_UNIQUE_THRESHOLD = 4096
+
 
 class RequestSourceExhausted(RuntimeError):
     pass
@@ -125,6 +127,9 @@ def request_source_factory_for_reuse_policy(
     requests: Sequence[SampleRequest],
     *,
     reuse_policy: RequestReusePolicy,
+    no_repeat_across_search_strict_unique_threshold: int | None = (
+        DEFAULT_NO_REPEAT_ACROSS_SEARCH_STRICT_UNIQUE_THRESHOLD
+    ),
 ) -> Callable[[], RequestSource]:
     if not requests:
         raise ValueError("requests must be non-empty")
@@ -135,6 +140,11 @@ def request_source_factory_for_reuse_policy(
         "unique-then-cycle",
     }:
         raise ValueError(f"unsupported request reuse policy {reuse_policy!r}")
+    if (
+        no_repeat_across_search_strict_unique_threshold is not None
+        and no_repeat_across_search_strict_unique_threshold <= 0
+    ):
+        raise ValueError("no_repeat_across_search_strict_unique_threshold must be positive when provided")
     if reuse_policy == "unique-then-cycle":
         return unique_then_cycling_request_source_factory(requests)
 
@@ -142,6 +152,14 @@ def request_source_factory_for_reuse_policy(
     start_offset_stride = _start_offset_stride(len(requests))
     shared_used_keys: set[str] = set()
     preserve_session_order = _requires_preserved_session_order(requests)
+    unique_request_count = count_unique_request_reuse_keys(requests)
+    fallback_to_cycle_after_exhaustion = (
+        reuse_policy == "no-repeat-across-search"
+        and no_repeat_across_search_strict_unique_threshold is not None
+        and unique_request_count >= no_repeat_across_search_strict_unique_threshold
+    )
+    if fallback_to_cycle_after_exhaustion:
+        return unique_then_cycling_request_source_factory(requests)
 
     def make_request_source() -> RequestSource:
         trial_index = next(trial_counter)

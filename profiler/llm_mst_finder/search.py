@@ -77,6 +77,7 @@ class SearchConfig:
     metrics_interval_s: float = 1.0
     window_s: float = 10.0
     request_reuse_policy: RequestReusePolicy = "no-repeat-across-search"
+    request_reuse_strict_unique_threshold: int | None = 4096
     metadata: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -139,6 +140,11 @@ class SearchConfig:
             "unique-then-cycle",
         }:
             raise ValueError(f"unsupported request_reuse_policy {self.request_reuse_policy!r}")
+        if self.request_reuse_strict_unique_threshold is not None:
+            _require_positive_int(
+                "request_reuse_strict_unique_threshold",
+                self.request_reuse_strict_unique_threshold,
+            )
 
     @property
     def confirmation_duration_s(self) -> float:

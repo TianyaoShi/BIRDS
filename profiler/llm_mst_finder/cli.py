@@ -10,6 +10,7 @@ from typing import Any, Mapping, Sequence
 
 from .analysis import analyze_trial_dir, write_analysis_artifact
 from .loadgen import (
+    DEFAULT_NO_REPEAT_ACROSS_SEARCH_STRICT_UNIQUE_THRESHOLD,
     count_unique_request_reuse_keys,
     request_source_factory_for_reuse_policy,
 )
@@ -81,9 +82,16 @@ def build_parser() -> argparse.ArgumentParser:
     run_trial.add_argument("--safety-max-outstanding", type=int, default=None)
     run_trial.add_argument(
         "--request-reuse-policy",
-        choices=("cycle", "no-repeat-per-trial", "unique-then-cycle"),
+        choices=("cycle", "no-repeat-per-trial", "no-repeat-across-search", "unique-then-cycle"),
         default="cycle",
         help="request reuse policy for this single trial",
+    )
+    run_trial.add_argument(
+        "--request-reuse-strict-unique-threshold",
+        type=_optional_positive_int_arg,
+        default=DEFAULT_NO_REPEAT_ACROSS_SEARCH_STRICT_UNIQUE_THRESHOLD,
+        help="for no-repeat-across-search, hard-fail only when the unique request pool is smaller than this; "
+        "larger pools rotate after unique content is exhausted. Use 'none' to keep strict exhaustion.",
     )
     run_trial.add_argument("--metrics-url", default=None)
     run_trial.add_argument("--metrics-interval-s", type=float, default=1.0)
@@ -160,6 +168,13 @@ def build_parser() -> argparse.ArgumentParser:
         default="no-repeat-across-search",
         help="request reuse policy across search trials",
     )
+    search.add_argument(
+        "--request-reuse-strict-unique-threshold",
+        type=_optional_positive_int_arg,
+        default=DEFAULT_NO_REPEAT_ACROSS_SEARCH_STRICT_UNIQUE_THRESHOLD,
+        help="for no-repeat-across-search, hard-fail only when the unique request pool is smaller than this; "
+        "larger pools rotate after unique content is exhausted. Use 'none' to keep strict exhaustion.",
+    )
     search.add_argument("--metrics-url", "--server-metrics-url", dest="metrics_url", default=None)
     search.add_argument("--metrics-interval-s", type=float, default=1.0)
     search.add_argument("--window-s", type=float, default=10.0)
@@ -198,6 +213,7 @@ async def _run_trial_command(args: argparse.Namespace) -> int:
     request_source = request_source_factory_for_reuse_policy(
         request_samples,
         reuse_policy=args.request_reuse_policy,
+        no_repeat_across_search_strict_unique_threshold=args.request_reuse_strict_unique_threshold,
     )()
     request_client = RequestClient(
         base_url=args.base_url,
@@ -226,6 +242,7 @@ async def _run_trial_command(args: argparse.Namespace) -> int:
         _request_reuse_metadata(
             prepared_workload.samples,
             request_reuse_policy=args.request_reuse_policy,
+            request_reuse_strict_unique_threshold=args.request_reuse_strict_unique_threshold,
         ),
         _parse_server_metadata_args(args),
         _stability_policy_payload_from_args(args),
@@ -337,6 +354,7 @@ async def _search_command(args: argparse.Namespace) -> int:
         _request_reuse_metadata(
             prepared_workload.samples,
             request_reuse_policy=args.request_reuse_policy,
+            request_reuse_strict_unique_threshold=args.request_reuse_strict_unique_threshold,
         ),
         _parse_server_metadata_args(args),
         _stability_policy_payload_from_args(args),
@@ -378,6 +396,7 @@ async def _search_command(args: argparse.Namespace) -> int:
         metrics_interval_s=args.metrics_interval_s,
         window_s=args.window_s,
         request_reuse_policy=args.request_reuse_policy,
+        request_reuse_strict_unique_threshold=args.request_reuse_strict_unique_threshold,
         metadata=metadata,
     )
     controller = SearchController(
@@ -385,6 +404,7 @@ async def _search_command(args: argparse.Namespace) -> int:
         request_source_factory=request_source_factory_for_reuse_policy(
             prepared_workload.samples,
             reuse_policy=args.request_reuse_policy,
+            no_repeat_across_search_strict_unique_threshold=args.request_reuse_strict_unique_threshold,
         ),
         output_dir=args.output_dir,
     )
@@ -511,14 +531,39 @@ def _request_reuse_metadata(
     samples: Sequence[Any],
     *,
     request_reuse_policy: str,
+    request_reuse_strict_unique_threshold: int | None,
 ) -> dict[str, object]:
+    unique_reuse_keys = count_unique_request_reuse_keys(samples)
     return {
         "request_reuse": {
             "policy": request_reuse_policy,
             "sample_rows": len(samples),
-            "unique_reuse_keys": count_unique_request_reuse_keys(samples),
+            "unique_reuse_keys": unique_reuse_keys,
+            "strict_unique_threshold": request_reuse_strict_unique_threshold,
+            "effective_exhaustion_behavior": _request_reuse_exhaustion_behavior(
+                policy=request_reuse_policy,
+                unique_reuse_keys=unique_reuse_keys,
+                strict_unique_threshold=request_reuse_strict_unique_threshold,
+            ),
         }
     }
+
+
+def _request_reuse_exhaustion_behavior(
+    *,
+    policy: str,
+    unique_reuse_keys: int,
+    strict_unique_threshold: int | None,
+) -> str:
+    if policy == "unique-then-cycle":
+        return "cycle_after_unique_exhaustion"
+    if policy != "no-repeat-across-search":
+        return "policy_defined"
+    if strict_unique_threshold is None:
+        return "fail_when_unique_content_exhausted"
+    if unique_reuse_keys >= strict_unique_threshold:
+        return "cycle_after_unique_exhaustion"
+    return "fail_when_unique_content_exhausted"
 
 
 def _positive_server_metadata_arg(raw_value: str) -> float:
@@ -538,6 +583,18 @@ def _positive_int_arg(raw_value: str) -> int:
         raise argparse.ArgumentTypeError("must be a positive integer") from exc
     if value <= 0:
         raise argparse.ArgumentTypeError("must be a positive integer")
+    return value
+
+
+def _optional_positive_int_arg(raw_value: str) -> int | None:
+    if raw_value.lower() in {"none", "null", "off", "disabled"}:
+        return None
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer or 'none'") from exc
+    if value <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer or 'none'")
     return value
 
 
