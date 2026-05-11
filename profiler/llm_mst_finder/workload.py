@@ -1809,7 +1809,7 @@ def inspect_workload_dataset(
     max_scan_rows: int | None = None,
 ) -> dict[str, Any]:
     config = load_workload_config(path)
-    fallback_tokenizer_name = tokenizer_name or config.tokenizer
+    fallback_tokenizer_name = tokenizer_name or config.tokenizer or model_name
     fallback_tokenizer = resolve_tokenizer(fallback_tokenizer_name)
     fallback_tokenizer_key = _tokenizer_cache_key(fallback_tokenizer_name, tokenizer=fallback_tokenizer)
     tokenizer = fallback_tokenizer

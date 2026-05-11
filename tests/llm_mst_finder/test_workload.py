@@ -1046,6 +1046,118 @@ def test_prepare_workload_for_trial_uses_model_tokenizer_for_dataset_lengths(
     assert model_context["model_max_model_len"] == 128
 
 
+def test_prepare_workload_for_trial_does_not_require_workload_tokenizer_when_model_is_provided(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    class CharacterModelTokenizer:
+        model_max_length = 128
+
+        def encode(self, text: str) -> list[int]:
+            return list(range(len(text)))
+
+        def decode(self, token_ids: list[int]) -> str:
+            return "x" * len(token_ids)
+
+    monkeypatch.setattr(
+        "llm_mst_finder.workload.HuggingFaceTokenizer",
+        lambda tokenizer_name: CharacterModelTokenizer(),
+    )
+    monkeypatch.setattr(
+        "llm_mst_finder.model_context._resolve_vllm_tokenizer",
+        lambda tokenizer_name: CharacterModelTokenizer(),
+    )
+    dataset_path = tmp_path / "requests.jsonl"
+    dataset_path.write_text(
+        json.dumps({"prompt": "alpha beta", "expected_output_len": 2}) + "\n",
+        encoding="utf-8",
+    )
+    workload_path = tmp_path / "jsonl_model_tokenizer_no_workload_tokenizer.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: jsonl-model-tokenizer-no-workload-tokenizer",
+                "dataset:",
+                "  type: jsonl",
+                f"  path: {dataset_path}",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 1",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+                "context_policy:",
+                "  over_limit: fail",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    prepared = prepare_workload_for_trial(workload_path, model_name="fake/model")
+
+    assert prepared.samples[0].prompt_len == len("alpha beta")
+    assert prepared.samples[0].metadata["prompt_tokenizer_key"] == "tokenizer:fake/model"
+    model_context = prepared.metadata["workload"]["model_context"]
+    assert model_context["tokenizer_source"] == "vllm_model_config"
+    assert model_context["tokenizer_key"] == "tokenizer:fake/model"
+
+
+def test_inspect_workload_dataset_defaults_to_model_tokenizer_without_workload_tokenizer(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    class CharacterModelTokenizer:
+        model_max_length = 128
+
+        def encode(self, text: str) -> list[int]:
+            return list(range(len(text)))
+
+        def decode(self, token_ids: list[int]) -> str:
+            return "x" * len(token_ids)
+
+    monkeypatch.setattr(
+        "llm_mst_finder.workload.HuggingFaceTokenizer",
+        lambda tokenizer_name: CharacterModelTokenizer(),
+    )
+    monkeypatch.setattr(
+        "llm_mst_finder.model_context._resolve_vllm_tokenizer",
+        lambda tokenizer_name: CharacterModelTokenizer(),
+    )
+    dataset_path = tmp_path / "requests.jsonl"
+    dataset_path.write_text(
+        json.dumps({"prompt": "alpha beta", "expected_output_len": 2}) + "\n",
+        encoding="utf-8",
+    )
+    workload_path = tmp_path / "jsonl_inspect_no_workload_tokenizer.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: jsonl-inspect-no-workload-tokenizer",
+                "dataset:",
+                "  type: jsonl",
+                f"  path: {dataset_path}",
+                "sampling:",
+                "  seed: 1",
+                "  num_requests: 1",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+                "context_policy:",
+                "  over_limit: fail",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = inspect_workload_dataset(workload_path, model_name="fake/model")
+
+    assert result["inspection_tokenizer"] == "fake/model"
+    assert result["tokenizer_key"] == "tokenizer:fake/model"
+    assert result["model_context"]["tokenizer_source"] == "vllm_model_config"
+
+
 def test_prepare_workload_for_trial_truncates_to_serving_max_model_len(
     tmp_path: Path,
     monkeypatch,
