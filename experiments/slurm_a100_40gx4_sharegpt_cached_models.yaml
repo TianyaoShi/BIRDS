@@ -8,7 +8,7 @@ run:
 slurm:
   partition: gpu
   account: cis250584-gpu
-  time: 04:00:00
+  time: 02:30:00
   modules:
     - modtree/gpu
     - gcc/11.2.0
@@ -17,7 +17,7 @@ slurm:
     - source /anvil/projects/x-cis250584/BioLLM/helper_scripts/activate_vllm_a100.sh
   python_executable: /anvil/projects/x-cis250584/BioLLM/.venv-a100/bin/python
   cpus_per_gpu: 16
-  array_concurrency_limit: 1
+  array_concurrency_limit: 3
   base_port: 9300
 
 hardware:
