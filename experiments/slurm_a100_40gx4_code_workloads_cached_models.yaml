@@ -25,7 +25,7 @@ hardware:
 probe:
   enabled: true
   auto_gpu_count: false
-  default_context_tokens: 8192
+  default_context_tokens: 32768
   activation_memory_gb: 2.0
   memory_safety_factor: 1.25
   kv_cache_request_count: 1
@@ -38,7 +38,7 @@ launch:
   gpu_count: 1
   dtype: float16
   gpu_memory_utilization: 0.88
-  max_model_len: 8192
+  max_model_len: 32768
   max_num_seqs: 128
   max_num_batched_tokens: 2048
   readiness_timeout_s: 1800
@@ -81,7 +81,7 @@ overrides:
 - match:
     workloads:
     - '*repobench*'
-  reason: RepoBench 8k-drop has long retrieved-code prompts but one-line completions; keep TTFT bounded to IDE-like latency.
+  reason: RepoBench has long retrieved-code prompts but short completions.
   search:
     initial_request_rate: 0.25
     max_request_rate: 4
@@ -90,15 +90,6 @@ overrides:
     ttft_slo_ms: 5000
     tpot_slo_ms: 75
 - match:
-    model: openai/gpt-oss-120b
-  reason: gpt-oss-120B uses quantized checkpoint metadata; keep A100 TP4 launch conservative.
-  launch:
-    dtype: auto
-    gpu_memory_utilization: 0.88
-    max_model_len: 8192
-    max_num_seqs: 128
-    max_num_batched_tokens: 2048
-- match:
     models:
     - Qwen/Qwen3-0.6B
     - Qwen/Qwen3-1.7B
@@ -106,10 +97,10 @@ overrides:
     - meta-llama/Llama-3.2-1B-Instruct
     workloads:
     - '*crosscodeeval*'
-  reason: Single-GPU small models can use a wider CrossCodeEval request-rate envelope on A100.
+  reason: Small A100 models can use a wider CrossCodeEval envelope.
   launch:
-    max_num_seqs: 512
-    max_num_batched_tokens: 8192
+    max_num_seqs: 256
+    max_num_batched_tokens: 4096
   search:
     initial_request_rate: 2
     max_request_rate: 64
@@ -126,7 +117,7 @@ overrides:
     - meta-llama/Llama-3.2-3B-Instruct
     workloads:
     - '*crosscodeeval*'
-  reason: Single-GPU 3B/4B models keep an interactive CrossCodeEval latency target.
+  reason: 3B/4B A100 code-completion models keep an interactive latency target.
   search:
     initial_request_rate: 1
     max_request_rate: 24
@@ -134,15 +125,13 @@ overrides:
     max_bracket_trials: 16
     ttft_slo_ms: 750
     tpot_slo_ms: 50
-    max_closed_loop_concurrency: 128
 - match:
     models:
     - Qwen/Qwen3-8B
-    - Qwen/Qwen3-14B
     - meta-llama/Llama-3.1-8B-Instruct
     workloads:
     - '*crosscodeeval*'
-  reason: Single-GPU 8B/14B models use a lower CrossCodeEval ceiling on A100-40GB.
+  reason: 8B A100 code-completion models at full workload context.
   search:
     initial_request_rate: 0.5
     max_request_rate: 10
@@ -158,10 +147,10 @@ overrides:
     - meta-llama/Llama-3.2-1B-Instruct
     workloads:
     - '*repobench*'
-  reason: Small A100 RepoBench runs can probe a wider 8k prompt envelope while keeping bounded batching.
+  reason: Small A100 RepoBench runs can probe a wider envelope.
   launch:
-    max_num_seqs: 512
-    max_num_batched_tokens: 8192
+    max_num_seqs: 256
+    max_num_batched_tokens: 4096
   search:
     initial_request_rate: 0.5
     max_request_rate: 12
@@ -169,7 +158,6 @@ overrides:
     max_bracket_trials: 16
     ttft_slo_ms: 5000
     tpot_slo_ms: 50
-    max_closed_loop_concurrency: 128
 - match:
     models:
     - Qwen/Qwen3-4B-Instruct-2507
@@ -186,15 +174,13 @@ overrides:
     max_bracket_trials: 16
     ttft_slo_ms: 5000
     tpot_slo_ms: 50
-    max_closed_loop_concurrency: 64
 - match:
     models:
     - Qwen/Qwen3-8B
-    - Qwen/Qwen3-14B
     - meta-llama/Llama-3.1-8B-Instruct
     workloads:
     - '*repobench*'
-  reason: 8B/14B RepoBench runs get lower ceilings on A100-40GB.
+  reason: 8B RepoBench runs keep lower ceilings at full workload context.
   search:
     initial_request_rate: 0.25
     max_request_rate: 4
@@ -202,63 +188,51 @@ overrides:
     max_bracket_trials: 14
     ttft_slo_ms: 5000
     tpot_slo_ms: 75
-    max_closed_loop_concurrency: 64
 - match:
     models:
+    - Qwen/Qwen3-14B
     - Qwen/Qwen3-30B-A3B-Instruct-2507
     - Qwen/Qwen3-30B-A3B-Thinking-2507
     - Qwen/Qwen3-32B
     - google/gemma-4-26B-A4B-it
     - google/gemma-4-31B-it
     - meta-llama/CodeLlama-34b-Instruct-hf
-    workloads:
-    - '*crosscodeeval*'
-  reason: A100 30B-class CrossCodeEval runs use TP2/TP4 with a conservative code-completion ceiling.
+    - openai/gpt-oss-120b
+  reason: Large A100-40GB code runs use 8k workload and engine context for memory headroom.
   launch:
+    max_model_len: 8192
     max_num_seqs: 128
     max_num_batched_tokens: 2048
-  search:
-    initial_request_rate: 0.25
-    max_request_rate: 6
-    max_binary_steps: 8
-    max_bracket_trials: 12
 - match:
-    models:
-    - Qwen/Qwen3-30B-A3B-Instruct-2507
-    - Qwen/Qwen3-30B-A3B-Thinking-2507
-    - Qwen/Qwen3-32B
-    - google/gemma-4-26B-A4B-it
-    - google/gemma-4-31B-it
-    - meta-llama/CodeLlama-34b-Instruct-hf
-    workloads:
-    - '*repobench*'
-  reason: A100 30B-class RepoBench combines long prompts with large models; keep the upper bound conservative.
+    model: openai/gpt-oss-120b
+  reason: gpt-oss-120B uses quantized checkpoint metadata.
   launch:
-    max_num_seqs: 128
-    max_num_batched_tokens: 2048
-  search:
-    initial_request_rate: 0.1
-    max_request_rate: 2
-    max_binary_steps: 8
-    max_bracket_trials: 12
+    dtype: auto
+    gpu_memory_utilization: 0.88
 experiments:
-- id: code-workloads-single-gpu
+- id: code-workloads-full-single-gpu
   models:
   - Qwen/Qwen3-0.6B
   - Qwen/Qwen3-1.7B
-  - Qwen/Qwen3-14B
+  - google/gemma-4-E2B-it
+  - meta-llama/Llama-3.2-1B-Instruct
   - Qwen/Qwen3-4B-Instruct-2507
   - Qwen/Qwen3-4B-Thinking-2507
-  - Qwen/Qwen3-8B
-  - google/gemma-4-E2B-it
   - google/gemma-4-E4B-it
-  - meta-llama/Llama-3.1-8B-Instruct
-  - meta-llama/Llama-3.2-1B-Instruct
   - meta-llama/Llama-3.2-3B-Instruct
+  - Qwen/Qwen3-8B
+  - meta-llama/Llama-3.1-8B-Instruct
+  workloads:
+  - ./code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
+  - ./code_workloads/repobench_python_java_aggregate_cache_realistic_8k_drop/workload_yamls/shard_000.yaml
+- id: code-workloads-qwen14-8k-tp1
+  model: Qwen/Qwen3-14B
   workloads:
   - ./workloads/a100_crosscodeeval_rg1_unixcoder_cache_realistic_8k.yaml
   - ./workloads/a100_repobench_python_java_aggregate_cache_realistic_8k_drop.yaml
-- id: code-workloads-30b-tp2
+  launch:
+    max_model_len: 8192
+- id: code-workloads-30b-8k-tp2
   models:
   - Qwen/Qwen3-30B-A3B-Instruct-2507
   - Qwen/Qwen3-30B-A3B-Thinking-2507
@@ -272,7 +246,8 @@ experiments:
   launch:
     gpu_count: 2
     tensor_parallel_size: 2
-- id: code-workloads-30b-tp4
+    max_model_len: 8192
+- id: code-workloads-30b-8k-tp4
   models:
   - Qwen/Qwen3-30B-A3B-Instruct-2507
   - Qwen/Qwen3-30B-A3B-Thinking-2507
@@ -286,7 +261,8 @@ experiments:
   launch:
     gpu_count: 4
     tensor_parallel_size: 4
-- id: code-workloads-gpt-oss-120b-tp4
+    max_model_len: 8192
+- id: code-workloads-gpt-oss-120b-8k-tp4
   model: openai/gpt-oss-120b
   workloads:
   - ./workloads/a100_crosscodeeval_rg1_unixcoder_cache_realistic_8k.yaml
@@ -294,6 +270,7 @@ experiments:
   launch:
     gpu_count: 4
     tensor_parallel_size: 4
+    max_model_len: 8192
     gpu_memory_utilization: 0.88
     max_num_seqs: 128
     max_num_batched_tokens: 2048

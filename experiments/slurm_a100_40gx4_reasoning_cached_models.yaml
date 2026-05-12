@@ -25,7 +25,7 @@ hardware:
 probe:
   enabled: true
   auto_gpu_count: false
-  default_context_tokens: 8192
+  default_context_tokens: 32768
   activation_memory_gb: 2.0
   memory_safety_factor: 1.25
   kv_cache_request_count: 1
@@ -38,7 +38,7 @@ launch:
   gpu_count: 1
   dtype: float16
   gpu_memory_utilization: 0.88
-  max_model_len: 8192
+  max_model_len: 32768
   max_num_seqs: 128
   max_num_batched_tokens: 2048
   readiness_timeout_s: 1800
@@ -74,7 +74,7 @@ overrides:
     - Qwen/Qwen3-1.7B
     - google/gemma-4-E2B-it
     - meta-llama/Llama-3.2-1B-Instruct
-  reason: Small A100 reasoning models can use a wide request-rate envelope while keeping bounded concurrency for long generations.
+  reason: Small A100 reasoning models keep full workload context with bounded concurrency.
   launch:
     max_num_seqs: 256
     max_num_batched_tokens: 4096
@@ -91,7 +91,7 @@ overrides:
     - Qwen/Qwen3-4B-Instruct-2507
     - google/gemma-4-E4B-it
     - meta-llama/Llama-3.2-3B-Instruct
-  reason: 3B/4B non-thinking reasoning runs have short prompts and can probe above L40 rates on A100.
+  reason: 3B/4B non-thinking reasoning runs keep full workload context.
   search:
     initial_request_rate: 0.5
     max_request_rate: 12
@@ -102,7 +102,7 @@ overrides:
     max_closed_loop_concurrency: 64
 - match:
     model: Qwen/Qwen3-4B-Thinking-2507
-  reason: 4B thinking models can emit longer traces than instruct variants.
+  reason: 4B thinking models keep full workload context but use a lower ceiling.
   search:
     initial_request_rate: 0.25
     max_request_rate: 10
@@ -114,10 +114,9 @@ overrides:
 - match:
     models:
     - Qwen/Qwen3-8B
-    - Qwen/Qwen3-14B
     - meta-llama/Llama-3.1-8B-Instruct
     - openai/gpt-oss-20b
-  reason: 8B/14B/gpt-oss-20B reasoning runs use short prompts but potentially long outputs.
+  reason: 8B/gpt-oss-20B reasoning runs keep full workload context.
   search:
     initial_request_rate: 0.25
     max_request_rate: 10
@@ -126,72 +125,55 @@ overrides:
     max_closed_loop_concurrency: 48
 - match:
     model: openai/gpt-oss-20b
-  reason: gpt-oss-20B uses quantized checkpoint metadata; let vLLM pick dtype.
+  reason: gpt-oss-20B uses quantized checkpoint metadata.
   launch:
     dtype: auto
 - match:
     models:
+    - Qwen/Qwen3-14B
     - Qwen/Qwen3-30B-A3B-Instruct-2507
+    - Qwen/Qwen3-30B-A3B-Thinking-2507
     - Qwen/Qwen3-32B
     - google/gemma-4-26B-A4B-it
     - google/gemma-4-31B-it
     - meta-llama/CodeLlama-34b-Instruct-hf
-  reason: A100 30B-class reasoning models use TP2/TP4 with conservative decode-heavy ceilings.
+    - openai/gpt-oss-120b
+  reason: Large A100-40GB reasoning runs use 8k workload and engine context for memory headroom.
   launch:
-    max_num_seqs: 128
-    max_num_batched_tokens: 2048
-  search:
-    initial_request_rate: 0.125
-    max_request_rate: 6
-    max_binary_steps: 8
-    max_bracket_trials: 12
-    max_closed_loop_concurrency: 32
-- match:
-    model: Qwen/Qwen3-30B-A3B-Thinking-2507
-  reason: 30B thinking reasoning runs may produce the longest outputs in this size class.
-  launch:
-    max_num_seqs: 128
-    max_num_batched_tokens: 2048
-  search:
-    initial_request_rate: 0.125
-    max_request_rate: 4
-    max_binary_steps: 8
-    max_bracket_trials: 12
-    max_closed_loop_concurrency: 24
-- match:
-    model: openai/gpt-oss-120b
-  reason: gpt-oss-120B is limited to TP4 on A100-40GB with conservative batching.
-  launch:
-    dtype: auto
-    gpu_memory_utilization: 0.88
     max_model_len: 8192
     max_num_seqs: 128
     max_num_batched_tokens: 2048
-  search:
-    initial_request_rate: 0.1
-    max_request_rate: 4
-    max_binary_steps: 8
-    max_bracket_trials: 12
-    max_closed_loop_concurrency: 24
+- match:
+    model: openai/gpt-oss-120b
+  reason: gpt-oss-120B uses quantized checkpoint metadata and is limited to TP4 at 8k context.
+  launch:
+    dtype: auto
+    gpu_memory_utilization: 0.88
 experiments:
-- id: reasoning-single-gpu
+- id: reasoning-full-single-gpu
   models:
   - Qwen/Qwen3-0.6B
   - Qwen/Qwen3-1.7B
-  - Qwen/Qwen3-14B
+  - google/gemma-4-E2B-it
+  - meta-llama/Llama-3.2-1B-Instruct
   - Qwen/Qwen3-4B-Instruct-2507
   - Qwen/Qwen3-4B-Thinking-2507
-  - Qwen/Qwen3-8B
-  - google/gemma-4-E2B-it
   - google/gemma-4-E4B-it
-  - meta-llama/Llama-3.1-8B-Instruct
-  - meta-llama/Llama-3.2-1B-Instruct
   - meta-llama/Llama-3.2-3B-Instruct
+  - Qwen/Qwen3-8B
+  - meta-llama/Llama-3.1-8B-Instruct
   - openai/gpt-oss-20b
+  workloads:
+  - ./reasoning_workloads/mmlu_pro_reasoning/workload_yamls/shard_000.yaml
+  - ./reasoning_workloads/supergpqa_hard_reasoning/workload_yamls/shard_000.yaml
+- id: reasoning-qwen14-8k-tp1
+  model: Qwen/Qwen3-14B
   workloads:
   - ./workloads/a100_mmlu_pro_reasoning_8k.yaml
   - ./workloads/a100_supergpqa_hard_reasoning_8k.yaml
-- id: reasoning-30b-tp2
+  launch:
+    max_model_len: 8192
+- id: reasoning-30b-8k-tp2
   models:
   - Qwen/Qwen3-30B-A3B-Instruct-2507
   - Qwen/Qwen3-30B-A3B-Thinking-2507
@@ -205,7 +187,8 @@ experiments:
   launch:
     gpu_count: 2
     tensor_parallel_size: 2
-- id: reasoning-30b-tp4
+    max_model_len: 8192
+- id: reasoning-30b-8k-tp4
   models:
   - Qwen/Qwen3-30B-A3B-Instruct-2507
   - Qwen/Qwen3-30B-A3B-Thinking-2507
@@ -219,7 +202,8 @@ experiments:
   launch:
     gpu_count: 4
     tensor_parallel_size: 4
-- id: reasoning-gpt-oss-120b-tp4
+    max_model_len: 8192
+- id: reasoning-gpt-oss-120b-8k-tp4
   model: openai/gpt-oss-120b
   workloads:
   - ./workloads/a100_mmlu_pro_reasoning_8k.yaml

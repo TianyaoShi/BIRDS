@@ -1,7 +1,7 @@
 run:
-  run_id: a100-40gx4-longbench-8k-no-llama2-cached-models-000
+  run_id: a100-40gx4-longbench-no-llama2-cached-models-000
   output_root: ../results/orchestrator
-  mst_output_root: ../results/mst/a100-40gx4-longbench-8k-no-llama2-cached-models-000
+  mst_output_root: ../results/mst/a100-40gx4-longbench-no-llama2-cached-models-000
   default_endpoint: /v1/completions
   python_executable: .venv-a100/bin/python
 slurm:
@@ -25,7 +25,7 @@ hardware:
 probe:
   enabled: true
   auto_gpu_count: false
-  default_context_tokens: 8192
+  default_context_tokens: 32768
   activation_memory_gb: 2.0
   memory_safety_factor: 1.25
   kv_cache_request_count: 1
@@ -38,7 +38,7 @@ launch:
   gpu_count: 1
   dtype: float16
   gpu_memory_utilization: 0.88
-  max_model_len: 8192
+  max_model_len: 32768
   max_num_seqs: 128
   max_num_batched_tokens: 2048
   readiness_timeout_s: 1800
@@ -75,10 +75,10 @@ overrides:
     - Qwen/Qwen3-1.7B
     - google/gemma-4-E2B-it
     - meta-llama/Llama-3.2-1B-Instruct
-  reason: Small A100 LongBench-8k runs can probe a wider envelope while request reuse stays bounded.
+  reason: Small A100 LongBench runs keep full 32k workload context and can probe a wider envelope.
   launch:
-    max_num_seqs: 512
-    max_num_batched_tokens: 8192
+    max_num_seqs: 256
+    max_num_batched_tokens: 4096
   search:
     initial_request_rate: 0.5
     max_request_rate: 10
@@ -90,7 +90,7 @@ overrides:
     - Qwen/Qwen3-4B-Thinking-2507
     - google/gemma-4-E4B-it
     - meta-llama/Llama-3.2-3B-Instruct
-  reason: 3B/4B A100 LongBench-8k runs use a moderate long-prompt search envelope.
+  reason: 3B/4B A100 LongBench runs keep full 32k workload context.
   search:
     initial_request_rate: 0.25
     max_request_rate: 6
@@ -99,10 +99,9 @@ overrides:
 - match:
     models:
     - Qwen/Qwen3-8B
-    - Qwen/Qwen3-14B
     - meta-llama/Llama-3.1-8B-Instruct
     - openai/gpt-oss-20b
-  reason: 8B/14B/gpt-oss-20B A100 LongBench-8k runs keep a lower ceiling for prefill-heavy prompts.
+  reason: 8B/gpt-oss-20B LongBench runs keep full 32k workload context.
   search:
     initial_request_rate: 0.25
     max_request_rate: 4
@@ -110,41 +109,30 @@ overrides:
     max_bracket_trials: 14
 - match:
     model: openai/gpt-oss-20b
-  reason: gpt-oss-20B uses quantized checkpoint metadata; let vLLM pick dtype.
+  reason: gpt-oss-20B uses quantized checkpoint metadata.
   launch:
     dtype: auto
 - match:
     models:
+    - Qwen/Qwen3-14B
     - Qwen/Qwen3-30B-A3B-Instruct-2507
     - Qwen/Qwen3-30B-A3B-Thinking-2507
     - Qwen/Qwen3-32B
     - google/gemma-4-26B-A4B-it
     - google/gemma-4-31B-it
     - meta-llama/CodeLlama-34b-Instruct-hf
-  reason: A100 30B-class LongBench-8k runs use TP2/TP4 with conservative batching.
+    - openai/gpt-oss-120b
+  reason: Large A100-40GB LongBench runs use 8k workload and engine context for memory headroom.
   launch:
-    max_num_seqs: 128
-    max_num_batched_tokens: 2048
-  search:
-    initial_request_rate: 0.125
-    max_request_rate: 3
-    max_binary_steps: 8
-    max_bracket_trials: 12
-- match:
-    model: openai/gpt-oss-120b
-  reason: gpt-oss-120B uses quantized checkpoint metadata and is limited to TP4 at 8k context on A100-40GB.
-  launch:
-    dtype: auto
-    gpu_memory_utilization: 0.88
     max_model_len: 8192
     max_num_seqs: 128
     max_num_batched_tokens: 2048
-  search:
-    initial_request_rate: 0.1
-    max_request_rate: 2
-    max_binary_steps: 8
-    max_bracket_trials: 12
-    max_closed_loop_concurrency: 16
+- match:
+    model: openai/gpt-oss-120b
+  reason: gpt-oss-120B uses quantized checkpoint metadata and is limited to TP4 at 8k context.
+  launch:
+    dtype: auto
+    gpu_memory_utilization: 0.88
 - match:
     workloads:
     - '*long_output_summarization*'
@@ -178,26 +166,34 @@ overrides:
     max_request_rate: 12
     max_closed_loop_concurrency: 24
 experiments:
-- id: longbench-8k-single-gpu
+- id: longbench-full-single-gpu
   models:
   - Qwen/Qwen3-0.6B
   - Qwen/Qwen3-1.7B
-  - Qwen/Qwen3-14B
+  - google/gemma-4-E2B-it
+  - meta-llama/Llama-3.2-1B-Instruct
   - Qwen/Qwen3-4B-Instruct-2507
   - Qwen/Qwen3-4B-Thinking-2507
-  - Qwen/Qwen3-8B
-  - google/gemma-4-E2B-it
   - google/gemma-4-E4B-it
-  - meta-llama/Llama-3.1-8B-Instruct
-  - meta-llama/Llama-3.2-1B-Instruct
   - meta-llama/Llama-3.2-3B-Instruct
+  - Qwen/Qwen3-8B
+  - meta-llama/Llama-3.1-8B-Instruct
   - openai/gpt-oss-20b
+  workloads:
+  - ./workloads/longbench_long_output_summarization.yaml
+  - ./workloads/longbench_medium_output_summarization.yaml
+  - ./workloads/longbench_medium_answer_rag_qa.yaml
+  - ./workloads/longbench_short_answer_document_qa.yaml
+- id: longbench-qwen14-8k-tp1
+  model: Qwen/Qwen3-14B
   workloads:
   - ./workloads/longbench_long_output_summarization_8k.yaml
   - ./workloads/longbench_medium_output_summarization_8k.yaml
   - ./workloads/longbench_medium_answer_rag_qa_8k.yaml
   - ./workloads/longbench_short_answer_document_qa_8k.yaml
-- id: longbench-8k-30b-tp2
+  launch:
+    max_model_len: 8192
+- id: longbench-30b-8k-tp2
   models:
   - Qwen/Qwen3-30B-A3B-Instruct-2507
   - Qwen/Qwen3-30B-A3B-Thinking-2507
@@ -213,7 +209,8 @@ experiments:
   launch:
     gpu_count: 2
     tensor_parallel_size: 2
-- id: longbench-8k-30b-tp4
+    max_model_len: 8192
+- id: longbench-30b-8k-tp4
   models:
   - Qwen/Qwen3-30B-A3B-Instruct-2507
   - Qwen/Qwen3-30B-A3B-Thinking-2507
@@ -229,7 +226,8 @@ experiments:
   launch:
     gpu_count: 4
     tensor_parallel_size: 4
-- id: longbench-8k-gpt-oss-120b-tp4
+    max_model_len: 8192
+- id: longbench-gpt-oss-120b-8k-tp4
   model: openai/gpt-oss-120b
   workloads:
   - ./workloads/longbench_long_output_summarization_8k.yaml
