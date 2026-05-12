@@ -96,6 +96,38 @@ def test_expand_manifest_can_namespace_mst_results_by_run(tmp_path: Path) -> Non
     assert jobs[0].result_dir.parts[-4] == "run-1"
 
 
+def test_expand_manifest_disambiguates_generated_shard_workloads(tmp_path: Path) -> None:
+    code_a = tmp_path / "code_workloads" / "crosscodeeval_rg1" / "workload_yamls" / "shard_000.yaml"
+    code_b = tmp_path / "code_workloads" / "repobench_8k" / "workload_yamls" / "shard_000.yaml"
+    code_a.parent.mkdir(parents=True)
+    code_b.parent.mkdir(parents=True)
+    code_a.write_text("name: crosscodeeval\n", encoding="utf-8")
+    code_b.write_text("name: repobench\n", encoding="utf-8")
+    manifest_path = _write_manifest(
+        tmp_path,
+        {
+            "run": {"mst_output_root": str(tmp_path / "results" / "mst")},
+            "experiments": [
+                {
+                    "id": "matrix",
+                    "model": "google/gemma-4-26b-a4b-it",
+                    "workloads": [str(code_a), str(code_b)],
+                    "endpoint": "/v1/completions",
+                }
+            ],
+        },
+    )
+
+    jobs = expand_manifest(load_manifest(manifest_path))
+
+    assert len(jobs) == 2
+    assert {job.dataset_slug for job in jobs} == {
+        "crosscodeeval-rg1-shard-000",
+        "repobench-8k-shard-000",
+    }
+    assert len({job.result_dir for job in jobs}) == 2
+
+
 def test_expand_manifest_applies_selector_overrides_and_probe_auto_gpu_count(tmp_path: Path) -> None:
     workload = _write_workload(tmp_path, "synthetic_512_128.yaml")
     workload.write_text(

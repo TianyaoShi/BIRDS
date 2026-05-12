@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from fnmatch import fnmatchcase
 from pathlib import Path
+import re
 
 from .manifest import _merge_launch_config, _merge_search_config
 from .models import (
@@ -80,7 +81,7 @@ def expand_manifest(
             seen_ids.add(experiment_id)
 
             model_slug = slugify(model, max_length=56)
-            dataset_slug = slugify(workload.stem, max_length=56)
+            dataset_slug = _dataset_slug(workload)
             server_signature_key = _server_signature_key(
                 model=model,
                 endpoint=template.endpoint,
@@ -166,6 +167,17 @@ def _override_matches(
 def _matches_any(value: str, patterns: tuple[str, ...]) -> bool:
     lowered = value.lower()
     return any(fnmatchcase(lowered, pattern.lower()) for pattern in patterns)
+
+
+_GENERIC_SHARD_STEM_PATTERN = re.compile(r"^shard[_-]\d+$", re.IGNORECASE)
+
+
+def _dataset_slug(workload: Path) -> str:
+    if _GENERIC_SHARD_STEM_PATTERN.fullmatch(workload.stem):
+        parent = workload.parent
+        if parent.name in {"workload_yamls", "shards"} and parent.parent != parent:
+            return slugify(f"{parent.parent.name}-{workload.stem}", max_length=56)
+    return slugify(workload.stem, max_length=56)
 
 
 def _build_probe(

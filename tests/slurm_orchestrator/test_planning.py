@@ -248,7 +248,7 @@ def test_collect_run_aggregates_succeeded_and_failed_jobs(tmp_path: Path) -> Non
     assert (tmp_path / "runs" / "run-c" / "summary.md").is_file()
 
 
-def test_collect_cli_syncs_results_tree_after_collect(
+def test_collect_cli_syncs_current_run_after_collect_by_default(
     tmp_path: Path,
     monkeypatch,
     capsys,
@@ -286,12 +286,64 @@ def test_collect_cli_syncs_results_tree_after_collect(
     payload = json.loads(capsys.readouterr().out)
     assert rc == 0
     assert payload["result_sync"]["status"] == "succeeded"
+    assert payload["result_sync"]["scope"] == "run"
+    assert calls[0][0][-2:] == [
+        f"{Path(plan['run_root']).resolve()}/",
+        f"{tmp_path / 'shared' / 'results' / 'orchestrator' / 'run-sync'}/",
+    ]
+    assert "--delete-delay" in calls[0][0]
+    assert calls[0][1]["capture_output"] is True
+
+
+def test_collect_cli_can_sync_all_results_and_missing_only(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    workload = _write_workload(tmp_path, "sharegpt.yaml")
+    manifest_path = _write_manifest(
+        tmp_path,
+        {
+            "run": {
+                "output_root": str(tmp_path / "results" / "orchestrator"),
+                "mst_output_root": str(tmp_path / "results" / "mst"),
+            },
+            "experiments": [{"id": "exp-a", "model": "model-a", "workload": str(workload)}],
+        },
+    )
+    plan = materialize_run_plan(load_manifest(manifest_path), "run-sync")
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="sent 10 bytes\n", stderr="")
+
+    monkeypatch.setattr("slurm_orchestrator.cli.subprocess.run", fake_run)
+
+    rc = slurm_main(
+        [
+            "collect",
+            "--run-root",
+            plan["run_root"],
+            "--sync-results-to",
+            str(tmp_path / "shared" / "results"),
+            "--sync-results-scope",
+            "all",
+            "--sync-results-existing",
+            "missing",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert payload["result_sync"]["scope"] == "all"
+    assert payload["result_sync"]["existing"] == "missing"
     assert calls[0][0][-2:] == [
         f"{(tmp_path / 'results').resolve()}/",
         f"{tmp_path / 'shared' / 'results'}/",
     ]
-    assert "--delete-delay" in calls[0][0]
-    assert calls[0][1]["capture_output"] is True
+    assert "--ignore-existing" in calls[0][0]
+    assert "--delete-delay" not in calls[0][0]
 
 
 def test_collect_cli_reports_symlink_sync_destination(
@@ -318,7 +370,7 @@ def test_collect_cli_reports_symlink_sync_destination(
     payload = json.loads(capsys.readouterr().out)
     assert rc == 1
     assert payload["result_sync"]["status"] == "failed"
-    assert "destination is a symlink" in payload["result_sync"]["reason"]
+    assert "destination root is a symlink" in payload["result_sync"]["reason"]
 
 
 def test_collect_run_marks_stale_nonterminal_slurm_tasks_failed(tmp_path: Path, monkeypatch) -> None:

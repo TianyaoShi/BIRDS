@@ -35,6 +35,8 @@ from .state import collect_run, finalize_task, mark_task_running
 
 DEFAULT_RESULTS_SYNC_DEST = Path("/depot/yiding/data/BioLLM-results/results")
 RESULTS_SYNC_DEST_ENV = "SLURM_ORCHESTRATOR_SYNC_RESULTS_TO"
+RESULTS_SYNC_SCOPE_ENV = "SLURM_ORCHESTRATOR_SYNC_RESULTS_SCOPE"
+RESULTS_SYNC_EXISTING_ENV = "SLURM_ORCHESTRATOR_SYNC_RESULTS_EXISTING"
 RESULTS_SYNC_ROOT_ENV = "SLURM_ORCHESTRATOR_SYNC_RESULTS_ROOT"
 RESULTS_SYNC_DISABLE_ENV = "SLURM_ORCHESTRATOR_DISABLE_RESULT_SYNC"
 
@@ -81,8 +83,26 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            "mirror the results tree to this shared directory after collect; "
+            "mirror results to this shared results directory after collect; "
             f"defaults to ${RESULTS_SYNC_DEST_ENV} or {DEFAULT_RESULTS_SYNC_DEST} when available"
+        ),
+    )
+    collect.add_argument(
+        "--sync-results-scope",
+        choices=("run", "all"),
+        default=None,
+        help=(
+            "sync only the collected run or the full results tree; defaults to "
+            f"${RESULTS_SYNC_SCOPE_ENV} or 'run'"
+        ),
+    )
+    collect.add_argument(
+        "--sync-results-existing",
+        choices=("update", "missing"),
+        default=None,
+        help=(
+            "update changed destination files or copy only files missing from the destination; "
+            f"defaults to ${RESULTS_SYNC_EXISTING_ENV} or 'update'"
         ),
     )
     collect.add_argument(
@@ -298,18 +318,41 @@ def _sync_results_after_collect(args: argparse.Namespace) -> dict[str, object]:
     if bool(getattr(args, "no_sync_results", False)) or _env_flag(RESULTS_SYNC_DISABLE_ENV):
         return {"status": "skipped", "reason": "disabled"}
 
+    scope = _option_or_env(args, "sync_results_scope", RESULTS_SYNC_SCOPE_ENV, "run")
+    existing = _option_or_env(args, "sync_results_existing", RESULTS_SYNC_EXISTING_ENV, "update")
+    if scope not in {"run", "all"}:
+        return {"status": "failed", "reason": f"invalid sync scope: {scope}"}
+    if existing not in {"update", "missing"}:
+        return {"status": "failed", "reason": f"invalid sync existing mode: {existing}"}
     explicit_dest = getattr(args, "sync_results_to", None) or os.environ.get(RESULTS_SYNC_DEST_ENV)
-    destination = Path(explicit_dest) if explicit_dest else DEFAULT_RESULTS_SYNC_DEST
+    destination_root = Path(explicit_dest) if explicit_dest else DEFAULT_RESULTS_SYNC_DEST
     default_destination = explicit_dest is None
-    if default_destination and not destination.parent.exists():
+    if default_destination and not destination_root.parent.exists():
         return {
             "status": "skipped",
-            "reason": f"default destination parent does not exist: {destination.parent}",
-            "destination": str(destination),
+            "reason": f"default destination parent does not exist: {destination_root.parent}",
+            "destination": str(destination_root),
+        }
+    if destination_root.is_symlink():
+        return {
+            "status": "failed",
+            "reason": (
+                "destination root is a symlink; replace it with a real directory before syncing: "
+                f"rm '{destination_root}' && mkdir -p '{destination_root}'"
+            ),
+            "destination": str(destination_root),
         }
 
     explicit_source = getattr(args, "sync_results_root", None) or os.environ.get(RESULTS_SYNC_ROOT_ENV)
-    source = Path(explicit_source).resolve() if explicit_source else _infer_results_root(args.run_root)
+    results_root = Path(explicit_source).resolve() if explicit_source else _infer_results_root(args.run_root)
+    run_root = Path(args.run_root).resolve()
+    if scope == "all":
+        source = results_root
+        destination = destination_root
+    else:
+        source = run_root
+        destination = destination_root / _relative_to_or_name(run_root, results_root)
+
     if not source.is_dir():
         return {"status": "failed", "reason": f"source directory does not exist: {source}", "source": str(source)}
 
@@ -338,14 +381,16 @@ def _sync_results_after_collect(args: argparse.Namespace) -> dict[str, object]:
     command = [
         "rsync",
         "-a",
-        "--delete-delay",
         "--partial",
         "--human-readable",
         "--info=stats2",
         "--chmod=D755,F644",
-        f"{source}/",
-        f"{destination}/",
     ]
+    if existing == "missing":
+        command.append("--ignore-existing")
+    else:
+        command.append("--delete-delay")
+    command.extend([f"{source}/", f"{destination}/"])
     try:
         completed = subprocess.run(command, check=False, capture_output=True, text=True)
     except FileNotFoundError:
@@ -367,6 +412,8 @@ def _sync_results_after_collect(args: argparse.Namespace) -> dict[str, object]:
 
     return {
         "status": "succeeded",
+        "scope": scope,
+        "existing": existing,
         "source": str(source),
         "destination": str(destination),
         "return_code": completed.returncode,
@@ -385,6 +432,18 @@ def _infer_results_root(run_root: str | Path) -> Path:
 
 def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _option_or_env(args: argparse.Namespace, option: str, env_name: str, default: str) -> str:
+    value = getattr(args, option, None) or os.environ.get(env_name) or default
+    return str(value).strip().lower()
+
+
+def _relative_to_or_name(path: Path, root: Path) -> Path:
+    try:
+        return path.relative_to(root)
+    except ValueError:
+        return Path(path.name)
 
 
 def _last_output_line(output: str) -> str:
