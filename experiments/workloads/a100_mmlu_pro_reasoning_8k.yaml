@@ -1,0 +1,22 @@
+name: a100_mmlu_pro_reasoning_8k
+dataset:
+  type: jsonl
+  path: ../reasoning_workloads/mmlu_pro_reasoning/shards/shard_000.runner.jsonl
+tokenizer: Qwen/Qwen3-8B
+sampling:
+  seed: 42
+  num_requests: 4096
+  entry_selection: sequential
+  prompt_len:
+    mode: from_dataset
+  output_len:
+    mode: natural_until_eos
+    max_tokens: 4096
+request:
+  stream: true
+  temperature: 0.0
+  ignore_eos: false
+context_policy:
+  max_model_len: 8192
+  tokenizer_source: vllm_model_config
+  over_limit: fail

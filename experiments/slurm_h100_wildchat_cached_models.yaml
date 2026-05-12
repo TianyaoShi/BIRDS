@@ -201,54 +201,54 @@ experiments:
 
   - id: qwen3-30b-a3b-instruct-h100-wildchat-tp1
     model: Qwen/Qwen3-30B-A3B-Instruct-2507
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
 
   - id: qwen3-30b-a3b-instruct-h100-wildchat-tp2
     model: Qwen/Qwen3-30B-A3B-Instruct-2507
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
     launch:
       gpu_count: 2
       tensor_parallel_size: 2
 
   - id: qwen3-30b-a3b-instruct-h100-wildchat-tp4
     model: Qwen/Qwen3-30B-A3B-Instruct-2507
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
     launch:
       gpu_count: 4
       tensor_parallel_size: 4
 
   - id: qwen3-30b-a3b-thinking-h100-wildchat-tp1
     model: Qwen/Qwen3-30B-A3B-Thinking-2507
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
 
   - id: qwen3-30b-a3b-thinking-h100-wildchat-tp2
     model: Qwen/Qwen3-30B-A3B-Thinking-2507
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
     launch:
       gpu_count: 2
       tensor_parallel_size: 2
 
   - id: qwen3-30b-a3b-thinking-h100-wildchat-tp4
     model: Qwen/Qwen3-30B-A3B-Thinking-2507
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
     launch:
       gpu_count: 4
       tensor_parallel_size: 4
 
   - id: qwen3-32b-h100-wildchat-tp1
     model: Qwen/Qwen3-32B
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
 
   - id: qwen3-32b-h100-wildchat-tp2
     model: Qwen/Qwen3-32B
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
     launch:
       gpu_count: 2
       tensor_parallel_size: 2
 
   - id: qwen3-32b-h100-wildchat-tp4
     model: Qwen/Qwen3-32B
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
     launch:
       gpu_count: 4
       tensor_parallel_size: 4
@@ -259,69 +259,69 @@ experiments:
 
   - id: gemma-4-26b-a4b-it-h100-wildchat-tp1
     model: google/gemma-4-26B-A4B-it
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
 
   - id: gemma-4-26b-a4b-it-h100-wildchat-tp2
     model: google/gemma-4-26B-A4B-it
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
     launch:
       gpu_count: 2
       tensor_parallel_size: 2
 
   - id: gemma-4-26b-a4b-it-h100-wildchat-tp4
     model: google/gemma-4-26B-A4B-it
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
     launch:
       gpu_count: 4
       tensor_parallel_size: 4
 
   - id: gemma-4-31b-it-h100-wildchat-tp1
     model: google/gemma-4-31B-it
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
 
   - id: gemma-4-31b-it-h100-wildchat-tp2
     model: google/gemma-4-31B-it
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
     launch:
       gpu_count: 2
       tensor_parallel_size: 2
 
   - id: gemma-4-31b-it-h100-wildchat-tp4
     model: google/gemma-4-31B-it
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
     launch:
       gpu_count: 4
       tensor_parallel_size: 4
 
   - id: codellama-34b-instruct-h100-wildchat-tp1
     model: meta-llama/CodeLlama-34b-Instruct-hf
-    workload: ./workloads/wildchat_hf_16384.yaml
+    workload: ./workloads/wildchat_hf_16k.yaml
 
   - id: codellama-34b-instruct-h100-wildchat-tp2
     model: meta-llama/CodeLlama-34b-Instruct-hf
-    workload: ./workloads/wildchat_hf_16384.yaml
+    workload: ./workloads/wildchat_hf_16k.yaml
     launch:
       gpu_count: 2
       tensor_parallel_size: 2
 
   - id: codellama-34b-instruct-h100-wildchat-tp4
     model: meta-llama/CodeLlama-34b-Instruct-hf
-    workload: ./workloads/wildchat_hf_16384.yaml
+    workload: ./workloads/wildchat_hf_16k.yaml
     launch:
       gpu_count: 4
       tensor_parallel_size: 4
 
   - id: llama-2-7b-chat-h100-wildchat-tp1
     model: meta-llama/Llama-2-7b-chat-hf
-    workload: ./workloads/wildchat_hf_4096.yaml
+    workload: ./workloads/wildchat_hf_4k.yaml
 
   - id: llama-2-13b-chat-h100-wildchat-tp1
     model: meta-llama/Llama-2-13b-chat-hf
-    workload: ./workloads/wildchat_hf_4096.yaml
+    workload: ./workloads/wildchat_hf_4k.yaml
 
   - id: llama-2-70b-chat-h100-wildchat-tp4
     model: meta-llama/Llama-2-70b-chat-hf
-    workload: ./workloads/wildchat_hf_4096.yaml
+    workload: ./workloads/wildchat_hf_4k.yaml
     launch:
       gpu_count: 4
       tensor_parallel_size: 4
@@ -347,7 +347,7 @@ experiments:
 
   - id: gpt-oss-120b-h100-wildchat-tp1
     model: openai/gpt-oss-120b
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
     launch:
       env:
         PYTORCH_ALLOC_CONF: expandable_segments:True
@@ -359,7 +359,7 @@ experiments:
 
   - id: gpt-oss-120b-h100-wildchat-tp2
     model: openai/gpt-oss-120b
-    workload: ./workloads/wildchat_hf_8192.yaml
+    workload: ./workloads/wildchat_hf_8k.yaml
     launch:
       env:
         PYTORCH_ALLOC_CONF: expandable_segments:True

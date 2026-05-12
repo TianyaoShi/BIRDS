@@ -1,0 +1,22 @@
+name: wildchat-hf-8k
+dataset:
+  type: hf
+  path: allenai/WildChat
+  split: train
+  conversation_field: conversation
+  max_scan_rows: 50000
+sampling:
+  seed: 17
+  num_requests: 8000
+  prompt_len:
+    mode: from_dataset
+  output_len:
+    mode: from_dataset
+request:
+  stream: true
+  temperature: 0.0
+  ignore_eos: false
+context_policy:
+  max_model_len: 8192
+  tokenizer_source: vllm_model_config
+  over_limit: skip_sample
