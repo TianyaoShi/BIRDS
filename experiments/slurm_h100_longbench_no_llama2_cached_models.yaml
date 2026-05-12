@@ -1,22 +1,22 @@
 run:
-  run_id: h100-longbench-no-llama2-cached-models-000
+  run_id: h100-longbench-expanded-no-llama2-cached-models-000
   output_root: ../results/orchestrator
-  mst_output_root: ../results/mst/h100-longbench-no-llama2-cached-models-000
-  default_endpoint: /v1/chat/completions
+  mst_output_root: ../results/mst/h100-longbench-expanded-no-llama2-cached-models-000
+  default_endpoint: /v1/completions
   python_executable: /scratch/gautschi/shi676/BioLLM/.venv-h100/bin/python
 
 slurm:
   partition: ai
   account: yiding
   qos: normal
-  time: 03:00:00
+  time: 06:00:00
   modules:
     - modtree/gpu
     - cuda/12.9.0
   setup_commands:
     - source /scratch/gautschi/shi676/BioLLM/helper_scripts/activate_vllm_h100.sh
   python_executable: /scratch/gautschi/shi676/BioLLM/.venv-h100/bin/python
-  array_concurrency_limit: 1
+  array_concurrency_limit: 2
   base_port: 9300
 
 hardware:
@@ -27,10 +27,12 @@ hardware:
 probe:
   enabled: true
   auto_gpu_count: false
-  default_context_tokens: 4096
+  default_context_tokens: 32768
   activation_memory_gb: 2.0
   memory_safety_factor: 1.20
   kv_cache_request_count: 1
+  model_size_overrides_b:
+    openai/gpt-oss-120b: 30.0
 
 launch:
   executable: vllm
@@ -45,73 +47,79 @@ launch:
 
 search:
   search_mode: hybrid
-  trial_min_duration_s: 300
-  trial_max_duration_s: 600
-  final_confirmation_duration_s: 600
+  trial_min_duration_s: 450
+  trial_max_duration_s: 750
+  final_confirmation_duration_s: 750
   rate_precision: 0.05
   initial_request_rate: 0.25
   max_request_rate: 4
   max_binary_steps: 8
   max_bracket_trials: 14
-  closed_loop_min_trials: 3
-  max_closed_loop_concurrency: 64
-  closed_loop_plateau_relative_gain: 0.05
+  open_loop_bracket_growth_factor: 1.5
+  client_limited_retry_attempts: 1
+  client_limited_retry_cooldown_s: 30
   metrics_interval_s: 1.0
-  window_s: 30.0
+  window_s: 50.0
   ttft_slo_ms: 15000
   tpot_slo_ms: 150
   ttft_slo_field: ttft_p90_ms
   tpot_slo_field: tpot_p90_ms
+  ttft_slo_mode: length_scaled
   request_reuse_policy: unique-then-cycle
+  closed_loop_min_trials: 3
+  max_closed_loop_concurrency: 16
+  closed_loop_plateau_relative_gain: 0.05
   max_num_seqs: 256
   max_num_batched_tokens: 2048
 
 overrides:
   - match:
       models:
+        - Qwen/Qwen3-0.6B
+        - Qwen/Qwen3-1.7B
+        - google/gemma-4-E2B-it
+        - meta-llama/Llama-3.2-1B-Instruct
+    reason: Small H100 LongBench runs can probe a wider envelope, but expanded buckets still keep request reuse bounded.
+    launch:
+      max_num_seqs: 1024
+      max_num_batched_tokens: 8192
+    search:
+      initial_request_rate: 0.5
+      max_request_rate: 12
+      max_binary_steps: 10
+      max_bracket_trials: 18
+
+  - match:
+      models:
         - Qwen/Qwen3-4B-Instruct-2507
         - Qwen/Qwen3-4B-Thinking-2507
         - google/gemma-4-E4B-it
         - meta-llama/Llama-3.2-3B-Instruct
-    reason: H100 3B/4B class on prefill-heavy LongBench prompts; sub-3B models are intentionally excluded.
+    reason: H100 3B/4B LongBench runs use a moderate long-prompt search envelope.
     search:
-      initial_request_rate: 1
-      max_request_rate: 24
-      max_binary_steps: 10
-      max_bracket_trials: 18
-      ttft_slo_ms: 5000
+      initial_request_rate: 0.25
+      max_request_rate: 8
+      max_binary_steps: 9
+      max_bracket_trials: 16
 
   - match:
       models:
         - Qwen/Qwen3-8B
+        - Qwen/Qwen3-14B
         - meta-llama/Llama-3.1-8B-Instruct
-    reason: H100 8B LongBench class with a moderate ceiling for long-prompt prefill.
+        - openai/gpt-oss-20b
+    reason: H100 8B/14B/gpt-oss-20B LongBench runs keep a lower ceiling for prefill-heavy prompts.
     search:
-      initial_request_rate: 0.5
-      max_request_rate: 16
-      max_binary_steps: 9
-      max_bracket_trials: 16
-      ttft_slo_ms: 10000
+      initial_request_rate: 0.25
+      max_request_rate: 6
+      max_binary_steps: 8
+      max_bracket_trials: 14
 
   - match:
       model: openai/gpt-oss-20b
-    reason: gpt-oss-20b uses cached MXFP4-style quantization; let vLLM choose dtype and use a 20B-class LongBench ceiling.
+    reason: gpt-oss-20B uses quantized checkpoint metadata; let vLLM pick dtype.
     launch:
       dtype: auto
-    search:
-      initial_request_rate: 1
-      max_request_rate: 24
-      max_binary_steps: 10
-      max_bracket_trials: 18
-
-  - match:
-      model: Qwen/Qwen3-14B
-    reason: H100 14B dense LongBench class.
-    search:
-      initial_request_rate: 0.5
-      max_request_rate: 12
-      max_binary_steps: 9
-      max_bracket_trials: 14
 
   - match:
       models:
@@ -121,220 +129,253 @@ overrides:
         - google/gemma-4-26B-A4B-it
         - google/gemma-4-31B-it
         - meta-llama/CodeLlama-34b-Instruct-hf
-        - openai/gpt-oss-120b
-    reason: H100 ~30B/gpt-oss-120b LongBench class, tested at TP1/TP2/TP4 with a conservative long-prompt ceiling.
+    reason: H100 ~30B LongBench runs use TP2/TP4 with a conservative 32k-context envelope.
     search:
-      initial_request_rate: 0.25
-      max_request_rate: 8
+      initial_request_rate: 0.125
+      max_request_rate: 4
       max_binary_steps: 8
       max_bracket_trials: 14
 
   - match:
-      models:
-        - meta-llama/Llama-3.1-70B-Instruct
-    reason: 70B LongBench class runs at TP4 with a low ceiling to avoid wasting long trials.
-    search:
-      initial_request_rate: 0.1
-      max_request_rate: 4
-      max_binary_steps: 8
-      max_bracket_trials: 12
-
-  - match:
-      models:
-        - meta-llama/CodeLlama-34b-Instruct-hf
+      model: meta-llama/CodeLlama-34b-Instruct-hf
     reason: CodeLlama model configs derive a 16384-token maximum context; vLLM rejects the default 32768 engine length for this family.
     launch:
       max_model_len: 16384
 
   - match:
-      models:
-        - openai/gpt-oss-120b
-    reason: gpt-oss-120b should use the quantized checkpoint dtype metadata rather than forcing float16; TP1/TP2 caps below avoid known H100 OOM cases.
+      model: meta-llama/Llama-3.1-70B-Instruct
+    reason: 70B LongBench runs use TP4 with a low ceiling to avoid wasted long trials.
+    search:
+      initial_request_rate: 0.1
+      max_request_rate: 2
+      max_binary_steps: 8
+      max_bracket_trials: 12
+      max_closed_loop_concurrency: 16
+
+  - match:
+      model: openai/gpt-oss-120b
+    reason: gpt-oss-120B uses quantized checkpoint metadata; keep allocator fragmentation mitigation for H100 launch stability.
     launch:
       dtype: auto
-
-experiments:
-  # Excluded from helper_scripts/hf_cached_models.txt:
-  # - <3B models: Qwen3-0.6B, Qwen3-1.7B, gemma-4-E2B-it, Llama-3.2-1B-Instruct.
-  # - Llama-2 models, matching the LongBench no-Llama2 reference manifest.
-  # - Qwen3-235B-A22B Instruct/Thinking, which needs at least 8 GPUs.
-
-  - id: qwen3-4b-instruct-h100-longbench-tp1
-    model: Qwen/Qwen3-4B-Instruct-2507
-    workload: ./workloads/longbench_nl_truncated.yaml
-
-  - id: qwen3-4b-thinking-h100-longbench-tp1
-    model: Qwen/Qwen3-4B-Thinking-2507
-    workload: ./workloads/longbench_nl_truncated.yaml
-
-  - id: qwen3-8b-h100-longbench-tp1
-    model: Qwen/Qwen3-8B
-    workload: ./workloads/longbench_nl_truncated.yaml
-
-  - id: qwen3-14b-h100-longbench-tp1
-    model: Qwen/Qwen3-14B
-    workload: ./workloads/longbench_nl_truncated.yaml
-
-  - id: qwen3-30b-a3b-instruct-h100-longbench-tp1
-    model: Qwen/Qwen3-30B-A3B-Instruct-2507
-    workload: ./workloads/longbench_nl_truncated.yaml
-
-  - id: qwen3-30b-a3b-instruct-h100-longbench-tp2
-    model: Qwen/Qwen3-30B-A3B-Instruct-2507
-    workload: ./workloads/longbench_nl_truncated.yaml
-    launch:
-      gpu_count: 2
-      tensor_parallel_size: 2
-
-  - id: qwen3-30b-a3b-instruct-h100-longbench-tp4
-    model: Qwen/Qwen3-30B-A3B-Instruct-2507
-    workload: ./workloads/longbench_nl_truncated.yaml
-    launch:
-      gpu_count: 4
-      tensor_parallel_size: 4
-
-  - id: qwen3-30b-a3b-thinking-h100-longbench-tp1
-    model: Qwen/Qwen3-30B-A3B-Thinking-2507
-    workload: ./workloads/longbench_nl_truncated.yaml
-
-  - id: qwen3-30b-a3b-thinking-h100-longbench-tp2
-    model: Qwen/Qwen3-30B-A3B-Thinking-2507
-    workload: ./workloads/longbench_nl_truncated.yaml
-    launch:
-      gpu_count: 2
-      tensor_parallel_size: 2
-
-  - id: qwen3-30b-a3b-thinking-h100-longbench-tp4
-    model: Qwen/Qwen3-30B-A3B-Thinking-2507
-    workload: ./workloads/longbench_nl_truncated.yaml
-    launch:
-      gpu_count: 4
-      tensor_parallel_size: 4
-
-  - id: qwen3-32b-h100-longbench-tp1
-    model: Qwen/Qwen3-32B
-    workload: ./workloads/longbench_nl_truncated.yaml
-
-  - id: qwen3-32b-h100-longbench-tp2
-    model: Qwen/Qwen3-32B
-    workload: ./workloads/longbench_nl_truncated.yaml
-    launch:
-      gpu_count: 2
-      tensor_parallel_size: 2
-
-  - id: qwen3-32b-h100-longbench-tp4
-    model: Qwen/Qwen3-32B
-    workload: ./workloads/longbench_nl_truncated.yaml
-    launch:
-      gpu_count: 4
-      tensor_parallel_size: 4
-
-  - id: gemma-4-e4b-it-h100-longbench-tp1
-    model: google/gemma-4-E4B-it
-    workload: ./workloads/longbench_nl_truncated.yaml
-
-  - id: gemma-4-26b-a4b-it-h100-longbench-tp1
-    model: google/gemma-4-26B-A4B-it
-    workload: ./workloads/longbench_nl_truncated.yaml
-
-  - id: gemma-4-26b-a4b-it-h100-longbench-tp2
-    model: google/gemma-4-26B-A4B-it
-    workload: ./workloads/longbench_nl_truncated.yaml
-    launch:
-      gpu_count: 2
-      tensor_parallel_size: 2
-
-  - id: gemma-4-26b-a4b-it-h100-longbench-tp4
-    model: google/gemma-4-26B-A4B-it
-    workload: ./workloads/longbench_nl_truncated.yaml
-    launch:
-      gpu_count: 4
-      tensor_parallel_size: 4
-
-  - id: gemma-4-31b-it-h100-longbench-tp1
-    model: google/gemma-4-31B-it
-    workload: ./workloads/longbench_nl_truncated.yaml
-
-  - id: gemma-4-31b-it-h100-longbench-tp2
-    model: google/gemma-4-31B-it
-    workload: ./workloads/longbench_nl_truncated.yaml
-    launch:
-      gpu_count: 2
-      tensor_parallel_size: 2
-
-  - id: gemma-4-31b-it-h100-longbench-tp4
-    model: google/gemma-4-31B-it
-    workload: ./workloads/longbench_nl_truncated.yaml
-    launch:
-      gpu_count: 4
-      tensor_parallel_size: 4
-
-  - id: codellama-34b-instruct-h100-longbench-tp1
-    model: meta-llama/CodeLlama-34b-Instruct-hf
-    workload: ./workloads/longbench_nl_truncated_16384.yaml
-
-  - id: codellama-34b-instruct-h100-longbench-tp2
-    model: meta-llama/CodeLlama-34b-Instruct-hf
-    workload: ./workloads/longbench_nl_truncated_16384.yaml
-    launch:
-      gpu_count: 2
-      tensor_parallel_size: 2
-
-  - id: codellama-34b-instruct-h100-longbench-tp4
-    model: meta-llama/CodeLlama-34b-Instruct-hf
-    workload: ./workloads/longbench_nl_truncated_16384.yaml
-    launch:
-      gpu_count: 4
-      tensor_parallel_size: 4
-
-  - id: llama-3-1-8b-instruct-h100-longbench-tp1
-    model: meta-llama/Llama-3.1-8B-Instruct
-    workload: ./workloads/longbench_nl_truncated.yaml
-
-  - id: llama-3-1-70b-instruct-h100-longbench-tp4
-    model: meta-llama/Llama-3.1-70B-Instruct
-    workload: ./workloads/longbench_nl_truncated.yaml
-    launch:
-      gpu_count: 4
-      tensor_parallel_size: 4
-
-  - id: llama-3-2-3b-instruct-h100-longbench-tp1
-    model: meta-llama/Llama-3.2-3B-Instruct
-    workload: ./workloads/longbench_nl_truncated.yaml
-
-  - id: gpt-oss-20b-h100-longbench-tp1
-    model: openai/gpt-oss-20b
-    workload: ./workloads/longbench_nl_truncated.yaml
-
-  - id: gpt-oss-120b-h100-longbench-tp1
-    model: openai/gpt-oss-120b
-    workload: ./workloads/longbench_nl_truncated_8192.yaml
-    launch:
       env:
         PYTORCH_ALLOC_CONF: expandable_segments:True
         PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+    search:
+      initial_request_rate: 0.1
+      max_request_rate: 2
+      max_binary_steps: 8
+      max_bracket_trials: 12
+      max_closed_loop_concurrency: 16
+
+  - match:
+      models:
+        - Qwen/Qwen3-235B-A22B-Instruct-2507
+        - Qwen/Qwen3-235B-A22B-Thinking-2507
+    reason: Qwen3-235B-A22B requires TP8; allow the same long cold-start budget used by the H100 ShareGPT full-node verification.
+    launch:
+      env:
+        VLLM_ENGINE_READY_TIMEOUT_S: "4800"
+      readiness_timeout_s: 5400
+      max_num_seqs: 128
+      max_num_batched_tokens: 2048
+    search:
+      initial_request_rate: 0.05
+      max_request_rate: 1
+      max_binary_steps: 7
+      max_bracket_trials: 10
+      max_closed_loop_concurrency: 8
+
+  - match:
+      workloads:
+        - '*long_output_summarization*'
+    reason: Long-output summarization has the largest decode demand; keep the rate ceiling low and rely on extended trials.
+    search:
+      initial_request_rate: 0.125
+      max_request_rate: 2
+      max_closed_loop_concurrency: 16
+
+  - match:
+      workloads:
+        - '*medium_output_summarization*'
+    reason: Medium-output summarization still combines long prompts with hundreds-token completions.
+    search:
+      initial_request_rate: 0.25
+      max_request_rate: 3
+      max_closed_loop_concurrency: 16
+
+  - match:
+      workloads:
+        - '*medium_answer_rag_qa*'
+    reason: RAG-QA uses long document prompts with medium answers; the expanded shard has enough unique source groups for longer sweeps.
+    search:
+      initial_request_rate: 0.25
+      max_request_rate: 4
+      max_closed_loop_concurrency: 16
+
+  - match:
+      workloads:
+        - '*short_answer_document_qa*'
+    reason: Short-answer QA has the shortest outputs but still long inputs; use the widest LongBench bucket ceiling.
+    search:
+      initial_request_rate: 0.25
+      max_request_rate: 6
+      max_closed_loop_concurrency: 16
+
+  - match:
+      models:
+        - meta-llama/Llama-3.1-70B-Instruct
+        - openai/gpt-oss-120b
+      workloads:
+        - '*long_output_summarization*'
+        - '*medium_output_summarization*'
+        - '*medium_answer_rag_qa*'
+        - '*short_answer_document_qa*'
+    reason: 70B/gpt-oss-120B LongBench runs should not inherit the wider short-answer bucket ceilings.
+    search:
+      initial_request_rate: 0.1
+      max_request_rate: 2
+      max_binary_steps: 8
+      max_bracket_trials: 12
+      max_closed_loop_concurrency: 16
+
+  - match:
+      models:
+        - Qwen/Qwen3-235B-A22B-Instruct-2507
+        - Qwen/Qwen3-235B-A22B-Thinking-2507
+      workloads:
+        - '*long_output_summarization*'
+        - '*medium_output_summarization*'
+        - '*medium_answer_rag_qa*'
+        - '*short_answer_document_qa*'
+    reason: Full-node Qwen3-235B LongBench jobs need the strictest rate cap across all buckets.
+    search:
+      initial_request_rate: 0.05
+      max_request_rate: 1
+      max_binary_steps: 7
+      max_bracket_trials: 10
+      max_closed_loop_concurrency: 8
+
+experiments:
+  # Excluded from helper_scripts/hf_cached_models.txt:
+  # - Llama-2 models, matching the no-Llama2 LongBench manifest.
+  # - DeepSeek-V4 models, unsupported in the current vLLM environment.
+
+  - id: longbench-expanded-single-gpu
+    models:
+      - Qwen/Qwen3-0.6B
+      - Qwen/Qwen3-1.7B
+      - Qwen/Qwen3-14B
+      - Qwen/Qwen3-4B-Instruct-2507
+      - Qwen/Qwen3-4B-Thinking-2507
+      - Qwen/Qwen3-8B
+      - google/gemma-4-E2B-it
+      - google/gemma-4-E4B-it
+      - meta-llama/Llama-3.1-8B-Instruct
+      - meta-llama/Llama-3.2-1B-Instruct
+      - meta-llama/Llama-3.2-3B-Instruct
+      - openai/gpt-oss-20b
+    workloads:
+      - ./workloads/longbench_long_output_summarization.yaml
+      - ./workloads/longbench_medium_output_summarization.yaml
+      - ./workloads/longbench_medium_answer_rag_qa.yaml
+      - ./workloads/longbench_short_answer_document_qa.yaml
+
+  - id: longbench-expanded-30b-tp2
+    models:
+      - Qwen/Qwen3-30B-A3B-Instruct-2507
+      - Qwen/Qwen3-30B-A3B-Thinking-2507
+      - Qwen/Qwen3-32B
+      - google/gemma-4-26B-A4B-it
+      - google/gemma-4-31B-it
+      - meta-llama/CodeLlama-34b-Instruct-hf
+    workloads:
+      - ./workloads/longbench_long_output_summarization.yaml
+      - ./workloads/longbench_medium_output_summarization.yaml
+      - ./workloads/longbench_medium_answer_rag_qa.yaml
+      - ./workloads/longbench_short_answer_document_qa.yaml
+    launch:
+      gpu_count: 2
+      tensor_parallel_size: 2
+
+  - id: longbench-expanded-30b-tp4
+    models:
+      - Qwen/Qwen3-30B-A3B-Instruct-2507
+      - Qwen/Qwen3-30B-A3B-Thinking-2507
+      - Qwen/Qwen3-32B
+      - google/gemma-4-26B-A4B-it
+      - google/gemma-4-31B-it
+      - meta-llama/CodeLlama-34b-Instruct-hf
+    workloads:
+      - ./workloads/longbench_long_output_summarization.yaml
+      - ./workloads/longbench_medium_output_summarization.yaml
+      - ./workloads/longbench_medium_answer_rag_qa.yaml
+      - ./workloads/longbench_short_answer_document_qa.yaml
+    launch:
+      gpu_count: 4
+      tensor_parallel_size: 4
+
+  - id: longbench-expanded-70b-tp4
+    model: meta-llama/Llama-3.1-70B-Instruct
+    workloads:
+      - ./workloads/longbench_long_output_summarization.yaml
+      - ./workloads/longbench_medium_output_summarization.yaml
+      - ./workloads/longbench_medium_answer_rag_qa.yaml
+      - ./workloads/longbench_short_answer_document_qa.yaml
+    launch:
+      gpu_count: 4
+      tensor_parallel_size: 4
+
+  - id: longbench-expanded-gpt-oss-120b-tp1
+    model: openai/gpt-oss-120b
+    workloads:
+      - ./workloads/longbench_long_output_summarization_8k.yaml
+      - ./workloads/longbench_medium_output_summarization_8k.yaml
+      - ./workloads/longbench_medium_answer_rag_qa_8k.yaml
+      - ./workloads/longbench_short_answer_document_qa_8k.yaml
+    launch:
       gpu_memory_utilization: 0.95
       max_model_len: 8192
       max_num_seqs: 64
       max_num_batched_tokens: 1024
 
-  - id: gpt-oss-120b-h100-longbench-tp2
+  - id: longbench-expanded-gpt-oss-120b-tp2
     model: openai/gpt-oss-120b
-    workload: ./workloads/longbench_nl_truncated_8192.yaml
+    workloads:
+      - ./workloads/longbench_long_output_summarization_8k.yaml
+      - ./workloads/longbench_medium_output_summarization_8k.yaml
+      - ./workloads/longbench_medium_answer_rag_qa_8k.yaml
+      - ./workloads/longbench_short_answer_document_qa_8k.yaml
     launch:
-      env:
-        PYTORCH_ALLOC_CONF: expandable_segments:True
-        PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
       gpu_count: 2
       tensor_parallel_size: 2
       gpu_memory_utilization: 0.85
       max_model_len: 8192
-      max_num_seqs: 128
-      max_num_batched_tokens: 2048
+      max_num_seqs: 64
+      max_num_batched_tokens: 1024
 
-  - id: gpt-oss-120b-h100-longbench-tp4
+  - id: longbench-expanded-gpt-oss-120b-tp4
     model: openai/gpt-oss-120b
-    workload: ./workloads/longbench_nl_truncated.yaml
+    workloads:
+      - ./workloads/longbench_long_output_summarization.yaml
+      - ./workloads/longbench_medium_output_summarization.yaml
+      - ./workloads/longbench_medium_answer_rag_qa.yaml
+      - ./workloads/longbench_short_answer_document_qa.yaml
     launch:
       gpu_count: 4
       tensor_parallel_size: 4
+      gpu_memory_utilization: 0.90
+      max_num_seqs: 128
+      max_num_batched_tokens: 2048
+
+  - id: longbench-expanded-qwen3-235b-a22b-tp8
+    models:
+      - Qwen/Qwen3-235B-A22B-Instruct-2507
+      - Qwen/Qwen3-235B-A22B-Thinking-2507
+    workloads:
+      - ./workloads/longbench_long_output_summarization.yaml
+      - ./workloads/longbench_medium_output_summarization.yaml
+      - ./workloads/longbench_medium_answer_rag_qa.yaml
+      - ./workloads/longbench_short_answer_document_qa.yaml
+    launch:
+      gpu_count: 8
+      tensor_parallel_size: 8
