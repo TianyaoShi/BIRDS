@@ -3,7 +3,7 @@ run:
   output_root: ../results/orchestrator
   mst_output_root: ../results/mst/a100-40gx4-sharegpt-cached-models-000
   default_endpoint: /v1/chat/completions
-  python_executable: /anvil/projects/x-cis250584/BioLLM/.venv-a100/bin/python
+  python_executable: .venv-a100/bin/python
 
 slurm:
   partition: gpu
@@ -14,8 +14,8 @@ slurm:
     - gcc/11.2.0
     - cuda/12.8.0
   setup_commands:
-    - source /anvil/projects/x-cis250584/BioLLM/helper_scripts/activate_vllm_a100.sh
-  python_executable: /anvil/projects/x-cis250584/BioLLM/.venv-a100/bin/python
+    - source helper_scripts/activate_vllm_a100.sh
+  python_executable: .venv-a100/bin/python
   cpus_per_gpu: 16
   array_concurrency_limit: 3
   base_port: 9300
