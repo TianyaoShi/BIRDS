@@ -149,11 +149,11 @@ overrides:
       models:
         - Qwen/Qwen3-235B-A22B-Instruct-2507
         - Qwen/Qwen3-235B-A22B-Thinking-2507
-    reason: Qwen3-235B-A22B requires TP8; keep the ShareGPT search ceiling conservative for full-node runs.
+    reason: Qwen3-235B-A22B requires TP8; keep CUDA graph mode enabled and allow a long cold start for full-node verification.
     launch:
       env:
-        VLLM_ENGINE_READY_TIMEOUT_S: "1800"
-      readiness_timeout_s: 2400
+        VLLM_ENGINE_READY_TIMEOUT_S: "4800"
+      readiness_timeout_s: 5400
     search:
       initial_request_rate: 0.5
       max_request_rate: 20
