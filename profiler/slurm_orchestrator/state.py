@@ -76,7 +76,7 @@ def collect_run(run_root: str | Path) -> dict[str, Any]:
     plan = load_run_plan(run_root)
     run_root_path = Path(str(plan["run_root"]))
     latest_submissions = _load_latest_submission_by_group(run_root_path)
-    active_slurm_tasks = _load_active_slurm_tasks(latest_submissions)
+    active_slurm_arrays = _load_active_slurm_arrays(latest_submissions)
     jobs: list[dict[str, Any]] = []
     latest_update = str(plan.get("created_at", now_utc_iso()))
     for job_entry in plan.get("jobs", []):
@@ -88,7 +88,7 @@ def collect_run(run_root: str | Path) -> dict[str, Any]:
             state=state,
             job_entry=job_entry,
             latest_submissions=latest_submissions,
-            active_slurm_tasks=active_slurm_tasks,
+            active_slurm_arrays=active_slurm_arrays,
         )
         _write_state_if_changed(status_path, state)
         jobs.append(state)
@@ -161,10 +161,10 @@ def _reconcile_slurm_state(
     state: dict[str, Any],
     job_entry: dict[str, Any],
     latest_submissions: dict[str, str],
-    active_slurm_tasks: set[tuple[str, str]] | None,
+    active_slurm_arrays: set[str] | None,
 ) -> dict[str, Any]:
     status = str(state.get("status", "planned"))
-    if status not in {"planned", "running"} or active_slurm_tasks is None:
+    if status not in {"planned", "running"} or active_slurm_arrays is None:
         return state
 
     slurm = state.setdefault("slurm", {})
@@ -178,7 +178,7 @@ def _reconcile_slurm_state(
     )
     if not array_job_id or not array_task_id:
         return state
-    if (array_job_id, array_task_id) in active_slurm_tasks:
+    if array_job_id in active_slurm_arrays:
         return state
 
     updated = dict(state)
@@ -218,13 +218,13 @@ def _load_latest_submission_by_group(run_root: Path) -> dict[str, str]:
     return {group_key: job_id for group_key, (_, job_id) in latest.items()}
 
 
-def _load_active_slurm_tasks(submissions: dict[str, str]) -> set[tuple[str, str]] | None:
+def _load_active_slurm_arrays(submissions: dict[str, str]) -> set[str] | None:
     array_job_ids = sorted({job_id for job_id in submissions.values() if job_id})
     if not array_job_ids:
         return None
     try:
         result = subprocess.run(
-            ["squeue", "-h", "-j", ",".join(array_job_ids), "-o", "%A|%a"],
+            ["squeue", "-h", "-j", ",".join(array_job_ids), "-o", "%A|%F"],
             check=False,
             capture_output=True,
             text=True,
@@ -233,12 +233,12 @@ def _load_active_slurm_tasks(submissions: dict[str, str]) -> set[tuple[str, str]
         return None
     if result.returncode != 0:
         return None
-    active: set[tuple[str, str]] = set()
+    active: set[str] = set()
     for line in result.stdout.splitlines():
-        array_job_id, separator, array_task_id = line.strip().partition("|")
-        if not separator or not array_job_id or not array_task_id:
-            continue
-        active.add((array_job_id, array_task_id))
+        job_id, separator, array_job_id = line.strip().partition("|")
+        for candidate in (job_id, array_job_id if separator else ""):
+            if candidate:
+                active.add(candidate)
     return active
 
 
