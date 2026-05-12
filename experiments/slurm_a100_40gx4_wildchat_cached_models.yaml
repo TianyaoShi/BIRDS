@@ -201,6 +201,9 @@ experiments:
     gpu_count: 2
     tensor_parallel_size: 2
     max_model_len: 8192
+    env:
+      VLLM_ENGINE_READY_TIMEOUT_S: '1800'
+    readiness_timeout_s: 2400
 - id: wildchat-30b-8k-tp4
   models:
   - Qwen/Qwen3-30B-A3B-Instruct-2507
@@ -214,6 +217,9 @@ experiments:
     gpu_count: 4
     tensor_parallel_size: 4
     max_model_len: 8192
+    env:
+      VLLM_ENGINE_READY_TIMEOUT_S: '1800'
+    readiness_timeout_s: 2400
 - id: wildchat-gpt-oss-120b-8k-tp4
   model: openai/gpt-oss-120b
   workload: ./workloads/wildchat_hf_8k.yaml
@@ -221,3 +227,6 @@ experiments:
     gpu_count: 4
     tensor_parallel_size: 4
     max_model_len: 8192
+    env:
+      VLLM_ENGINE_READY_TIMEOUT_S: '1800'
+    readiness_timeout_s: 2400
