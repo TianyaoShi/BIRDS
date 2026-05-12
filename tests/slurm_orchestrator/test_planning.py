@@ -344,6 +344,58 @@ def test_collect_run_preserves_nonterminal_jobs_while_slurm_array_is_active(
     assert preserved_planned["status"] == "planned"
 
 
+def test_collect_run_repairs_false_stale_failure_while_slurm_array_is_active(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workload = _write_workload(tmp_path, "sharegpt.yaml")
+    manifest_path = _write_manifest(
+        tmp_path,
+        {
+            "run": {"output_root": str(tmp_path / "runs")},
+            "experiments": [
+                {"id": "exp-planned", "model": "model-a", "workload": str(workload)},
+            ],
+        },
+    )
+
+    plan = materialize_run_plan(load_manifest(manifest_path), "run-repair-active")
+    run_root = tmp_path / "runs" / "run-repair-active"
+    (run_root / "resume-submission.json").write_text(
+        json.dumps(
+            {
+                "groups": [{"group_key": "gpu1", "job_id": "12345"}],
+                "submitted_at": "2026-05-11T07:39:08+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    state_path = run_root / "jobs" / "exp-planned.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["status"] = "failed"
+    state["last_error"] = (
+        "Slurm array task 12345_0 is no longer active, but orchestrator state remained planned; "
+        "the task likely ended before finalization, for example due to scancel, time limit, or node failure."
+    )
+    state["slurm"]["array_job_id"] = "12345"
+    state["slurm"]["array_task_id"] = "0"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    def fake_run(command, **kwargs):
+        assert command[:4] == ["squeue", "-h", "-j", "12345"]
+        return SimpleNamespace(returncode=0, stdout="12345|12345\n", stderr="")
+
+    monkeypatch.setattr("slurm_orchestrator.state.subprocess.run", fake_run)
+
+    collected = collect_run(plan["run_root"])
+
+    assert collected["summary"]["counts"]["planned"] == 1
+    assert collected["summary"]["counts"]["failed"] == 0
+    repaired = json.loads(state_path.read_text(encoding="utf-8"))
+    assert repaired["status"] == "planned"
+    assert repaired["last_error"] is None
+
+
 def test_resume_refreshes_failed_job_plan_and_submits_only_failed_array_index(
     tmp_path: Path,
     monkeypatch,

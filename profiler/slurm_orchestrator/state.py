@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -164,7 +165,17 @@ def _reconcile_slurm_state(
     active_slurm_arrays: set[str] | None,
 ) -> dict[str, Any]:
     status = str(state.get("status", "planned"))
-    if status not in {"planned", "running"} or active_slurm_arrays is None:
+    if active_slurm_arrays is None:
+        return state
+    repaired = _repair_active_stale_failure(
+        state=state,
+        job_entry=job_entry,
+        latest_submissions=latest_submissions,
+        active_slurm_arrays=active_slurm_arrays,
+    )
+    if repaired is not state:
+        return repaired
+    if status not in {"planned", "running"}:
         return state
 
     slurm = state.setdefault("slurm", {})
@@ -192,6 +203,43 @@ def _reconcile_slurm_state(
         f"but orchestrator state remained {status}; the task likely ended before "
         "finalization, for example due to scancel, time limit, or node failure."
     )
+    updated["updated_at"] = now_utc_iso()
+    return updated
+
+
+def _repair_active_stale_failure(
+    *,
+    state: dict[str, Any],
+    job_entry: dict[str, Any],
+    latest_submissions: dict[str, str],
+    active_slurm_arrays: set[str],
+) -> dict[str, Any]:
+    if str(state.get("status", "planned")) != "failed":
+        return state
+    last_error = state.get("last_error")
+    if not isinstance(last_error, str):
+        return state
+    match = re.search(
+        r"Slurm array task (?P<array_job_id>[^_]+)_(?P<array_task_id>\S+) is no longer active, "
+        r"but orchestrator state remained (?P<status>planned|running)",
+        last_error,
+    )
+    if match is None:
+        return state
+
+    slurm = state.setdefault("slurm", {})
+    group_key = str(slurm.get("group_key") or job_entry.get("group_key") or "")
+    array_job_id = str(slurm.get("array_job_id") or latest_submissions.get(group_key) or match.group("array_job_id"))
+    if array_job_id not in active_slurm_arrays:
+        return state
+
+    updated = dict(state)
+    updated_slurm = dict(slurm)
+    updated_slurm.setdefault("array_job_id", array_job_id)
+    updated_slurm.setdefault("array_task_id", match.group("array_task_id"))
+    updated["slurm"] = updated_slurm
+    updated["status"] = match.group("status")
+    updated["last_error"] = None
     updated["updated_at"] = now_utc_iso()
     return updated
 
