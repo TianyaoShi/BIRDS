@@ -34,7 +34,7 @@ def test_materialize_run_plan_groups_jobs_and_writes_absolute_payloads(tmp_path:
     manifest_path = _write_manifest(
         tmp_path,
         {
-            "run": {"output_root": str(tmp_path / "runs")},
+            "run": {"output_root": str(tmp_path / "runs"), "mst_output_root": str(tmp_path / "mst")},
             "slurm": {"base_port": 8400},
             "experiments": [
                 {
@@ -122,6 +122,12 @@ def test_rendered_sbatch_script_includes_array_limit_wait_search_report_and_clea
     assert "wait-ready" in script
     assert '"${SEARCH_CMD[@]}" >>"$MST_STDOUT" 2>>"$MST_STDERR"' in script
     assert '"${REPORT_CMD[@]}" >>"$MST_STDOUT" 2>>"$MST_STDERR"' in script
+    assert "finish_if_mst_artifacts_exist()" in script
+    assert '[[ -f "$RESULT_DIR/search_trace.json" && -f "$RESULT_DIR/final_report.json" ]]' in script
+    assert "finalize_task 0" in script
+    assert "finish_if_mst_artifacts_exist" in script
+    assert "terminate_vllm()" in script
+    assert 'kill -KILL -- -"$VLLM_PID"' in script
     assert "trap cleanup EXIT" in script
     task_shell = render_task_shell(plan["groups"][0]["plan_path"], 0)
     assert "export PYTORCH_ALLOC_CONF=expandable_segments:True" in task_shell
@@ -132,7 +138,7 @@ def test_rendered_sbatch_script_scales_cpus_with_gpu_count(tmp_path: Path) -> No
     manifest_path = _write_manifest(
         tmp_path,
         {
-            "run": {"output_root": str(tmp_path / "runs")},
+            "run": {"output_root": str(tmp_path / "runs"), "mst_output_root": str(tmp_path / "mst")},
             "experiments": [
                 {
                     "id": "exp-b",
@@ -156,7 +162,7 @@ def test_rendered_sbatch_script_accepts_cpus_per_gpu_override(tmp_path: Path) ->
     manifest_path = _write_manifest(
         tmp_path,
         {
-            "run": {"output_root": str(tmp_path / "runs")},
+            "run": {"output_root": str(tmp_path / "runs"), "mst_output_root": str(tmp_path / "mst")},
             "slurm": {"cpus_per_gpu": 32},
             "experiments": [
                 {
@@ -181,7 +187,7 @@ def test_rendered_sbatch_script_accepts_fixed_cpus_per_task_override(tmp_path: P
     manifest_path = _write_manifest(
         tmp_path,
         {
-            "run": {"output_root": str(tmp_path / "runs")},
+            "run": {"output_root": str(tmp_path / "runs"), "mst_output_root": str(tmp_path / "mst")},
             "slurm": {"cpus_per_gpu": 32, "cpus_per_task": 16},
             "experiments": [
                 {
@@ -206,7 +212,7 @@ def test_collect_run_aggregates_succeeded_and_failed_jobs(tmp_path: Path) -> Non
     manifest_path = _write_manifest(
         tmp_path,
         {
-            "run": {"output_root": str(tmp_path / "runs")},
+            "run": {"output_root": str(tmp_path / "runs"), "mst_output_root": str(tmp_path / "mst")},
             "slurm": {"array_concurrency_limit": 2},
             "search": {"search_mode": "open-loop"},
             "experiments": [
@@ -246,10 +252,10 @@ def test_collect_run_marks_stale_nonterminal_slurm_tasks_failed(tmp_path: Path, 
     manifest_path = _write_manifest(
         tmp_path,
         {
-            "run": {"output_root": str(tmp_path / "runs")},
+            "run": {"output_root": str(tmp_path / "runs"), "mst_output_root": str(tmp_path / "mst")},
             "experiments": [
-                {"id": "exp-running", "model": "model-a", "workload": str(workload)},
-                {"id": "exp-planned", "model": "model-b", "workload": str(workload)},
+                {"id": "exp-running", "model": "model-stale-running", "workload": str(workload)},
+                {"id": "exp-planned", "model": "model-stale-planned", "workload": str(workload)},
             ],
         },
     )
@@ -300,10 +306,10 @@ def test_collect_run_preserves_nonterminal_jobs_while_slurm_array_is_active(
     manifest_path = _write_manifest(
         tmp_path,
         {
-            "run": {"output_root": str(tmp_path / "runs")},
+            "run": {"output_root": str(tmp_path / "runs"), "mst_output_root": str(tmp_path / "mst")},
             "experiments": [
-                {"id": "exp-running", "model": "model-a", "workload": str(workload)},
-                {"id": "exp-planned", "model": "model-b", "workload": str(workload)},
+                {"id": "exp-running", "model": "model-active-running", "workload": str(workload)},
+                {"id": "exp-planned", "model": "model-active-planned", "workload": str(workload)},
             ],
         },
     )
@@ -344,6 +350,65 @@ def test_collect_run_preserves_nonterminal_jobs_while_slurm_array_is_active(
     assert preserved_planned["status"] == "planned"
 
 
+def test_collect_run_marks_nonterminal_job_succeeded_when_final_artifacts_exist(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workload = _write_workload(tmp_path, "sharegpt.yaml")
+    manifest_path = _write_manifest(
+        tmp_path,
+        {
+            "run": {"output_root": str(tmp_path / "runs"), "mst_output_root": str(tmp_path / "mst")},
+            "experiments": [
+                {"id": "exp-running", "model": "model-artifact-repair-running", "workload": str(workload)},
+                {"id": "exp-planned", "model": "model-artifact-repair-planned", "workload": str(workload)},
+            ],
+        },
+    )
+
+    plan = materialize_run_plan(load_manifest(manifest_path), "run-artifact-repair")
+    run_root = tmp_path / "runs" / "run-artifact-repair"
+    (run_root / "resume-submission.json").write_text(
+        json.dumps(
+            {
+                "groups": [{"group_key": "gpu1", "job_id": "12345"}],
+                "submitted_at": "2026-05-11T07:39:08+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    running_state_path = run_root / "jobs" / "exp-running.json"
+    running_state = json.loads(running_state_path.read_text(encoding="utf-8"))
+    running_state["status"] = "running"
+    running_state["slurm"]["array_job_id"] = "12345"
+    running_state["slurm"]["array_task_id"] = "0"
+    running_state_path.write_text(json.dumps(running_state), encoding="utf-8")
+
+    group_payload = json.loads(Path(plan["groups"][0]["plan_path"]).read_text(encoding="utf-8"))
+    result_dir = Path(group_payload["jobs"][0]["job"]["result_dir"])
+    result_dir.mkdir(parents=True, exist_ok=True)
+    (result_dir / "search_trace.json").write_text("{}", encoding="utf-8")
+    (result_dir / "final_report.json").write_text("{}", encoding="utf-8")
+    (result_dir / "final_report.md").write_text("# report\n", encoding="utf-8")
+
+    def fake_run(command, **kwargs):
+        assert command[:4] == ["squeue", "-h", "-j", "12345"]
+        return SimpleNamespace(returncode=0, stdout="12345|12345\n", stderr="")
+
+    monkeypatch.setattr("slurm_orchestrator.state.subprocess.run", fake_run)
+
+    collected = collect_run(plan["run_root"])
+
+    assert collected["summary"]["counts"]["succeeded"] == 1
+    repaired = json.loads(running_state_path.read_text(encoding="utf-8"))
+    assert repaired["status"] == "succeeded"
+    assert repaired["last_error"] is None
+    assert repaired["artifacts"]["search_trace"] == str(result_dir / "search_trace.json")
+    assert repaired["artifacts"]["final_report_json"] == str(result_dir / "final_report.json")
+    assert repaired["artifacts"]["final_report_md"] == str(result_dir / "final_report.md")
+
+
 def test_collect_run_repairs_false_stale_failure_while_slurm_array_is_active(
     tmp_path: Path,
     monkeypatch,
@@ -352,9 +417,9 @@ def test_collect_run_repairs_false_stale_failure_while_slurm_array_is_active(
     manifest_path = _write_manifest(
         tmp_path,
         {
-            "run": {"output_root": str(tmp_path / "runs")},
+            "run": {"output_root": str(tmp_path / "runs"), "mst_output_root": str(tmp_path / "mst")},
             "experiments": [
-                {"id": "exp-planned", "model": "model-a", "workload": str(workload)},
+                {"id": "exp-planned", "model": "model-false-stale-repair", "workload": str(workload)},
             ],
         },
     )

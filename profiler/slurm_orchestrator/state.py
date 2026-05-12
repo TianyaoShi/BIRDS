@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -165,6 +166,9 @@ def _reconcile_slurm_state(
     active_slurm_arrays: set[str] | None,
 ) -> dict[str, Any]:
     status = str(state.get("status", "planned"))
+    artifact_repaired = _repair_completed_artifacts(state=state, job_entry=job_entry)
+    if artifact_repaired is not state:
+        return artifact_repaired
     if active_slurm_arrays is None:
         return state
     repaired = _repair_active_stale_failure(
@@ -205,6 +209,56 @@ def _reconcile_slurm_state(
     )
     updated["updated_at"] = now_utc_iso()
     return updated
+
+
+def _repair_completed_artifacts(*, state: dict[str, Any], job_entry: dict[str, Any]) -> dict[str, Any]:
+    status = str(state.get("status", "planned"))
+    if status == "failed":
+        last_error = state.get("last_error")
+        if not isinstance(last_error, str) or "is no longer active" not in last_error:
+            return state
+    elif status != "running":
+        return state
+    result_dir_value = job_entry.get("result_dir") or state.get("result_dir")
+    if not isinstance(result_dir_value, str) or not result_dir_value:
+        return state
+    result_dir = Path(result_dir_value)
+    search_trace = result_dir / "search_trace.json"
+    final_report_json = result_dir / "final_report.json"
+    if not search_trace.is_file() or not final_report_json.is_file():
+        return state
+    if not _artifacts_are_newer_than_state(state, search_trace, final_report_json):
+        return state
+
+    updated = dict(state)
+    artifacts = dict(updated.get("artifacts") or {})
+    artifacts["search_trace"] = str(search_trace)
+    artifacts["final_report_json"] = str(final_report_json)
+    final_report_md = result_dir / "final_report.md"
+    artifacts["final_report_md"] = str(final_report_md) if final_report_md.is_file() else None
+    updated["artifacts"] = artifacts
+    attempts = dict(updated.get("attempts") or {})
+    attempts["startup"] = max(int(attempts.get("startup", 0)), 1)
+    attempts["search"] = max(int(attempts.get("search", 0)), 1)
+    updated["attempts"] = attempts
+    updated["status"] = "succeeded"
+    updated["last_error"] = None
+    updated["updated_at"] = now_utc_iso()
+    return updated
+
+
+def _artifacts_are_newer_than_state(state: dict[str, Any], *paths: Path) -> bool:
+    updated_at = state.get("updated_at")
+    if not isinstance(updated_at, str) or not updated_at:
+        return True
+    try:
+        state_timestamp = datetime.fromisoformat(updated_at).timestamp()
+    except ValueError:
+        return True
+    try:
+        return all(path.stat().st_mtime >= state_timestamp for path in paths)
+    except OSError:
+        return False
 
 
 def _repair_active_stale_failure(

@@ -144,6 +144,8 @@ def test_materialize_energy_run_plan_groups_jobs_and_renders_energy_script(tmp_p
     assert ': >"$PROFILE_STDOUT"' in script
     assert ': >"$PROFILE_STDERR"' in script
     assert "emit-energy-task-shell" in script
+    assert "terminate_vllm()" in script
+    assert 'kill -KILL -- -"$VLLM_PID"' in script
     assert "mark-energy-task-running" in script
     assert "finalize-energy-task" in script
     assert "energy_profiler.cli" in render_energy_task_shell(run_plan["groups"][0]["plan_path"], 0)
