@@ -138,6 +138,11 @@ def test_materialize_energy_run_plan_groups_jobs_and_renders_energy_script(tmp_p
     assert "#SBATCH -t 00:45:00" in script
     assert "module load cuda/12.4" in script
     assert "source /venv/bin/activate" in script
+    assert 'export VLLM_ENGINE_READY_TIMEOUT_S="${VLLM_ENGINE_READY_TIMEOUT_S:-$READINESS_TIMEOUT_S}"' in script
+    assert ': >"$VLLM_STDOUT"' in script
+    assert ': >"$VLLM_STDERR"' in script
+    assert ': >"$PROFILE_STDOUT"' in script
+    assert ': >"$PROFILE_STDERR"' in script
     assert "emit-energy-task-shell" in script
     assert "mark-energy-task-running" in script
     assert "finalize-energy-task" in script

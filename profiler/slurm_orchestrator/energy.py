@@ -407,6 +407,7 @@ def render_energy_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmCo
         [
             "",
             'eval "$("$PYTHON_BIN" -m slurm_orchestrator.cli emit-energy-task-shell --group-plan "$GROUP_PLAN" --task-index "$TASK_INDEX")"',
+            'export VLLM_ENGINE_READY_TIMEOUT_S="${VLLM_ENGINE_READY_TIMEOUT_S:-$READINESS_TIMEOUT_S}"',
             "",
             "TRIAL_STARTED=0",
             "",
@@ -462,6 +463,10 @@ def render_energy_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmCo
             "trap cleanup EXIT",
             "",
             'mkdir -p "$(dirname "$STATUS_PATH")" "$(dirname "$VLLM_STDOUT")" "$RESULT_DIR"',
+            ': >"$VLLM_STDOUT"',
+            ': >"$VLLM_STDERR"',
+            ': >"$PROFILE_STDOUT"',
+            ': >"$PROFILE_STDERR"',
             'rm -rf "$RESULT_DIR"',
             'mkdir -p "$RESULT_DIR"',
             "",

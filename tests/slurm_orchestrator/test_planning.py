@@ -107,6 +107,11 @@ def test_rendered_sbatch_script_includes_array_limit_wait_search_report_and_clea
     assert 'export PYTHONPATH="$PROFILER_ROOT${PYTHONPATH:+:$PYTHONPATH}"' in script
     assert "module load cuda/12.4" in script
     assert "source /venv/bin/activate" in script
+    assert 'export VLLM_ENGINE_READY_TIMEOUT_S="${VLLM_ENGINE_READY_TIMEOUT_S:-$READINESS_TIMEOUT_S}"' in script
+    assert ': >"$VLLM_STDOUT"' in script
+    assert ': >"$VLLM_STDERR"' in script
+    assert ': >"$MST_STDOUT"' in script
+    assert ': >"$MST_STDERR"' in script
     assert 'setsid "${VLLM_CMD[@]}"' in script
     assert "log_gpu_diagnostics()" in script
     assert 'echo "SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-}"' in script

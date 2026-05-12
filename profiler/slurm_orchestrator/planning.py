@@ -479,6 +479,7 @@ def render_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmConfig) -
         [
             "",
             'eval "$("$PYTHON_BIN" -m slurm_orchestrator.cli emit-task-shell --group-plan "$GROUP_PLAN" --task-index "$TASK_INDEX")"',
+            'export VLLM_ENGINE_READY_TIMEOUT_S="${VLLM_ENGINE_READY_TIMEOUT_S:-$READINESS_TIMEOUT_S}"',
             "",
             "SEARCH_STARTED=0",
             "",
@@ -520,6 +521,10 @@ def render_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmConfig) -
             "trap cleanup EXIT",
             "",
             'mkdir -p "$(dirname "$STATUS_PATH")" "$(dirname "$VLLM_STDOUT")" "$(dirname "$MST_STDOUT")"',
+            ': >"$VLLM_STDOUT"',
+            ': >"$VLLM_STDERR"',
+            ': >"$MST_STDOUT"',
+            ': >"$MST_STDERR"',
             'rm -rf "$RESULT_DIR"',
             'mkdir -p "$RESULT_DIR"',
             "",

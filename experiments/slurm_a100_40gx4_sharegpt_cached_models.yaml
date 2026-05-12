@@ -45,7 +45,7 @@ launch:
   max_model_len: 8192
   max_num_seqs: 256
   max_num_batched_tokens: 4096
-  readiness_timeout_s: 1200
+  readiness_timeout_s: 1800
 
 search:
   search_mode: hybrid
