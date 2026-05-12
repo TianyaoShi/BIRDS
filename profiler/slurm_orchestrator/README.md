@@ -40,6 +40,70 @@ PYTHONPATH=/path/to/BioLLM/profiler \
   --run-root /path/to/results/orchestrator/my-slurm-run
 ```
 
+By default, `collect` also mirrors the collected run directory to the shared
+results tree at `/depot/yiding/data/BioLLM-results/results`. For a run root such
+as `/scratch/.../results/orchestrator/my-slurm-run`, the default mirror target is:
+
+```text
+/depot/yiding/data/BioLLM-results/results/orchestrator/my-slurm-run
+```
+
+This keeps collect fast for incremental runs because it does not scan the full
+`results/` tree. The mirror uses `rsync -a --partial --chmod=D755,F644` and, in
+the default update mode, `--delete-delay` so the shared run copy matches the
+scratch run copy.
+
+Useful sync controls:
+
+```bash
+# Disable mirroring for one collect.
+PYTHONPATH=/path/to/BioLLM/profiler \
+  /path/to/venv/bin/python -m slurm_orchestrator.cli collect \
+  --run-root /path/to/results/orchestrator/my-slurm-run \
+  --no-sync-results
+
+# Mirror to a different shared results root.
+PYTHONPATH=/path/to/BioLLM/profiler \
+  /path/to/venv/bin/python -m slurm_orchestrator.cli collect \
+  --run-root /path/to/results/orchestrator/my-slurm-run \
+  --sync-results-to /path/to/shared/results
+
+# Full-tree mirror, useful for a deliberate catch-up sync.
+PYTHONPATH=/path/to/BioLLM/profiler \
+  /path/to/venv/bin/python -m slurm_orchestrator.cli collect \
+  --run-root /path/to/results/orchestrator/my-slurm-run \
+  --sync-results-scope all
+
+# Full-tree mirror that only copies files missing from the destination.
+PYTHONPATH=/path/to/BioLLM/profiler \
+  /path/to/venv/bin/python -m slurm_orchestrator.cli collect \
+  --run-root /path/to/results/orchestrator/my-slurm-run \
+  --sync-results-scope all \
+  --sync-results-existing missing
+```
+
+`--sync-results-scope run` is the default. `--sync-results-scope all` mirrors
+the nearest parent directory named `results`. `--sync-results-existing update`
+is the default and updates changed files; `--sync-results-existing missing`
+adds `rsync --ignore-existing` and does not overwrite files already present in
+the shared tree.
+
+The same controls can be set with environment variables:
+
+- `SLURM_ORCHESTRATOR_SYNC_RESULTS_TO`
+- `SLURM_ORCHESTRATOR_SYNC_RESULTS_SCOPE=run|all`
+- `SLURM_ORCHESTRATOR_SYNC_RESULTS_EXISTING=update|missing`
+- `SLURM_ORCHESTRATOR_SYNC_RESULTS_ROOT`
+- `SLURM_ORCHESTRATOR_DISABLE_RESULT_SYNC=1`
+
+The shared results root must be a real directory, not a symlink into private
+scratch storage. If it is currently a symlink, replace it once:
+
+```bash
+rm /depot/yiding/data/BioLLM-results/results
+mkdir -p /depot/yiding/data/BioLLM-results/results
+```
+
 Submit a reviewed `energy_profiler` plan as Slurm arrays:
 
 ```bash
