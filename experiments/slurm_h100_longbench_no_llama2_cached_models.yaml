@@ -16,7 +16,7 @@ slurm:
   setup_commands:
     - source /scratch/gautschi/shi676/BioLLM/helper_scripts/activate_vllm_h100.sh
   python_executable: /scratch/gautschi/shi676/BioLLM/.venv-h100/bin/python
-  array_concurrency_limit: 2
+  array_concurrency_limit: 4
   base_port: 9300
 
 hardware:
