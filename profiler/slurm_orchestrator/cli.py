@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 import urllib.error
@@ -30,6 +31,12 @@ from .planning import (
     submit_run_plan_tasks,
 )
 from .state import collect_run, finalize_task, mark_task_running
+
+
+DEFAULT_RESULTS_SYNC_DEST = Path("/depot/yiding/data/BioLLM-results/results")
+RESULTS_SYNC_DEST_ENV = "SLURM_ORCHESTRATOR_SYNC_RESULTS_TO"
+RESULTS_SYNC_ROOT_ENV = "SLURM_ORCHESTRATOR_SYNC_RESULTS_ROOT"
+RESULTS_SYNC_DISABLE_ENV = "SLURM_ORCHESTRATOR_DISABLE_RESULT_SYNC"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -69,6 +76,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     collect = subparsers.add_parser("collect")
     collect.add_argument("--run-root", type=Path, required=True)
+    collect.add_argument(
+        "--sync-results-to",
+        type=Path,
+        default=None,
+        help=(
+            "mirror the results tree to this shared directory after collect; "
+            f"defaults to ${RESULTS_SYNC_DEST_ENV} or {DEFAULT_RESULTS_SYNC_DEST} when available"
+        ),
+    )
+    collect.add_argument(
+        "--sync-results-root",
+        type=Path,
+        default=None,
+        help=(
+            "source results tree to mirror; defaults to "
+            f"${RESULTS_SYNC_ROOT_ENV} or the nearest parent directory named 'results'"
+        ),
+    )
+    collect.add_argument(
+        "--no-sync-results",
+        action="store_true",
+        help=f"skip result mirroring after collect, also set by ${RESULTS_SYNC_DISABLE_ENV}=1",
+    )
     collect.set_defaults(handler=_collect_command)
 
     energy_submit = subparsers.add_parser("energy-submit")
@@ -171,8 +201,10 @@ def _resume_command(args: argparse.Namespace) -> int:
 
 def _collect_command(args: argparse.Namespace) -> int:
     payload = collect_run(args.run_root)
+    sync_result = _sync_results_after_collect(args)
+    payload["result_sync"] = sync_result
     print(json.dumps(payload, indent=2, sort_keys=True))
-    return 0
+    return 1 if sync_result["status"] == "failed" else 0
 
 
 def _energy_submit_command(args: argparse.Namespace) -> int:
@@ -260,6 +292,104 @@ def _pid_exists(pid: int) -> bool:
     except OSError:
         return False
     return True
+
+
+def _sync_results_after_collect(args: argparse.Namespace) -> dict[str, object]:
+    if bool(getattr(args, "no_sync_results", False)) or _env_flag(RESULTS_SYNC_DISABLE_ENV):
+        return {"status": "skipped", "reason": "disabled"}
+
+    explicit_dest = getattr(args, "sync_results_to", None) or os.environ.get(RESULTS_SYNC_DEST_ENV)
+    destination = Path(explicit_dest) if explicit_dest else DEFAULT_RESULTS_SYNC_DEST
+    default_destination = explicit_dest is None
+    if default_destination and not destination.parent.exists():
+        return {
+            "status": "skipped",
+            "reason": f"default destination parent does not exist: {destination.parent}",
+            "destination": str(destination),
+        }
+
+    explicit_source = getattr(args, "sync_results_root", None) or os.environ.get(RESULTS_SYNC_ROOT_ENV)
+    source = Path(explicit_source).resolve() if explicit_source else _infer_results_root(args.run_root)
+    if not source.is_dir():
+        return {"status": "failed", "reason": f"source directory does not exist: {source}", "source": str(source)}
+
+    if destination.is_symlink():
+        return {
+            "status": "failed",
+            "reason": (
+                "destination is a symlink; replace it with a real directory before syncing: "
+                f"rm '{destination}' && mkdir -p '{destination}'"
+            ),
+            "source": str(source),
+            "destination": str(destination),
+        }
+
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return {
+            "status": "failed",
+            "reason": f"could not create destination directory: {exc}",
+            "source": str(source),
+            "destination": str(destination),
+        }
+
+    command = [
+        "rsync",
+        "-a",
+        "--delete-delay",
+        "--partial",
+        "--human-readable",
+        "--info=stats2",
+        "--chmod=D755,F644",
+        f"{source}/",
+        f"{destination}/",
+    ]
+    try:
+        completed = subprocess.run(command, check=False, capture_output=True, text=True)
+    except FileNotFoundError:
+        return {
+            "status": "failed",
+            "reason": "rsync executable was not found",
+            "source": str(source),
+            "destination": str(destination),
+        }
+
+    if completed.returncode != 0:
+        return {
+            "status": "failed",
+            "reason": _last_output_line(completed.stderr) or _last_output_line(completed.stdout) or "rsync failed",
+            "return_code": completed.returncode,
+            "source": str(source),
+            "destination": str(destination),
+        }
+
+    return {
+        "status": "succeeded",
+        "source": str(source),
+        "destination": str(destination),
+        "return_code": completed.returncode,
+        "summary": _last_output_line(completed.stdout),
+    }
+
+
+def _infer_results_root(run_root: str | Path) -> Path:
+    resolved = Path(run_root).resolve()
+    candidates = (resolved, *resolved.parents)
+    for candidate in candidates:
+        if candidate.name == "results":
+            return candidate
+    return resolved
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _last_output_line(output: str) -> str:
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    return lines[-1] if lines else ""
 
 
 def _readiness_probe(base_url: str, path: str, *, timeout_s: float) -> bool:
