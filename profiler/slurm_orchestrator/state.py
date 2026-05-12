@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +74,9 @@ def finalize_task(
 
 def collect_run(run_root: str | Path) -> dict[str, Any]:
     plan = load_run_plan(run_root)
+    run_root_path = Path(str(plan["run_root"]))
+    latest_submissions = _load_latest_submission_by_group(run_root_path)
+    active_slurm_tasks = _load_active_slurm_tasks(latest_submissions)
     jobs: list[dict[str, Any]] = []
     latest_update = str(plan.get("created_at", now_utc_iso()))
     for job_entry in plan.get("jobs", []):
@@ -80,6 +84,13 @@ def collect_run(run_root: str | Path) -> dict[str, Any]:
         state = _read_json_mapping(status_path)
         if state is None:
             state = dict(job_entry["initial_state"])
+        state = _reconcile_slurm_state(
+            state=state,
+            job_entry=job_entry,
+            latest_submissions=latest_submissions,
+            active_slurm_tasks=active_slurm_tasks,
+        )
+        _write_state_if_changed(status_path, state)
         jobs.append(state)
         updated_at = state.get("updated_at")
         if isinstance(updated_at, str) and updated_at > latest_update:
@@ -93,7 +104,6 @@ def collect_run(run_root: str | Path) -> dict[str, Any]:
         "updated_at": latest_update,
         "jobs": jobs,
     }
-    run_root_path = Path(str(plan["run_root"]))
     store = RunStateStore(run_root_path)
     store.save(aggregate_state)
     summary = store.write_summary_files(aggregate_state)
@@ -144,6 +154,99 @@ def _derive_run_status(jobs: list[dict[str, Any]]) -> str:
     if statuses <= {"succeeded", "skipped"}:
         return "succeeded"
     return "planned"
+
+
+def _reconcile_slurm_state(
+    *,
+    state: dict[str, Any],
+    job_entry: dict[str, Any],
+    latest_submissions: dict[str, str],
+    active_slurm_tasks: set[tuple[str, str]] | None,
+) -> dict[str, Any]:
+    status = str(state.get("status", "planned"))
+    if status not in {"planned", "running"} or active_slurm_tasks is None:
+        return state
+
+    slurm = state.setdefault("slurm", {})
+    group_key = str(slurm.get("group_key") or job_entry.get("group_key") or "")
+    array_job_id = str(slurm.get("array_job_id") or latest_submissions.get(group_key) or "")
+    array_task_id = str(
+        slurm.get("array_task_id")
+        or slurm.get("group_task_index")
+        or job_entry.get("group_task_index")
+        or ""
+    )
+    if not array_job_id or not array_task_id:
+        return state
+    if (array_job_id, array_task_id) in active_slurm_tasks:
+        return state
+
+    updated = dict(state)
+    updated_slurm = dict(slurm)
+    updated_slurm.setdefault("array_job_id", array_job_id)
+    updated_slurm.setdefault("array_task_id", array_task_id)
+    updated["slurm"] = updated_slurm
+    updated["status"] = "failed"
+    updated["last_error"] = (
+        f"Slurm array task {array_job_id}_{array_task_id} is no longer active, "
+        f"but orchestrator state remained {status}; the task likely ended before "
+        "finalization, for example due to scancel, time limit, or node failure."
+    )
+    updated["updated_at"] = now_utc_iso()
+    return updated
+
+
+def _load_latest_submission_by_group(run_root: Path) -> dict[str, str]:
+    latest: dict[str, tuple[str, str]] = {}
+    for path in run_root.glob("*submission.json"):
+        payload = _read_json_mapping(path)
+        if payload is None:
+            continue
+        submitted_at = str(payload.get("submitted_at") or "")
+        groups = payload.get("groups")
+        if not isinstance(groups, list):
+            continue
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            group_key = str(group.get("group_key") or "")
+            job_id = str(group.get("job_id") or "")
+            if not group_key or not job_id:
+                continue
+            if group_key not in latest or submitted_at >= latest[group_key][0]:
+                latest[group_key] = (submitted_at, job_id)
+    return {group_key: job_id for group_key, (_, job_id) in latest.items()}
+
+
+def _load_active_slurm_tasks(submissions: dict[str, str]) -> set[tuple[str, str]] | None:
+    array_job_ids = sorted({job_id for job_id in submissions.values() if job_id})
+    if not array_job_ids:
+        return None
+    try:
+        result = subprocess.run(
+            ["squeue", "-h", "-j", ",".join(array_job_ids), "-o", "%A|%a"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    active: set[tuple[str, str]] = set()
+    for line in result.stdout.splitlines():
+        array_job_id, separator, array_task_id = line.strip().partition("|")
+        if not separator or not array_job_id or not array_task_id:
+            continue
+        active.add((array_job_id, array_task_id))
+    return active
+
+
+def _write_state_if_changed(path: Path, payload: dict[str, Any]) -> None:
+    existing = _read_json_mapping(path)
+    if existing == payload:
+        return
+    _write_state(path, payload)
 
 
 def _write_state(path: Path, payload: dict[str, Any]) -> None:

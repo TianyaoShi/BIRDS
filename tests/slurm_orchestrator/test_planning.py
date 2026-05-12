@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import yaml
 
@@ -233,6 +234,57 @@ def test_collect_run_aggregates_succeeded_and_failed_jobs(tmp_path: Path) -> Non
     assert (tmp_path / "runs" / "run-c" / "state.json").is_file()
     assert (tmp_path / "runs" / "run-c" / "summary.json").is_file()
     assert (tmp_path / "runs" / "run-c" / "summary.md").is_file()
+
+
+def test_collect_run_marks_stale_nonterminal_slurm_tasks_failed(tmp_path: Path, monkeypatch) -> None:
+    workload = _write_workload(tmp_path, "sharegpt.yaml")
+    manifest_path = _write_manifest(
+        tmp_path,
+        {
+            "run": {"output_root": str(tmp_path / "runs")},
+            "experiments": [
+                {"id": "exp-running", "model": "model-a", "workload": str(workload)},
+                {"id": "exp-planned", "model": "model-b", "workload": str(workload)},
+            ],
+        },
+    )
+
+    plan = materialize_run_plan(load_manifest(manifest_path), "run-stale")
+    run_root = tmp_path / "runs" / "run-stale"
+    (run_root / "resume-submission.json").write_text(
+        json.dumps(
+            {
+                "groups": [{"group_key": "gpu1", "job_id": "12345"}],
+                "submitted_at": "2026-05-11T07:39:08+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    running_state_path = run_root / "jobs" / "exp-running.json"
+    running_state = json.loads(running_state_path.read_text(encoding="utf-8"))
+    running_state["status"] = "running"
+    running_state["slurm"]["array_job_id"] = "12345"
+    running_state["slurm"]["array_task_id"] = "0"
+    running_state_path.write_text(json.dumps(running_state), encoding="utf-8")
+
+    def fake_run(command, **kwargs):
+        assert command[:4] == ["squeue", "-h", "-j", "12345"]
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("slurm_orchestrator.state.subprocess.run", fake_run)
+
+    collected = collect_run(plan["run_root"])
+
+    assert collected["summary"]["counts"]["failed"] == 2
+    assert collected["summary"]["status"] == "failed"
+    failed_running = json.loads(running_state_path.read_text(encoding="utf-8"))
+    failed_planned = json.loads((run_root / "jobs" / "exp-planned.json").read_text(encoding="utf-8"))
+    assert failed_running["status"] == "failed"
+    assert "12345_0 is no longer active" in failed_running["last_error"]
+    assert failed_planned["status"] == "failed"
+    assert failed_planned["slurm"]["array_job_id"] == "12345"
+    assert failed_planned["slurm"]["array_task_id"] == "1"
 
 
 def test_resume_refreshes_failed_job_plan_and_submits_only_failed_array_index(
