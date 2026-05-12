@@ -10,6 +10,9 @@ aiohttp
 # YAML manifests, workloads, analyzer settings, and energy plans.
 PyYAML
 
+# Unitests
+pytest
+
 # Stability tests and plotting/report generation.
 scipy
 matplotlib
