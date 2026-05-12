@@ -9,7 +9,7 @@ slurm:
   partition: ai
   account: yiding
   qos: normal
-  time: 06:00:00
+  time: 04:00:00
   modules:
     - modtree/gpu
     - cuda/12.9.0
@@ -188,38 +188,38 @@ overrides:
   - match:
       workloads:
         - '*long_output_summarization*'
-    reason: Long-output summarization has the largest decode demand; keep the rate ceiling low and rely on extended trials.
+    reason: Long-output summarization has the largest decode demand, but H100s can probe a much wider envelope than L40.
     search:
-      initial_request_rate: 0.125
-      max_request_rate: 2
+      initial_request_rate: 0.5
+      max_request_rate: 10
       max_closed_loop_concurrency: 16
 
   - match:
       workloads:
         - '*medium_output_summarization*'
-    reason: Medium-output summarization still combines long prompts with hundreds-token completions.
+    reason: Medium-output summarization still combines long prompts with hundreds-token completions; use an H100-sized ceiling.
     search:
-      initial_request_rate: 0.25
-      max_request_rate: 3
-      max_closed_loop_concurrency: 16
+      initial_request_rate: 0.5
+      max_request_rate: 15
+      max_closed_loop_concurrency: 32
 
   - match:
       workloads:
         - '*medium_answer_rag_qa*'
     reason: RAG-QA uses long document prompts with medium answers; the expanded shard has enough unique source groups for longer sweeps.
     search:
-      initial_request_rate: 0.25
-      max_request_rate: 4
-      max_closed_loop_concurrency: 16
+      initial_request_rate: 0.5
+      max_request_rate: 15
+      max_closed_loop_concurrency: 32
 
   - match:
       workloads:
         - '*short_answer_document_qa*'
-    reason: Short-answer QA has the shortest outputs but still long inputs; use the widest LongBench bucket ceiling.
+    reason: Short-answer QA has the shortest outputs but still long inputs; use the widest H100 LongBench bucket ceiling.
     search:
-      initial_request_rate: 0.25
-      max_request_rate: 6
-      max_closed_loop_concurrency: 16
+      initial_request_rate: 1
+      max_request_rate: 20
+      max_closed_loop_concurrency: 32
 
   - match:
       models:
@@ -227,13 +227,52 @@ overrides:
         - openai/gpt-oss-120b
       workloads:
         - '*long_output_summarization*'
-        - '*medium_output_summarization*'
-        - '*medium_answer_rag_qa*'
-        - '*short_answer_document_qa*'
-    reason: 70B/gpt-oss-120B LongBench runs should not inherit the wider short-answer bucket ceilings.
+    reason: 70B/gpt-oss-120B long-output LongBench should stay below smaller models but not inherit the old L40 cap.
     search:
-      initial_request_rate: 0.1
-      max_request_rate: 2
+      initial_request_rate: 0.25
+      max_request_rate: 7
+      max_binary_steps: 8
+      max_bracket_trials: 12
+      max_closed_loop_concurrency: 16
+
+  - match:
+      models:
+        - meta-llama/Llama-3.1-70B-Instruct
+        - openai/gpt-oss-120b
+      workloads:
+        - '*medium_output_summarization*'
+    reason: 70B/gpt-oss-120B medium-output summarization gets a wider H100 cap than long-output summarization.
+    search:
+      initial_request_rate: 0.25
+      max_request_rate: 15
+      max_binary_steps: 8
+      max_bracket_trials: 12
+      max_closed_loop_concurrency: 16
+
+  - match:
+      models:
+        - meta-llama/Llama-3.1-70B-Instruct
+        - openai/gpt-oss-120b
+      workloads:
+        - '*medium_answer_rag_qa*'
+    reason: 70B/gpt-oss-120B RAG-QA can use a moderate H100 cap because answers are shorter than summarization.
+    search:
+      initial_request_rate: 0.25
+      max_request_rate: 15
+      max_binary_steps: 8
+      max_bracket_trials: 12
+      max_closed_loop_concurrency: 16
+
+  - match:
+      models:
+        - meta-llama/Llama-3.1-70B-Instruct
+        - openai/gpt-oss-120b
+      workloads:
+        - '*short_answer_document_qa*'
+    reason: 70B/gpt-oss-120B short-answer QA should not inherit the full small-model ceiling, but the old cap was too low for H100.
+    search:
+      initial_request_rate: 0.25
+      max_request_rate: 20
       max_binary_steps: 8
       max_bracket_trials: 12
       max_closed_loop_concurrency: 16
@@ -244,16 +283,55 @@ overrides:
         - Qwen/Qwen3-235B-A22B-Thinking-2507
       workloads:
         - '*long_output_summarization*'
-        - '*medium_output_summarization*'
-        - '*medium_answer_rag_qa*'
-        - '*short_answer_document_qa*'
-    reason: Full-node Qwen3-235B LongBench jobs need the strictest rate cap across all buckets.
+    reason: Qwen3-235B is MoE and fast enough to use the general H100 LongBench cap even at full-node TP8.
     search:
-      initial_request_rate: 0.05
-      max_request_rate: 1
-      max_binary_steps: 7
+      initial_request_rate: 0.5
+      max_request_rate: 10
+      max_binary_steps: 8
       max_bracket_trials: 10
-      max_closed_loop_concurrency: 8
+      max_closed_loop_concurrency: 16
+
+  - match:
+      models:
+        - Qwen/Qwen3-235B-A22B-Instruct-2507
+        - Qwen/Qwen3-235B-A22B-Thinking-2507
+      workloads:
+        - '*medium_output_summarization*'
+    reason: Qwen3-235B is MoE and fast enough to use the general H100 medium-output cap.
+    search:
+      initial_request_rate: 0.5
+      max_request_rate: 15
+      max_binary_steps: 8
+      max_bracket_trials: 10
+      max_closed_loop_concurrency: 32
+
+  - match:
+      models:
+        - Qwen/Qwen3-235B-A22B-Instruct-2507
+        - Qwen/Qwen3-235B-A22B-Thinking-2507
+      workloads:
+        - '*medium_answer_rag_qa*'
+    reason: Qwen3-235B is MoE and fast enough to use the general H100 RAG-QA cap.
+    search:
+      initial_request_rate: 0.5
+      max_request_rate: 15
+      max_binary_steps: 8
+      max_bracket_trials: 10
+      max_closed_loop_concurrency: 32
+
+  - match:
+      models:
+        - Qwen/Qwen3-235B-A22B-Instruct-2507
+        - Qwen/Qwen3-235B-A22B-Thinking-2507
+      workloads:
+        - '*short_answer_document_qa*'
+    reason: Qwen3-235B is MoE and fast enough to use the general H100 short-answer cap.
+    search:
+      initial_request_rate: 1
+      max_request_rate: 20
+      max_binary_steps: 8
+      max_bracket_trials: 10
+      max_closed_loop_concurrency: 32
 
 experiments:
   # Excluded from helper_scripts/hf_cached_models.txt:
