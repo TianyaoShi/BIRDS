@@ -338,6 +338,12 @@ def refresh_run_plan_for_resume(
                 f"{group_key}[{task_index}]={task.get('experiment_id')}"
             )
 
+        _refresh_task_ports_for_resume(
+            task=task,
+            plan_job=plan_job,
+            job=job,
+            slurm=manifest.slurm,
+        )
         fresh_state = build_job_state_payload(job)
         _refresh_slurm_task_payload(task=task, job=job, fresh_state=fresh_state)
         _refresh_plan_job_entry(plan_job=plan_job, job=job, task=task, fresh_state=fresh_state)
@@ -821,6 +827,20 @@ def _read_json_mapping(path: Path) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         return None
     return payload
+
+
+def _refresh_task_ports_for_resume(
+    *,
+    task: dict[str, Any],
+    plan_job: dict[str, Any],
+    job: ExpandedExperimentJob,
+    slurm: SlurmConfig,
+) -> None:
+    plan_index = int(plan_job.get("plan_index", task.get("plan_index", 0)))
+    base_port = slurm.base_port + plan_index
+    task["base_port"] = base_port
+    task["metrics_port"] = base_port + 1000
+    task["base_url"] = f"http://{job.launch.host}:{base_port}"
 
 
 def _refresh_slurm_task_payload(

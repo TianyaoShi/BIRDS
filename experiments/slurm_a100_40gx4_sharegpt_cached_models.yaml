@@ -17,7 +17,7 @@ slurm:
   python_executable: .venv-a100/bin/python
   cpus_per_gpu: 16
   array_concurrency_limit: 3
-  base_port: 9300
+  base_port: 9800
 hardware:
   name: a100-40gb
   gpu_memory_gb: 40

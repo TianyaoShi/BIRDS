@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 import time
@@ -173,7 +174,46 @@ class RequestClient:
                         end_ts = self._time_fn()
                         break
 
-                    parsed_chunk = parse_json_payload(payload_text)
+                    try:
+                        parsed_chunk = parse_json_payload(payload_text)
+                    except json.JSONDecodeError as exc:
+                        end_ts = self._time_fn()
+                        metadata = dict(
+                            self._metadata_with_response_text(
+                                sample_request.metadata,
+                                response_text_parts,
+                            )
+                        )
+                        payload_preview, payload_truncated = _truncate_text(
+                            payload_text,
+                            self._response_text_max_chars,
+                        )
+                        metadata["failure_class"] = "malformed_stream_payload"
+                        metadata["malformed_stream_payload"] = payload_preview
+                        metadata["malformed_stream_payload_truncated"] = payload_truncated
+                        return RequestRecord(
+                            request_id=request_id,
+                            trial_id=trial_id,
+                            scheduled_send_ts=scheduled_send_ts,
+                            actual_send_ts=actual_send_ts,
+                            first_token_ts=first_token_ts,
+                            end_ts=end_ts,
+                            success=False,
+                            error=(
+                                "malformed stream payload: "
+                                f"{exc.msg} at line {exc.lineno} column {exc.colno}; "
+                                f"payload={payload_preview!r}"
+                            ),
+                            prompt_len=sample_request.prompt_len,
+                            expected_output_len=sample_request.expected_output_len,
+                            actual_output_len=completion_tokens,
+                            ttft_s=ttft_s,
+                            e2e_s=end_ts - actual_send_ts,
+                            tpot_s=tpot_s,
+                            itl_s=itl_s,
+                            output_token_timestamps=output_token_timestamps,
+                            metadata=metadata,
+                        )
                     stream_error = extract_error_from_chunk(parsed_chunk)
                     if stream_error is not None:
                         end_ts = self._time_fn()
@@ -306,6 +346,12 @@ def _classify_stream_error(error: str) -> str | None:
     ):
         return "model_server_harmony_stream_error"
     return None
+
+
+def _truncate_text(text: str, max_chars: int) -> tuple[str, bool]:
+    if len(text) <= max_chars:
+        return text, False
+    return text[:max_chars], True
 
 
 def _response_text_max_chars() -> int:

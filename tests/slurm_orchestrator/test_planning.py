@@ -618,7 +618,7 @@ def test_resume_refreshes_failed_job_plan_and_submits_only_failed_array_index(
         yaml.safe_dump(
             {
                 "run": {"output_root": str(tmp_path / "runs")},
-                "slurm": {"array_concurrency_limit": 4},
+                "slurm": {"array_concurrency_limit": 4, "base_port": 8800},
                 "launch": {"max_model_len": 4096},
                 "experiments": [
                     {"id": "exp-ok", "model": "model-a", "workload": str(workload)},
@@ -643,8 +643,14 @@ def test_resume_refreshes_failed_job_plan_and_submits_only_failed_array_index(
     )
     assert failed_state["max_model_len"] == 4096
     assert failed_state["status"] == "failed"
+    assert failed_state["slurm"]["base_port"] == 8801
+    assert failed_state["slurm"]["base_url"] == "http://127.0.0.1:8801"
     assert ok_state["max_model_len"] == 32768
+    assert ok_state["slurm"]["base_port"] == 8000
     assert selected == {"gpu1": {1}}
+    refreshed_group_payload = json.loads(group_plan_path.read_text(encoding="utf-8"))
+    assert refreshed_group_payload["jobs"][1]["base_port"] == 8801
+    assert refreshed_group_payload["jobs"][1]["base_url"] == "http://127.0.0.1:8801"
 
     calls = []
 

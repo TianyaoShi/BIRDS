@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 
 import pytest
 
@@ -261,7 +260,7 @@ def test_request_client_returns_failed_record_for_stream_error() -> None:
     asyncio.run(run())
 
 
-def test_request_client_raises_on_malformed_stream_payload() -> None:
+def test_request_client_returns_failed_record_for_malformed_stream_payload() -> None:
     async def run() -> None:
         session = FakeSession(
             FakeResponse(
@@ -275,16 +274,17 @@ def test_request_client_raises_on_malformed_stream_payload() -> None:
             model="fake-model",
             session=session,
         ) as client:
-            try:
-                await client.send_request(
-                    SampleRequest(prompt="hello", prompt_len=5, expected_output_len=4),
-                    request_id="req-003",
-                    trial_id="trial-001",
-                    scheduled_send_ts=0.0,
-                )
-            except json.JSONDecodeError:
-                return
-            raise AssertionError("expected malformed stream payload to raise JSONDecodeError")
+            record = await client.send_request(
+                SampleRequest(prompt="hello", prompt_len=5, expected_output_len=4),
+                request_id="req-003",
+                trial_id="trial-001",
+                scheduled_send_ts=0.0,
+            )
+        assert record.success is False
+        assert record.error is not None
+        assert "malformed stream payload" in record.error
+        assert record.metadata["failure_class"] == "malformed_stream_payload"
+        assert record.metadata["malformed_stream_payload"] == "{not-json}"
 
     asyncio.run(run())
 
@@ -322,7 +322,9 @@ def test_request_client_accepts_usage_only_stream_chunk() -> None:
     asyncio.run(run())
 
 
-def test_request_client_closes_owned_session_on_parser_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_request_client_keeps_owned_session_open_after_malformed_stream_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def run() -> None:
         factory = FakeClientSessionFactory(
             FakeResponse(
@@ -337,14 +339,17 @@ def test_request_client_closes_owned_session_on_parser_exception(monkeypatch: py
             endpoint="/v1/chat/completions",
             model="fake-model",
         )
-        with pytest.raises(json.JSONDecodeError):
-            await client.send_request(
-                SampleRequest(prompt="hello", prompt_len=5, expected_output_len=4),
-                request_id="req-005",
-                trial_id="trial-001",
-                scheduled_send_ts=0.0,
-            )
+        record = await client.send_request(
+            SampleRequest(prompt="hello", prompt_len=5, expected_output_len=4),
+            request_id="req-005",
+            trial_id="trial-001",
+            scheduled_send_ts=0.0,
+        )
         assert len(factory.instances) == 1
+        assert record.success is False
+        assert factory.instances[0].closed is False
+        assert client._session is factory.instances[0]
+        await client.close()
         assert factory.instances[0].closed is True
         assert client._session is None
 
