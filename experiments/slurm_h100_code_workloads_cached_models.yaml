@@ -31,8 +31,6 @@ probe:
   activation_memory_gb: 2.0
   memory_safety_factor: 1.20
   kv_cache_request_count: 1
-  model_size_overrides_b:
-    openai/gpt-oss-120b: 30.0
 
 launch:
   executable: vllm
@@ -98,10 +96,9 @@ overrides:
   - match:
       models:
         - meta-llama/Llama-3.1-70B-Instruct
-        - openai/gpt-oss-120b
       workloads:
         - '*crosscodeeval*'
-    reason: 70B/gpt-oss-120B H100 multi-GPU sweeps should start below the 30B-class code-completion envelope.
+    reason: 70B H100 multi-GPU sweeps should start below the 30B-class code-completion envelope.
     search:
       initial_request_rate: 0.25
       max_request_rate: 6
@@ -111,7 +108,6 @@ overrides:
   - match:
       models:
         - meta-llama/Llama-3.1-70B-Instruct
-        - openai/gpt-oss-120b
       workloads:
         - '*repobench*'
     reason: RepoBench combines long prompts with large models; keep the upper bound conservative to avoid cache-distorted high-rate searches.
@@ -127,16 +123,16 @@ overrides:
         - Qwen/Qwen3-235B-A22B-Thinking-2507
       workloads:
         - '*crosscodeeval*'
-    reason: Qwen3-235B-A22B requires TP8; keep the code-completion full-node CrossCodeEval sweep conservative.
+    reason: Qwen3-235B-A22B is sparse MoE with about 22B active parameters; TP8 CrossCodeEval should probe above dense-large caps.
     launch:
       env:
         VLLM_ENGINE_READY_TIMEOUT_S: "1800"
       readiness_timeout_s: 2400
     search:
-      initial_request_rate: 0.1
-      max_request_rate: 4
-      max_binary_steps: 8
-      max_bracket_trials: 10
+      initial_request_rate: 0.25
+      max_request_rate: 16
+      max_binary_steps: 10
+      max_bracket_trials: 16
 
   - match:
       models:
@@ -144,46 +140,16 @@ overrides:
         - Qwen/Qwen3-235B-A22B-Thinking-2507
       workloads:
         - '*repobench*'
-    reason: Qwen3-235B-A22B full-node RepoBench uses long prompts; keep search rates below the 70B/gpt-oss-120B envelope.
+    reason: Qwen3-235B-A22B is sparse MoE; RepoBench has long prompts, but TP8 should still get more headroom than dense large models.
     launch:
       env:
         VLLM_ENGINE_READY_TIMEOUT_S: "1800"
       readiness_timeout_s: 2400
     search:
-      initial_request_rate: 0.05
-      max_request_rate: 1
-      max_binary_steps: 7
-      max_bracket_trials: 10
-
-  - match:
-      model: openai/gpt-oss-120b
-    reason: gpt-oss-120B uses quantized checkpoint metadata; keep allocator fragmentation mitigation for H100 launch stability.
-    launch:
-      dtype: auto
-      env:
-        PYTORCH_ALLOC_CONF: expandable_segments:True
-        PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
-
-  - match:
-      models:
-        - Qwen/Qwen3-0.6B
-        - Qwen/Qwen3-1.7B
-        - google/gemma-4-E2B-it
-        - meta-llama/Llama-3.2-1B-Instruct
-      workloads:
-        - '*crosscodeeval*'
-    reason: Single-GPU small models can use a wider CrossCodeEval request-rate envelope.
-    launch:
-      max_num_seqs: 1024
-      max_num_batched_tokens: 8192
-    search:
-      initial_request_rate: 2
-      max_request_rate: 80
-      max_binary_steps: 11
-      max_bracket_trials: 20
-      ttft_slo_ms: 500
-      tpot_slo_ms: 40
-      max_closed_loop_concurrency: 256
+      initial_request_rate: 0.1
+      max_request_rate: 4
+      max_binary_steps: 9
+      max_bracket_trials: 16
 
   - match:
       models:
@@ -221,27 +187,6 @@ overrides:
 
   - match:
       models:
-        - Qwen/Qwen3-0.6B
-        - Qwen/Qwen3-1.7B
-        - google/gemma-4-E2B-it
-        - meta-llama/Llama-3.2-1B-Instruct
-      workloads:
-        - '*repobench*'
-    reason: Single-GPU small models can probe a wider RepoBench 8k-drop envelope while keeping IDE-like TTFT.
-    launch:
-      max_num_seqs: 1024
-      max_num_batched_tokens: 8192
-    search:
-      initial_request_rate: 0.5
-      max_request_rate: 16
-      max_binary_steps: 10
-      max_bracket_trials: 18
-      ttft_slo_ms: 5000
-      tpot_slo_ms: 50
-      max_closed_loop_concurrency: 128
-
-  - match:
-      models:
         - Qwen/Qwen3-4B-Instruct-2507
         - Qwen/Qwen3-4B-Thinking-2507
         - google/gemma-4-E4B-it
@@ -275,19 +220,49 @@ overrides:
       tpot_slo_ms: 75
       max_closed_loop_concurrency: 64
 
+  - match:
+      models:
+        - Qwen/Qwen3-30B-A3B-Instruct-2507
+        - Qwen/Qwen3-30B-A3B-Thinking-2507
+        - google/gemma-4-26B-A4B-it
+      workloads:
+        - '*crosscodeeval*'
+    reason: Sparse 30B-class MoE models activate only a small expert subset per token; give them more H100 search headroom than dense 30B models.
+    search:
+      initial_request_rate: 0.5
+      max_request_rate: 24
+      max_binary_steps: 10
+      max_bracket_trials: 18
+      ttft_slo_ms: 1500
+      tpot_slo_ms: 75
+      max_closed_loop_concurrency: 96
+
+  - match:
+      models:
+        - Qwen/Qwen3-30B-A3B-Instruct-2507
+        - Qwen/Qwen3-30B-A3B-Thinking-2507
+        - google/gemma-4-26B-A4B-it
+      workloads:
+        - '*repobench*'
+    reason: Sparse 30B-class MoE models should not inherit the dense-model RepoBench cap.
+    search:
+      initial_request_rate: 0.25
+      max_request_rate: 8
+      max_binary_steps: 9
+      max_bracket_trials: 16
+      ttft_slo_ms: 5000
+      tpot_slo_ms: 75
+      max_closed_loop_concurrency: 96
+
 experiments:
   - id: code-workloads-single-gpu
     models:
-      - Qwen/Qwen3-0.6B
-      - Qwen/Qwen3-1.7B
       - Qwen/Qwen3-14B
       - Qwen/Qwen3-4B-Instruct-2507
       - Qwen/Qwen3-4B-Thinking-2507
       - Qwen/Qwen3-8B
-      - google/gemma-4-E2B-it
       - google/gemma-4-E4B-it
       - meta-llama/Llama-3.1-8B-Instruct
-      - meta-llama/Llama-3.2-1B-Instruct
       - meta-llama/Llama-3.2-3B-Instruct
     workloads:
       - ./code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
@@ -331,30 +306,6 @@ experiments:
     launch:
       gpu_count: 4
       tensor_parallel_size: 4
-
-  - id: code-workloads-gpt-oss-120b-tp2
-    model: openai/gpt-oss-120b
-    workloads:
-      - ./code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
-      - ./code_workloads/repobench_python_java_aggregate_cache_realistic_8k_drop/workload_yamls/shard_000.yaml
-    launch:
-      gpu_count: 2
-      tensor_parallel_size: 2
-      gpu_memory_utilization: 0.85
-      max_num_seqs: 64
-      max_num_batched_tokens: 1024
-
-  - id: code-workloads-gpt-oss-120b-tp4
-    model: openai/gpt-oss-120b
-    workloads:
-      - ./code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
-      - ./code_workloads/repobench_python_java_aggregate_cache_realistic_8k_drop/workload_yamls/shard_000.yaml
-    launch:
-      gpu_count: 4
-      tensor_parallel_size: 4
-      gpu_memory_utilization: 0.90
-      max_num_seqs: 128
-      max_num_batched_tokens: 2048
 
   - id: code-workloads-qwen3-235b-a22b-tp8
     models:
