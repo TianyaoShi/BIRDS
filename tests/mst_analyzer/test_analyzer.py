@@ -9,7 +9,7 @@ import yaml
 from local_orchestrator.manifest import load_manifest
 from local_orchestrator.matrix import expand_manifest
 from mst_analyzer.config import AnalyzerSettings, load_settings
-from mst_analyzer.extract import extract_run
+from mst_analyzer.extract import extract_run, extract_runs
 from mst_analyzer.models import MSTRow, TraceInstabilityEvidence, TrialArtifactRef
 from mst_analyzer.reporting import analyze_orchestrator_run
 from mst_analyzer.rules import analyze_rows, analyze_rows_with_diagnostics, build_bucket_summaries
@@ -47,14 +47,14 @@ def _write_workload(tmp_path: Path, *, name: str = "live_sharegpt_workload_conte
     return workload
 
 
-def _write_manifest(tmp_path: Path, workload: Path, *, models: list[str]) -> Path:
+def _write_manifest(tmp_path: Path, workload: Path, *, models: list[str], run_id: str = "fixture-run") -> Path:
     manifest_path = tmp_path / "experiments" / "manifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
         yaml.safe_dump(
             {
                 "run": {
-                    "run_id": "fixture-run",
+                    "run_id": run_id,
                     "output_root": "results/orchestrator",
                     "python_executable": "python",
                 },
@@ -310,13 +310,22 @@ def _write_result_bundle(
     )
 
 
-def _write_orchestrator_run(tmp_path: Path, *, models: list[str], bundle_specs: dict[str, dict[str, object]]) -> Path:
+def _write_orchestrator_run(
+    tmp_path: Path,
+    *,
+    models: list[str],
+    bundle_specs: dict[str, dict[str, object]],
+    run_id: str = "fixture-run",
+) -> Path:
     workload = _write_workload(tmp_path)
-    manifest_path = _write_manifest(tmp_path, workload, models=models)
+    manifest_path = _write_manifest(tmp_path, workload, models=models, run_id=run_id)
     manifest = load_manifest(manifest_path)
-    jobs = {job.model: job for job in expand_manifest(manifest)}
+    jobs = {
+        job.model: job
+        for job in expand_manifest(manifest, mst_output_root=tmp_path / "results" / "mst" / run_id)
+    }
 
-    run_root = tmp_path / "results" / "orchestrator" / "fixture-run"
+    run_root = tmp_path / "results" / "orchestrator" / run_id
     run_root.mkdir(parents=True, exist_ok=True)
     (run_root / "state.json").write_text(
         json.dumps({"manifest_path": str(manifest_path)}, indent=2, sort_keys=True) + "\n",
@@ -467,6 +476,58 @@ def test_extract_infers_common_model_sizes(tmp_path: Path, monkeypatch: pytest.M
     assert sizes["google/gemma-4-E4B-it"] == pytest.approx(4.0)
     assert sizes["meta-llama/Llama-2-13b-chat-hf"] == pytest.approx(13.0)
     assert sizes["Qwen/Qwen3-14B"] == pytest.approx(14.0)
+
+
+def test_extract_runs_uses_later_roots_as_rerun_overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    main_run = _write_orchestrator_run(
+        tmp_path / "main",
+        run_id="main-run",
+        models=["Qwen/Qwen3-8B", "Qwen/Qwen3-14B"],
+        bundle_specs={
+            "Qwen/Qwen3-8B": {
+                "mst_rps": 4.0,
+                "high_bound_rate": 4.5,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+            },
+            "Qwen/Qwen3-14B": {
+                "mst_rps": 2.0,
+                "high_bound_rate": 2.5,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+            },
+        },
+    )
+    rerun = _write_orchestrator_run(
+        tmp_path / "rerun",
+        run_id="rerun-run",
+        models=["Qwen/Qwen3-8B"],
+        bundle_specs={
+            "Qwen/Qwen3-8B": {
+                "mst_rps": 7.0,
+                "high_bound_rate": 7.5,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+            },
+        },
+    )
+
+    extracted = extract_runs((main_run, rerun))
+    rows_by_model = {row.model: row for row in extracted.rows}
+
+    assert extracted.run_id == "main-run+rerun-run"
+    assert sorted(rows_by_model) == ["Qwen/Qwen3-14B", "Qwen/Qwen3-8B"]
+    assert rows_by_model["Qwen/Qwen3-8B"].mst_rps == pytest.approx(7.0)
+    assert "rerun-run" in str(rows_by_model["Qwen/Qwen3-8B"].result_dir)
+    assert rows_by_model["Qwen/Qwen3-14B"].mst_rps == pytest.approx(2.0)
+    assert "main-run" in str(rows_by_model["Qwen/Qwen3-14B"].result_dir)
 
 
 def test_extract_run_accepts_collected_slurm_orchestrator_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -8,7 +8,7 @@ from typing import Any, Mapping, Sequence
 import yaml
 
 from .config import AnalyzerSettings
-from .extract import ExtractedRun, extract_run
+from .extract import ExtractedRun, extract_run, extract_runs
 from .models import AnalysisArtifacts, AnomalyCandidate, BucketSummary, SuggestedRerunPlan, TraceDiagnostic
 from .rules import analyze_rows_with_diagnostics
 
@@ -22,6 +22,41 @@ def analyze_orchestrator_run(
     settings: AnalyzerSettings | None = None,
 ) -> AnalysisArtifacts:
     extracted = extract_run(orchestrator_run_root)
+    return _analyze_extracted_run(
+        extracted=extracted,
+        output_dir=output_dir,
+        max_rerun_models=max_rerun_models,
+        emit_rerun_manifest=emit_rerun_manifest,
+        settings=settings,
+    )
+
+
+def analyze_orchestrator_runs(
+    *,
+    orchestrator_run_roots: Sequence[str | Path],
+    output_dir: str | Path,
+    max_rerun_models: int = 7,
+    emit_rerun_manifest: bool = False,
+    settings: AnalyzerSettings | None = None,
+) -> AnalysisArtifacts:
+    extracted = extract_runs(tuple(orchestrator_run_roots))
+    return _analyze_extracted_run(
+        extracted=extracted,
+        output_dir=output_dir,
+        max_rerun_models=max_rerun_models,
+        emit_rerun_manifest=emit_rerun_manifest,
+        settings=settings,
+    )
+
+
+def _analyze_extracted_run(
+    *,
+    extracted: ExtractedRun,
+    output_dir: str | Path,
+    max_rerun_models: int,
+    emit_rerun_manifest: bool,
+    settings: AnalyzerSettings | None,
+) -> AnalysisArtifacts:
     resolved_settings = settings or AnalyzerSettings()
     anomalies, buckets, trace_diagnostics = analyze_rows_with_diagnostics(
         extracted.rows,

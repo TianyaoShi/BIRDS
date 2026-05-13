@@ -156,7 +156,7 @@ def plot_model_size_vs_mst_from_json(
 
 def plot_model_size_vs_mst_from_orchestrator_run(
     *,
-    orchestrator_run_root: str | Path,
+    orchestrator_run_root: str | Path | Sequence[str | Path],
     output_path: str | Path,
     title: str = "Model Size vs MST",
     x_label: str = "Model Size (B)",
@@ -164,9 +164,12 @@ def plot_model_size_vs_mst_from_orchestrator_run(
     x_scale: str = "log",
     annotate: bool = True,
 ) -> Path:
-    from .extract import extract_run
+    from .extract import extract_run, extract_runs
 
-    extracted = extract_run(orchestrator_run_root)
+    if isinstance(orchestrator_run_root, (str, Path)):
+        extracted = extract_run(orchestrator_run_root)
+    else:
+        extracted = extract_runs(tuple(orchestrator_run_root))
     return plot_model_size_vs_mst(
         rows=extracted.rows,
         output_path=output_path,

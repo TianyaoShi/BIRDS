@@ -86,6 +86,37 @@ def extract_run(orchestrator_run_root: str | Path) -> ExtractedRun:
     )
 
 
+def extract_runs(orchestrator_run_roots: tuple[str | Path, ...] | list[str | Path]) -> ExtractedRun:
+    run_roots = tuple(orchestrator_run_roots)
+    if not run_roots:
+        raise RuntimeError("at least one orchestrator run root is required")
+    extracted_runs = [extract_run(run_root) for run_root in run_roots]
+
+    selected_by_key: dict[tuple[str, str, str, str], MSTRow] = {}
+    all_rows: list[MSTRow] = []
+    for extracted in extracted_runs:
+        all_rows.extend(extracted.rows)
+        for row in extracted.rows:
+            selected_by_key[_decisive_row_key(row)] = row
+
+    decisive_rows = set(id(row) for row in selected_by_key.values())
+    merged_rows = [row for row in all_rows if id(row) in decisive_rows]
+    first = extracted_runs[0]
+    last = extracted_runs[-1]
+    return ExtractedRun(
+        run_id="+".join(extracted.run_id for extracted in extracted_runs),
+        run_root=first.run_root,
+        manifest_path=last.manifest_path,
+        manifest_payload=last.manifest_payload,
+        expanded_jobs=last.expanded_jobs,
+        rows=tuple(merged_rows),
+    )
+
+
+def _decisive_row_key(row: MSTRow) -> tuple[str, str, str, str]:
+    return (row.model, str(row.workload_path), row.endpoint, row.server_signature_key)
+
+
 def _extract_row(
     *,
     run_root: Path,

@@ -69,9 +69,10 @@ def materialize_run_plan(manifest: OrchestratorManifest, run_id: str) -> dict[st
 
     python_executable = manifest.slurm.python_executable or manifest.run.python_executable or sys.executable
     created_at = now_utc_iso()
+    mst_output_root = manifest.run.mst_output_root.resolve() if manifest.run.mst_output_root is not None else None
     expanded_jobs = [
         _resolved_job(job, repo_root=repo_root)
-        for job in expand_manifest(manifest)
+        for job in expand_manifest(manifest, mst_output_root=mst_output_root)
     ]
 
     group_entries: dict[str, list[dict[str, Any]]] = {}
@@ -199,6 +200,7 @@ def materialize_run_plan(manifest: OrchestratorManifest, run_id: str) -> dict[st
         "repo_root": str(repo_root),
         "profiler_root": str(profiler_root),
         "python_executable": python_executable,
+        "mst_output_root": None if mst_output_root is None else str(mst_output_root),
         "job_count": len(plan_jobs),
         "groups": groups_payload,
         "jobs": plan_jobs,
@@ -215,6 +217,13 @@ def load_run_plan(run_root: str | Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise RuntimeError("run plan is malformed")
     return payload
+
+
+def _mst_output_root_from_plan(run_plan: dict[str, Any]) -> Path | None:
+    raw = run_plan.get("mst_output_root")
+    if not isinstance(raw, str) or not raw:
+        return None
+    return Path(raw)
 
 
 def submit_run_plan(run_plan: dict[str, Any]) -> dict[str, Any]:
@@ -286,7 +295,11 @@ def refresh_run_plan_for_resume(
 ) -> tuple[dict[str, Any], dict[str, set[int]]]:
     run_plan = load_run_plan(run_root)
     repo_root = Path(str(run_plan["repo_root"]))
-    expanded_jobs = [_resolved_job(job, repo_root=repo_root) for job in expand_manifest(manifest)]
+    mst_output_root = _mst_output_root_from_plan(run_plan)
+    expanded_jobs = [
+        _resolved_job(job, repo_root=repo_root)
+        for job in expand_manifest(manifest, mst_output_root=mst_output_root)
+    ]
     jobs_by_id = {job.experiment_id: job for job in expanded_jobs}
     plan_jobs_by_id = {str(job["experiment_id"]): job for job in run_plan.get("jobs", [])}
     if set(jobs_by_id) != set(plan_jobs_by_id):

@@ -7,7 +7,7 @@ from typing import Sequence
 
 from .config import load_settings
 from .plotting import plot_model_size_vs_mst_from_json, plot_model_size_vs_mst_from_orchestrator_run
-from .reporting import analyze_orchestrator_run
+from .reporting import analyze_orchestrator_runs
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -15,7 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     analyze = subparsers.add_parser("analyze")
-    analyze.add_argument("--orchestrator-run-root", type=Path, required=True)
+    analyze.add_argument("--orchestrator-run-root", type=Path, action="append", required=True)
     analyze.add_argument("--output-dir", type=Path, required=True)
     analyze.add_argument("--max-rerun-models", type=int, default=7)
     analyze.add_argument("--emit-rerun-manifest", action="store_true")
@@ -24,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     plot = subparsers.add_parser("plot")
     plot.add_argument("--mst-rows-json", type=Path, default=None)
-    plot.add_argument("--orchestrator-run-root", type=Path, default=None)
+    plot.add_argument("--orchestrator-run-root", type=Path, action="append", default=None)
     plot.add_argument("--output-path", type=Path, required=True)
     plot.add_argument("--title", type=str, default="Model Size vs MST")
     plot.add_argument("--x-scale", type=str, default="log")
@@ -41,8 +41,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _analyze_command(args: argparse.Namespace) -> int:
     settings = None if args.settings_yaml is None else load_settings(args.settings_yaml)
-    artifacts = analyze_orchestrator_run(
-        orchestrator_run_root=args.orchestrator_run_root,
+    artifacts = analyze_orchestrator_runs(
+        orchestrator_run_roots=tuple(args.orchestrator_run_root),
         output_dir=args.output_dir,
         max_rerun_models=args.max_rerun_models,
         emit_rerun_manifest=args.emit_rerun_manifest,
@@ -65,7 +65,7 @@ def _plot_command(args: argparse.Namespace) -> int:
         )
     else:
         output_path = plot_model_size_vs_mst_from_orchestrator_run(
-            orchestrator_run_root=args.orchestrator_run_root,
+            orchestrator_run_root=tuple(args.orchestrator_run_root),
             output_path=args.output_path,
             title=args.title,
             x_scale=args.x_scale,

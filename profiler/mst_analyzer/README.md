@@ -3,6 +3,7 @@
 This package reads a completed local orchestrator MST run and flags suspicious model results for review or rerun planning.
 
 It is intended to sit after `local_orchestrator` / `llm_mst_finder` and before any follow-on workflows such as energy profiling.
+Both analyzer and plot commands accept repeated orchestrator run roots. When multiple roots are provided, later roots override earlier succeeded rows with the same `(model, workload, endpoint, serving signature)` identity. This is intended for aggregating a mostly complete main run with a smaller rerun root while keeping TP1/TP2/TP4 serving configurations separate.
 
 ## What it does
 
@@ -34,6 +35,16 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 /local/scratch/a/shi676/.venv/bin/python -m mst_analyzer.cli analyze \
   --orchestrator-run-root results/orchestrator/single-gpu-model-loop-run-sharegpt-000 \
   --output-dir results/analysis/single-gpu-model-loop-run-sharegpt-000
+```
+
+Aggregate a main run plus rerun artifacts by listing the main root first and the rerun root last:
+
+```bash
+PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
+/local/scratch/a/shi676/.venv/bin/python -m mst_analyzer.cli analyze \
+  --orchestrator-run-root results/orchestrator/single-gpu-model-loop-run-sharegpt-000 \
+  --orchestrator-run-root results/orchestrator/chat-anomaly-rerun-000 \
+  --output-dir results/analysis/single-gpu-model-loop-run-sharegpt-000-with-rerun
 ```
 
 With custom settings and explicit rerun-manifest generation:
