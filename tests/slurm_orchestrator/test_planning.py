@@ -266,9 +266,12 @@ def test_collect_cli_syncs_current_run_after_collect_by_default(
     )
     plan = materialize_run_plan(load_manifest(manifest_path), "run-sync")
     calls = []
+    synced_files = []
 
     def fake_run(command, **kwargs):
         calls.append((command, kwargs))
+        files_from = command[command.index("--files-from") + 1]
+        synced_files.extend(Path(files_from).read_text(encoding="utf-8").splitlines())
         return SimpleNamespace(returncode=0, stdout="sent 10 bytes\n", stderr="")
 
     monkeypatch.setattr("slurm_orchestrator.cli.subprocess.run", fake_run)
@@ -287,12 +290,85 @@ def test_collect_cli_syncs_current_run_after_collect_by_default(
     assert rc == 0
     assert payload["result_sync"]["status"] == "succeeded"
     assert payload["result_sync"]["scope"] == "run"
+    assert payload["result_sync"]["file_count"] == 2
     assert calls[0][0][-2:] == [
-        f"{Path(plan['run_root']).resolve()}/",
-        f"{tmp_path / 'shared' / 'results' / 'orchestrator' / 'run-sync'}/",
+        f"{(tmp_path / 'results').resolve()}/",
+        f"{tmp_path / 'shared' / 'results'}/",
     ]
-    assert "--delete-delay" in calls[0][0]
+    assert synced_files == ["orchestrator/run-sync/summary.json", "orchestrator/run-sync/summary.md"]
+    assert "--files-from" in calls[0][0]
+    assert "--delete-delay" not in calls[0][0]
     assert calls[0][1]["capture_output"] is True
+
+
+def test_collect_cli_syncs_mst_reports_analysis_and_plots_without_raw_metrics(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    workload = _write_workload(tmp_path, "sharegpt.yaml")
+    manifest_path = _write_manifest(
+        tmp_path,
+        {
+            "run": {
+                "output_root": str(tmp_path / "results" / "orchestrator"),
+                "mst_output_root": str(tmp_path / "results" / "mst"),
+            },
+            "experiments": [{"id": "exp-a", "model": "model-a", "workload": str(workload)}],
+        },
+    )
+    plan = materialize_run_plan(load_manifest(manifest_path), "run-sync")
+    group_plan_path = Path(plan["groups"][0]["plan_path"])
+    group_payload = json.loads(group_plan_path.read_text(encoding="utf-8"))
+    result_dir = Path(group_payload["jobs"][0]["job"]["result_dir"])
+    trial_dir = result_dir / "trials" / "trial_000_closedloop_N1"
+    (result_dir / "plots").mkdir(parents=True, exist_ok=True)
+    (trial_dir / "plots").mkdir(parents=True, exist_ok=True)
+    (result_dir / "search_trace.json").write_text("{}", encoding="utf-8")
+    (result_dir / "final_report.json").write_text("{}", encoding="utf-8")
+    (result_dir / "final_report.md").write_text("# report\n", encoding="utf-8")
+    (result_dir / "plots" / "search_rate_vs_tpot_p90.png").write_text("plot", encoding="utf-8")
+    (trial_dir / "summary.json").write_text("{}", encoding="utf-8")
+    (trial_dir / "analysis.json").write_text("{}", encoding="utf-8")
+    (trial_dir / "request_records.jsonl").write_text("raw\n", encoding="utf-8")
+    (trial_dir / "server_metrics.jsonl").write_text("raw\n", encoding="utf-8")
+    (trial_dir / "windows.csv").write_text("raw\n", encoding="utf-8")
+    (trial_dir / "plots" / "ttft_percentiles.png").write_text("plot", encoding="utf-8")
+    finalize_task(group_plan_path, 0, exit_code=0, search_started=True)
+    synced_files = []
+
+    def fake_run(command, **kwargs):
+        files_from = command[command.index("--files-from") + 1]
+        synced_files.extend(Path(files_from).read_text(encoding="utf-8").splitlines())
+        return SimpleNamespace(returncode=0, stdout="sent 10 bytes\n", stderr="")
+
+    monkeypatch.setattr("slurm_orchestrator.cli.subprocess.run", fake_run)
+
+    rc = slurm_main(
+        [
+            "collect",
+            "--run-root",
+            plan["run_root"],
+            "--sync-results-to",
+            str(tmp_path / "shared" / "results"),
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert payload["result_sync"]["file_count"] == len(synced_files)
+    assert "orchestrator/run-sync/summary.json" in synced_files
+    assert "orchestrator/run-sync/summary.md" in synced_files
+    result_rel = result_dir.relative_to(tmp_path / "results").as_posix()
+    assert f"{result_rel}/final_report.json" in synced_files
+    assert f"{result_rel}/final_report.md" in synced_files
+    assert f"{result_rel}/plots/search_rate_vs_tpot_p90.png" in synced_files
+    assert f"{result_rel}/trials/trial_000_closedloop_N1/summary.json" in synced_files
+    assert f"{result_rel}/trials/trial_000_closedloop_N1/analysis.json" in synced_files
+    assert f"{result_rel}/trials/trial_000_closedloop_N1/plots/ttft_percentiles.png" in synced_files
+    assert not any(path.endswith("request_records.jsonl") for path in synced_files)
+    assert not any(path.endswith("server_metrics.jsonl") for path in synced_files)
+    assert not any(path.endswith("windows.csv") for path in synced_files)
 
 
 def test_collect_cli_can_sync_all_results_and_missing_only(

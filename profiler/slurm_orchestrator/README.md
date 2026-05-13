@@ -40,35 +40,51 @@ PYTHONPATH=/path/to/BioLLM/profiler \
   --run-root /path/to/results/orchestrator/my-slurm-run
 ```
 
-By default, `collect` also mirrors the collected run directory to the shared
+By default, `collect` also publishes a compact, shareable subset to the shared
 results tree at `/depot/yiding/data/BioLLM-results/results`. For a run root such
-as `/scratch/.../results/orchestrator/my-slurm-run`, the default mirror target is:
+as `/scratch/.../results/orchestrator/my-slurm-run`, the published files keep
+their paths relative to the local `results/` root, for example:
 
 ```text
 /depot/yiding/data/BioLLM-results/results/orchestrator/my-slurm-run
+/depot/yiding/data/BioLLM-results/results/mst/<model>/<workload>/<server>
+/depot/yiding/data/BioLLM-results/results/analysis/my-slurm-run
 ```
 
-This keeps collect fast for incremental runs because it does not scan the full
-`results/` tree. The mirror uses `rsync -a --partial --chmod=D755,F644` and, in
-the default update mode, `--delete-delay` so the shared run copy matches the
-scratch run copy.
+The default publish set is intentionally small:
+
+- `orchestrator/<run_id>/summary.json`
+- `orchestrator/<run_id>/summary.md`
+- MST `final_report.json` and `final_report.md` files referenced by the
+  collected run state
+- MST `summary.json`, `summary.md`, and `analysis.json` files below those MST
+  result directories
+- image/PDF plots below `plots/`
+- compact files under `analysis/<run_id>/`, when that directory exists
+
+Raw per-request and raw metric files such as `request_records.jsonl`,
+`server_metrics.jsonl`, and `windows.csv` are not published by the default
+run-scoped sync. The implementation uses `rsync -a --partial
+--chmod=D755,F644 --files-from <generated-list>` so it avoids copying unrelated
+logs, Slurm scripts, per-job state files, and large intermediate trial records.
 
 Useful sync controls:
 
 ```bash
-# Disable mirroring for one collect.
+# Disable publishing for one collect.
 PYTHONPATH=/path/to/BioLLM/profiler \
   /path/to/venv/bin/python -m slurm_orchestrator.cli collect \
   --run-root /path/to/results/orchestrator/my-slurm-run \
   --no-sync-results
 
-# Mirror to a different shared results root.
+# Publish to a different shared results root.
 PYTHONPATH=/path/to/BioLLM/profiler \
   /path/to/venv/bin/python -m slurm_orchestrator.cli collect \
   --run-root /path/to/results/orchestrator/my-slurm-run \
   --sync-results-to /path/to/shared/results
 
-# Full-tree mirror, useful for a deliberate catch-up sync.
+# Full-tree mirror. This copies logs and raw intermediates, so use it only when
+# the destination has enough quota.
 PYTHONPATH=/path/to/BioLLM/profiler \
   /path/to/venv/bin/python -m slurm_orchestrator.cli collect \
   --run-root /path/to/results/orchestrator/my-slurm-run \
@@ -82,11 +98,12 @@ PYTHONPATH=/path/to/BioLLM/profiler \
   --sync-results-existing missing
 ```
 
-`--sync-results-scope run` is the default. `--sync-results-scope all` mirrors
-the nearest parent directory named `results`. `--sync-results-existing update`
-is the default and updates changed files; `--sync-results-existing missing`
-adds `rsync --ignore-existing` and does not overwrite files already present in
-the shared tree.
+`--sync-results-scope run` is the default compact publish mode.
+`--sync-results-scope all` mirrors the nearest parent directory named `results`
+and includes logs and raw intermediates. `--sync-results-existing update` is the
+default and updates changed files; `--sync-results-existing missing` adds
+`rsync --ignore-existing` and does not overwrite files already present in the
+shared tree.
 
 The same controls can be set with environment variables:
 

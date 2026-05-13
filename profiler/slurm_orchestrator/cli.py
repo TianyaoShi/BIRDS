@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -83,7 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            "mirror results to this shared results directory after collect; "
+            "publish selected result files to this shared results directory after collect; "
             f"defaults to ${RESULTS_SYNC_DEST_ENV} or {DEFAULT_RESULTS_SYNC_DEST} when available"
         ),
     )
@@ -92,7 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("run", "all"),
         default=None,
         help=(
-            "sync only the collected run or the full results tree; defaults to "
+            "publish a compact subset for the collected run or mirror the full results tree; defaults to "
             f"${RESULTS_SYNC_SCOPE_ENV} or 'run'"
         ),
     )
@@ -110,14 +111,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            "source results tree to mirror; defaults to "
+            "source results tree to publish from; defaults to "
             f"${RESULTS_SYNC_ROOT_ENV} or the nearest parent directory named 'results'"
         ),
     )
     collect.add_argument(
         "--no-sync-results",
         action="store_true",
-        help=f"skip result mirroring after collect, also set by ${RESULTS_SYNC_DISABLE_ENV}=1",
+        help=f"skip result publishing after collect, also set by ${RESULTS_SYNC_DISABLE_ENV}=1",
     )
     collect.set_defaults(handler=_collect_command)
 
@@ -349,9 +350,20 @@ def _sync_results_after_collect(args: argparse.Namespace) -> dict[str, object]:
     if scope == "all":
         source = results_root
         destination = destination_root
+        files_from: list[str] | None = None
     else:
-        source = run_root
-        destination = destination_root / _relative_to_or_name(run_root, results_root)
+        source = results_root
+        destination = destination_root
+        files_from = _collect_publish_files(results_root=results_root, run_root=run_root)
+        if not files_from:
+            return {
+                "status": "skipped",
+                "reason": "no publishable summary, analysis, or plot files were found",
+                "scope": scope,
+                "existing": existing,
+                "source": str(source),
+                "destination": str(destination),
+            }
 
     if not source.is_dir():
         return {"status": "failed", "reason": f"source directory does not exist: {source}", "source": str(source)}
@@ -388,11 +400,23 @@ def _sync_results_after_collect(args: argparse.Namespace) -> dict[str, object]:
     ]
     if existing == "missing":
         command.append("--ignore-existing")
-    else:
+    elif files_from is None:
         command.append("--delete-delay")
-    command.extend([f"{source}/", f"{destination}/"])
+
+    temp_list = None
     try:
-        completed = subprocess.run(command, check=False, capture_output=True, text=True)
+        try:
+            if files_from is not None:
+                temp_list = tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=True)
+                temp_list.write("\n".join(files_from))
+                temp_list.write("\n")
+                temp_list.flush()
+                command.extend(["--files-from", temp_list.name])
+            command.extend([f"{source}/", f"{destination}/"])
+            completed = subprocess.run(command, check=False, capture_output=True, text=True)
+        finally:
+            if temp_list is not None:
+                temp_list.close()
     except FileNotFoundError:
         return {
             "status": "failed",
@@ -416,6 +440,7 @@ def _sync_results_after_collect(args: argparse.Namespace) -> dict[str, object]:
         "existing": existing,
         "source": str(source),
         "destination": str(destination),
+        "file_count": len(files_from) if files_from is not None else None,
         "return_code": completed.returncode,
         "summary": _last_output_line(completed.stdout),
     }
@@ -439,11 +464,65 @@ def _option_or_env(args: argparse.Namespace, option: str, env_name: str, default
     return str(value).strip().lower()
 
 
-def _relative_to_or_name(path: Path, root: Path) -> Path:
+def _collect_publish_files(*, results_root: Path, run_root: Path) -> list[str]:
+    candidates: set[Path] = set()
+    for name in ("summary.json", "summary.md"):
+        _add_relative_file(candidates, results_root=results_root, path=run_root / name)
+
+    state_path = run_root / "state.json"
+    state = _read_json_mapping(state_path)
+    if state is not None:
+        for job in state.get("jobs", []):
+            if not isinstance(job, dict):
+                continue
+            artifacts = job.get("artifacts")
+            if not isinstance(artifacts, dict):
+                continue
+            for key in ("final_report_json", "final_report_md"):
+                artifact_path = artifacts.get(key)
+                if isinstance(artifact_path, str) and artifact_path:
+                    path = Path(artifact_path)
+                    _add_relative_file(candidates, results_root=results_root, path=path)
+                    _add_mst_publish_files(candidates, results_root=results_root, result_dir=path.parent)
+
+    analysis_dir = results_root / "analysis" / run_root.name
+    if analysis_dir.is_dir():
+        for path in analysis_dir.rglob("*"):
+            if path.is_file() and path.suffix.lower() in {".json", ".md", ".png", ".jpg", ".jpeg", ".svg", ".pdf"}:
+                _add_relative_file(candidates, results_root=results_root, path=path)
+
+    return sorted(path.as_posix() for path in candidates)
+
+
+def _add_mst_publish_files(candidates: set[Path], *, results_root: Path, result_dir: Path) -> None:
+    if not result_dir.is_dir():
+        return
+    plot_suffixes = {".png", ".jpg", ".jpeg", ".svg", ".pdf"}
+    allowed_names = {"final_report.json", "final_report.md", "summary.json", "summary.md", "analysis.json"}
+    for path in result_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.name in allowed_names:
+            _add_relative_file(candidates, results_root=results_root, path=path)
+        elif "plots" in path.parts and path.suffix.lower() in plot_suffixes:
+            _add_relative_file(candidates, results_root=results_root, path=path)
+
+
+def _add_relative_file(candidates: set[Path], *, results_root: Path, path: Path) -> None:
+    if not path.is_file():
+        return
     try:
-        return path.relative_to(root)
+        candidates.add(path.resolve().relative_to(results_root))
     except ValueError:
-        return Path(path.name)
+        return
+
+
+def _read_json_mapping(path: Path) -> dict[str, object] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def _last_output_line(output: str) -> str:
