@@ -371,7 +371,7 @@ def test_collect_cli_syncs_mst_reports_analysis_and_plots_without_raw_metrics(
     assert not any(path.endswith("windows.csv") for path in synced_files)
 
 
-def test_collect_cli_can_sync_all_results_and_missing_only(
+def test_collect_cli_can_publish_missing_only_without_full_tree_sync(
     tmp_path: Path,
     monkeypatch,
     capsys,
@@ -389,9 +389,12 @@ def test_collect_cli_can_sync_all_results_and_missing_only(
     )
     plan = materialize_run_plan(load_manifest(manifest_path), "run-sync")
     calls = []
+    synced_files = []
 
     def fake_run(command, **kwargs):
         calls.append((command, kwargs))
+        files_from = command[command.index("--files-from") + 1]
+        synced_files.extend(Path(files_from).read_text(encoding="utf-8").splitlines())
         return SimpleNamespace(returncode=0, stdout="sent 10 bytes\n", stderr="")
 
     monkeypatch.setattr("slurm_orchestrator.cli.subprocess.run", fake_run)
@@ -403,8 +406,6 @@ def test_collect_cli_can_sync_all_results_and_missing_only(
             plan["run_root"],
             "--sync-results-to",
             str(tmp_path / "shared" / "results"),
-            "--sync-results-scope",
-            "all",
             "--sync-results-existing",
             "missing",
         ]
@@ -412,12 +413,14 @@ def test_collect_cli_can_sync_all_results_and_missing_only(
 
     payload = json.loads(capsys.readouterr().out)
     assert rc == 0
-    assert payload["result_sync"]["scope"] == "all"
+    assert payload["result_sync"]["scope"] == "run"
     assert payload["result_sync"]["existing"] == "missing"
     assert calls[0][0][-2:] == [
         f"{(tmp_path / 'results').resolve()}/",
         f"{tmp_path / 'shared' / 'results'}/",
     ]
+    assert synced_files == ["orchestrator/run-sync/summary.json", "orchestrator/run-sync/summary.md"]
+    assert "--files-from" in calls[0][0]
     assert "--ignore-existing" in calls[0][0]
     assert "--delete-delay" not in calls[0][0]
 

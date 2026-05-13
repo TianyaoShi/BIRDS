@@ -36,7 +36,6 @@ from .state import collect_run, finalize_task, mark_task_running
 
 DEFAULT_RESULTS_SYNC_DEST = Path("/depot/yiding/data/BioLLM-results/results")
 RESULTS_SYNC_DEST_ENV = "SLURM_ORCHESTRATOR_SYNC_RESULTS_TO"
-RESULTS_SYNC_SCOPE_ENV = "SLURM_ORCHESTRATOR_SYNC_RESULTS_SCOPE"
 RESULTS_SYNC_EXISTING_ENV = "SLURM_ORCHESTRATOR_SYNC_RESULTS_EXISTING"
 RESULTS_SYNC_ROOT_ENV = "SLURM_ORCHESTRATOR_SYNC_RESULTS_ROOT"
 RESULTS_SYNC_DISABLE_ENV = "SLURM_ORCHESTRATOR_DISABLE_RESULT_SYNC"
@@ -86,15 +85,6 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "publish selected result files to this shared results directory after collect; "
             f"defaults to ${RESULTS_SYNC_DEST_ENV} or {DEFAULT_RESULTS_SYNC_DEST} when available"
-        ),
-    )
-    collect.add_argument(
-        "--sync-results-scope",
-        choices=("run", "all"),
-        default=None,
-        help=(
-            "publish a compact subset for the collected run or mirror the full results tree; defaults to "
-            f"${RESULTS_SYNC_SCOPE_ENV} or 'run'"
         ),
     )
     collect.add_argument(
@@ -319,10 +309,7 @@ def _sync_results_after_collect(args: argparse.Namespace) -> dict[str, object]:
     if bool(getattr(args, "no_sync_results", False)) or _env_flag(RESULTS_SYNC_DISABLE_ENV):
         return {"status": "skipped", "reason": "disabled"}
 
-    scope = _option_or_env(args, "sync_results_scope", RESULTS_SYNC_SCOPE_ENV, "run")
     existing = _option_or_env(args, "sync_results_existing", RESULTS_SYNC_EXISTING_ENV, "update")
-    if scope not in {"run", "all"}:
-        return {"status": "failed", "reason": f"invalid sync scope: {scope}"}
     if existing not in {"update", "missing"}:
         return {"status": "failed", "reason": f"invalid sync existing mode: {existing}"}
     explicit_dest = getattr(args, "sync_results_to", None) or os.environ.get(RESULTS_SYNC_DEST_ENV)
@@ -347,23 +334,18 @@ def _sync_results_after_collect(args: argparse.Namespace) -> dict[str, object]:
     explicit_source = getattr(args, "sync_results_root", None) or os.environ.get(RESULTS_SYNC_ROOT_ENV)
     results_root = Path(explicit_source).resolve() if explicit_source else _infer_results_root(args.run_root)
     run_root = Path(args.run_root).resolve()
-    if scope == "all":
-        source = results_root
-        destination = destination_root
-        files_from: list[str] | None = None
-    else:
-        source = results_root
-        destination = destination_root
-        files_from = _collect_publish_files(results_root=results_root, run_root=run_root)
-        if not files_from:
-            return {
-                "status": "skipped",
-                "reason": "no publishable summary, analysis, or plot files were found",
-                "scope": scope,
-                "existing": existing,
-                "source": str(source),
-                "destination": str(destination),
-            }
+    source = results_root
+    destination = destination_root
+    files_from = _collect_publish_files(results_root=results_root, run_root=run_root)
+    if not files_from:
+        return {
+            "status": "skipped",
+            "reason": "no publishable summary, analysis, or plot files were found",
+            "scope": "run",
+            "existing": existing,
+            "source": str(source),
+            "destination": str(destination),
+        }
 
     if not source.is_dir():
         return {"status": "failed", "reason": f"source directory does not exist: {source}", "source": str(source)}
@@ -400,8 +382,6 @@ def _sync_results_after_collect(args: argparse.Namespace) -> dict[str, object]:
     ]
     if existing == "missing":
         command.append("--ignore-existing")
-    elif files_from is None:
-        command.append("--delete-delay")
 
     temp_list = None
     try:
@@ -436,11 +416,11 @@ def _sync_results_after_collect(args: argparse.Namespace) -> dict[str, object]:
 
     return {
         "status": "succeeded",
-        "scope": scope,
+        "scope": "run",
         "existing": existing,
         "source": str(source),
         "destination": str(destination),
-        "file_count": len(files_from) if files_from is not None else None,
+        "file_count": len(files_from),
         "return_code": completed.returncode,
         "summary": _last_output_line(completed.stdout),
     }

@@ -83,32 +83,22 @@ PYTHONPATH=/path/to/BioLLM/profiler \
   --run-root /path/to/results/orchestrator/my-slurm-run \
   --sync-results-to /path/to/shared/results
 
-# Full-tree mirror. This copies logs and raw intermediates, so use it only when
-# the destination has enough quota.
+# Publish only files not already present in the destination.
 PYTHONPATH=/path/to/BioLLM/profiler \
   /path/to/venv/bin/python -m slurm_orchestrator.cli collect \
   --run-root /path/to/results/orchestrator/my-slurm-run \
-  --sync-results-scope all
-
-# Full-tree mirror that only copies files missing from the destination.
-PYTHONPATH=/path/to/BioLLM/profiler \
-  /path/to/venv/bin/python -m slurm_orchestrator.cli collect \
-  --run-root /path/to/results/orchestrator/my-slurm-run \
-  --sync-results-scope all \
   --sync-results-existing missing
 ```
 
-`--sync-results-scope run` is the default compact publish mode.
-`--sync-results-scope all` mirrors the nearest parent directory named `results`
-and includes logs and raw intermediates. `--sync-results-existing update` is the
-default and updates changed files; `--sync-results-existing missing` adds
-`rsync --ignore-existing` and does not overwrite files already present in the
-shared tree.
+Full-tree mirroring from `collect` is intentionally not supported because it can
+copy logs and raw intermediates large enough to exceed shared storage quotas.
+`--sync-results-existing update` is the default and updates changed files;
+`--sync-results-existing missing` adds `rsync --ignore-existing` and does not
+overwrite files already present in the shared tree.
 
 The same controls can be set with environment variables:
 
 - `SLURM_ORCHESTRATOR_SYNC_RESULTS_TO`
-- `SLURM_ORCHESTRATOR_SYNC_RESULTS_SCOPE=run|all`
 - `SLURM_ORCHESTRATOR_SYNC_RESULTS_EXISTING=update|missing`
 - `SLURM_ORCHESTRATOR_SYNC_RESULTS_ROOT`
 - `SLURM_ORCHESTRATOR_DISABLE_RESULT_SYNC=1`
