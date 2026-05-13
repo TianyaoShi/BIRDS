@@ -179,6 +179,8 @@ def _write_result_bundle(
     confirmation_status: str = "stable",
     high_bound_status: str = "unstable",
     include_majority_conflict: bool = False,
+    termination_reason: str = "confirmed_stable",
+    include_mst_rates: bool = True,
 ) -> None:
     result_dir = Path(job.result_dir)
     result_dir.mkdir(parents=True, exist_ok=True)
@@ -254,11 +256,11 @@ def _write_result_bundle(
         "result": {
             "search_id": job.experiment_id,
             "search_mode": "open-loop",
-            "max_no_drift_request_rate": mst_rps,
-            "max_slo_satisfying_request_rate": mst_rps,
+            "max_no_drift_request_rate": mst_rps if include_mst_rates else None,
+            "max_slo_satisfying_request_rate": mst_rps if include_mst_rates else None,
             "rate_precision": 0.1,
             "confirmation_trial_id": chosen_confirmation_trial_id,
-            "termination_reason": "confirmed_stable",
+            "termination_reason": termination_reason,
             "bottleneck_class": "unknown",
             "confidence": confidence,
             "reasons": ["fixture result"],
@@ -1251,3 +1253,220 @@ def test_report_keeps_trace_only_findings_as_diagnostics_by_default(
     assert payload["summary"]["trace_diagnostic_count"] == 1
     assert payload["trace_diagnostics"][0]["model"] == "Qwen/Qwen3-0.6B"
     assert artifacts.rerun_manifest_path is None
+
+
+def test_report_promotes_max_request_rate_limited_rows_to_rerun_candidates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    workload = _write_workload(tmp_path)
+    manifest_path = tmp_path / "experiments" / "manifest.yaml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        yaml.safe_dump(
+            {
+                "run": {
+                    "run_id": "fixture-run",
+                    "output_root": "results/orchestrator",
+                    "python_executable": "python",
+                },
+                "probe": {"enabled": False},
+                "launch": {
+                    "gpu_count": 1,
+                    "tensor_parallel_size": 1,
+                    "dtype": "float16",
+                    "max_model_len": 32768,
+                },
+                "search": {
+                    "search_mode": "open-loop",
+                    "trial_min_duration_s": 120,
+                    "trial_max_duration_s": 240,
+                    "final_confirmation_duration_s": 240,
+                    "initial_request_rate": 3,
+                    "max_request_rate": 40,
+                    "rate_precision": 0.1,
+                    "ttft_slo_ms": 250,
+                    "tpot_slo_ms": 50,
+                    "max_num_seqs": 1024,
+                    "max_num_batched_tokens": 8192,
+                },
+                "experiments": [
+                    {
+                        "id": "qwen30-tp2",
+                        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+                        "workload": str(workload),
+                        "launch": {"gpu_count": 2, "tensor_parallel_size": 2},
+                    },
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    job = expand_manifest(load_manifest(manifest_path))[0]
+    _write_result_bundle(
+        job,
+        workload_path=workload,
+        mst_rps=40.0,
+        high_bound_rate=40.0,
+        ttft_slo_ms=250,
+        tpot_slo_ms=50,
+        max_num_seqs=1024,
+        max_num_batched_tokens=8192,
+        confidence="low",
+        termination_reason="max_request_rate_limited",
+    )
+    run_root = tmp_path / "results" / "orchestrator" / "fixture-run"
+    run_root.mkdir(parents=True, exist_ok=True)
+    (run_root / "state.json").write_text(
+        json.dumps({"manifest_path": str(manifest_path)}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (run_root / "summary.json").write_text(
+        json.dumps(
+            {
+                "jobs": [
+                    {
+                        "experiment_id": job.experiment_id,
+                        "status": "succeeded",
+                        "result_dir": str(job.result_dir),
+                        "artifacts": {
+                            "search_trace": str(job.result_dir / "search_trace.json"),
+                            "final_report_json": str(job.result_dir / "final_report.json"),
+                        },
+                    }
+                ]
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    artifacts = analyze_orchestrator_run(
+        orchestrator_run_root=run_root,
+        output_dir=tmp_path / "results" / "analysis" / "fixture-run",
+        emit_rerun_manifest=True,
+    )
+    payload = json.loads(artifacts.report_json_path.read_text(encoding="utf-8"))
+
+    assert payload["summary"]["anomaly_count"] == 1
+    assert payload["summary"]["trace_diagnostic_count"] == 0
+    assert payload["anomalies"][0]["families"] == ["trace_instability_suspect"]
+    assert "higher max_request_rate cap" in payload["anomalies"][0]["suggested_action"]
+    assert artifacts.rerun_manifest_path is not None
+    rerun_manifest = yaml.safe_load(artifacts.rerun_manifest_path.read_text(encoding="utf-8"))
+    assert rerun_manifest["experiments"][0]["id"] == "qwen30-tp2"
+    assert rerun_manifest["experiments"][0]["search"]["max_request_rate"] == pytest.approx(80.0)
+
+
+def test_report_promotes_missing_confirmed_stable_rate_to_rerun_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    workload = _write_workload(tmp_path)
+    manifest_path = tmp_path / "experiments" / "manifest.yaml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        yaml.safe_dump(
+            {
+                "run": {
+                    "run_id": "fixture-run",
+                    "output_root": "results/orchestrator",
+                    "python_executable": "python",
+                },
+                "probe": {"enabled": False},
+                "launch": {
+                    "gpu_count": 4,
+                    "tensor_parallel_size": 4,
+                    "dtype": "float16",
+                    "max_model_len": 4096,
+                },
+                "search": {
+                    "search_mode": "open-loop",
+                    "trial_min_duration_s": 120,
+                    "trial_max_duration_s": 240,
+                    "final_confirmation_duration_s": 240,
+                    "initial_request_rate": 0.25,
+                    "max_request_rate": 15,
+                    "rate_precision": 0.1,
+                    "ttft_slo_ms": 1000,
+                    "tpot_slo_ms": 150,
+                    "max_num_seqs": 1024,
+                    "max_num_batched_tokens": 8192,
+                },
+                "experiments": [
+                    {
+                        "id": "llama-2-70b-chat-h100-tp4",
+                        "model": "meta-llama/Llama-2-70b-chat-hf",
+                        "workload": str(workload),
+                    },
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    job = expand_manifest(load_manifest(manifest_path))[0]
+    _write_result_bundle(
+        job,
+        workload_path=workload,
+        mst_rps=0.0,
+        high_bound_rate=0.5,
+        ttft_slo_ms=1000,
+        tpot_slo_ms=150,
+        max_num_seqs=1024,
+        max_num_batched_tokens=8192,
+        confidence="low",
+        termination_reason="no_confirmed_stable_open_loop_rate",
+        include_mst_rates=False,
+    )
+    run_root = tmp_path / "results" / "orchestrator" / "fixture-run"
+    run_root.mkdir(parents=True, exist_ok=True)
+    (run_root / "state.json").write_text(
+        json.dumps({"manifest_path": str(manifest_path)}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (run_root / "summary.json").write_text(
+        json.dumps(
+            {
+                "jobs": [
+                    {
+                        "experiment_id": job.experiment_id,
+                        "status": "succeeded",
+                        "result_dir": str(job.result_dir),
+                        "artifacts": {
+                            "search_trace": str(job.result_dir / "search_trace.json"),
+                            "final_report_json": str(job.result_dir / "final_report.json"),
+                        },
+                    }
+                ]
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    artifacts = analyze_orchestrator_run(
+        orchestrator_run_root=run_root,
+        output_dir=tmp_path / "results" / "analysis" / "fixture-run",
+        emit_rerun_manifest=True,
+    )
+    payload = json.loads(artifacts.report_json_path.read_text(encoding="utf-8"))
+
+    assert payload["summary"]["anomaly_count"] == 1
+    assert payload["summary"]["trace_diagnostic_count"] == 0
+    assert payload["anomalies"][0]["families"] == ["trace_instability_suspect"]
+    assert payload["anomalies"][0]["mst_rps"] == pytest.approx(0.0)
+    assert "no stable open-loop MST rate was confirmed" in payload["anomalies"][0]["suggested_action"]
+    assert artifacts.rerun_manifest_path is not None
+    rerun_manifest = yaml.safe_load(artifacts.rerun_manifest_path.read_text(encoding="utf-8"))
+    assert [experiment["id"] for experiment in rerun_manifest["experiments"]] == [
+        "llama-2-70b-chat-h100-tp4"
+    ]
+    assert rerun_manifest["search"]["trial_min_duration_s"] >= 180

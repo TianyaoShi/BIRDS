@@ -67,6 +67,7 @@ def analyze_rows_with_diagnostics(
             hits
             and not resolved_settings.include_trace_only_findings
             and all(hit.family == "trace_instability_suspect" for hit in hits)
+            and not _promote_trace_only_termination(row.termination_reason)
         ):
             trace_diagnostics.append(_build_trace_diagnostic(row=row, hit=hits[0]))
             continue
@@ -478,7 +479,11 @@ def _build_anomaly(
         primary_summary += " Trace evidence is conflicted near the selected rate."
 
     control_models = [comparator.model for comparator in comparators]
-    if control_models:
+    if row.termination_reason == "max_request_rate_limited":
+        suggested_action = f"rerun {row.model} with a higher max_request_rate cap"
+    elif row.termination_reason == "no_confirmed_stable_open_loop_rate":
+        suggested_action = f"rerun {row.model}; no stable open-loop MST rate was confirmed"
+    elif control_models:
         suggested_action = (
             f"rerun {row.model} with controls {', '.join(control_models[:3])} "
             "using longer trial and confirmation durations"
@@ -509,6 +514,13 @@ def _build_anomaly(
         final_report_json_path=row.final_report_json_path,
         evidence_paths=unique_paths,
     )
+
+
+def _promote_trace_only_termination(termination_reason: str | None) -> bool:
+    return termination_reason in {
+        "max_request_rate_limited",
+        "no_confirmed_stable_open_loop_rate",
+    }
 
 
 def _build_trace_diagnostic(*, row: MSTRow, hit: _FindingHit) -> TraceDiagnostic:

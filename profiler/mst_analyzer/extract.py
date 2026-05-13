@@ -35,6 +35,7 @@ class ExtractedRun:
     manifest_payload: dict[str, Any]
     expanded_jobs: dict[str, ExpandedExperimentJob]
     rows: tuple[MSTRow, ...]
+    source_manifest_paths: tuple[Path, ...]
 
 
 def extract_run(orchestrator_run_root: str | Path) -> ExtractedRun:
@@ -83,6 +84,7 @@ def extract_run(orchestrator_run_root: str | Path) -> ExtractedRun:
         manifest_payload=manifest_payload,
         expanded_jobs=expanded_jobs,
         rows=tuple(rows),
+        source_manifest_paths=(manifest_path,),
     )
 
 
@@ -94,7 +96,9 @@ def extract_runs(orchestrator_run_roots: tuple[str | Path, ...] | list[str | Pat
 
     selected_by_key: dict[tuple[str, str, str, str], MSTRow] = {}
     all_rows: list[MSTRow] = []
+    expanded_jobs: dict[str, ExpandedExperimentJob] = {}
     for extracted in extracted_runs:
+        expanded_jobs.update(extracted.expanded_jobs)
         all_rows.extend(extracted.rows)
         for row in extracted.rows:
             selected_by_key[_decisive_row_key(row)] = row
@@ -108,8 +112,9 @@ def extract_runs(orchestrator_run_roots: tuple[str | Path, ...] | list[str | Pat
         run_root=first.run_root,
         manifest_path=last.manifest_path,
         manifest_payload=last.manifest_payload,
-        expanded_jobs=last.expanded_jobs,
+        expanded_jobs=expanded_jobs,
         rows=tuple(merged_rows),
+        source_manifest_paths=tuple(extracted.manifest_path for extracted in extracted_runs),
     )
 
 

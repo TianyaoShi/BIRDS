@@ -338,6 +338,11 @@ def _write_suggested_rerun_manifest(
     truncated = False
 
     rows_by_experiment_id = {row.experiment_id: row for row in extracted.rows}
+    if len(set(extracted.source_manifest_paths)) > 1:
+        raise RuntimeError(
+            "suggested rerun manifest emission requires one source manifest; "
+            "run the analyzer per orchestrator root when aggregating different workloads"
+        )
     for anomaly in anomalies:
         row = rows_by_experiment_id.get(anomaly.experiment_id)
         if row is None:
@@ -447,6 +452,15 @@ def _write_suggested_rerun_manifest(
             if relative not in selected_experiment_workloads:
                 selected_experiment_workloads.append(relative)
 
+        rate_cap = _rerun_max_request_rate_for_rate_limited_rows(
+            matched_rows=matched_rows,
+            extracted=extracted,
+        )
+        if rate_cap is not None:
+            search = dict(experiment.get("search") or {})
+            search["max_request_rate"] = rate_cap
+            experiment["search"] = search
+
         experiment.pop("model", None)
         experiment["models"] = selected_experiment_models
         experiment.pop("workload", None)
@@ -464,6 +478,24 @@ def _write_suggested_rerun_manifest(
         workload_copies=tuple(workload_copy_map[path] for path in selected_workloads),
         truncated=truncated,
     )
+
+
+def _rerun_max_request_rate_for_rate_limited_rows(
+    *,
+    matched_rows: Sequence[Any],
+    extracted: ExtractedRun,
+) -> float | None:
+    caps: list[float] = []
+    for row in matched_rows:
+        if row.termination_reason != "max_request_rate_limited" or row.mst_rps is None:
+            continue
+        job = extracted.expanded_jobs[row.experiment_id]
+        current_cap = job.search.max_request_rate
+        base = current_cap if current_cap is not None else row.mst_rps
+        caps.append(max(float(base) * 2.0, float(row.mst_rps) * 2.0))
+    if not caps:
+        return None
+    return float(max(caps))
 
 
 def _copy_workload_file(*, workload_path: Path, output_dir: Path) -> Path:
