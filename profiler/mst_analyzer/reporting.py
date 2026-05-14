@@ -379,9 +379,13 @@ def _write_suggested_rerun_manifest(
         return None
 
     manifest_payload = copy.deepcopy(extracted.manifest_payload)
+    base_manifest = load_manifest(extracted.manifest_path)
     run_payload = _ensure_mapping(manifest_payload, "run")
     original_run_id = str(run_payload.get("run_id") or extracted.run_id)
-    run_payload["run_id"] = f"{original_run_id}-mst-anomaly-rerun"
+    rerun_id = f"{original_run_id}-mst-anomaly-rerun"
+    run_payload["run_id"] = rerun_id
+    run_payload["output_root"] = str(base_manifest.run.output_root)
+    run_payload["mst_output_root"] = str(base_manifest.run.output_root.parent / "mst" / rerun_id)
 
     search_payload = _ensure_mapping(manifest_payload, "search")
     search_payload["trial_min_duration_s"] = max(_numeric_or_default(search_payload.get("trial_min_duration_s"), 0.0), 180.0)
@@ -403,7 +407,7 @@ def _write_suggested_rerun_manifest(
     if not isinstance(experiments, list):
         raise RuntimeError("manifest.experiments must be a list")
     base_jobs_by_source_index: dict[int, list[ExpandedExperimentJob]] = {}
-    for base_job in expand_manifest(load_manifest(extracted.manifest_path)):
+    for base_job in expand_manifest(base_manifest):
         base_jobs_by_source_index.setdefault(base_job.source_index, []).append(base_job)
 
     filtered_experiments: list[dict[str, Any]] = []

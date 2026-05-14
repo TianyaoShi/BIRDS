@@ -600,6 +600,8 @@ def test_multi_root_rerun_manifest_uses_first_root_as_base_manifest(
     assert artifacts.rerun_manifest_path is not None
     rerun_manifest = yaml.safe_load(artifacts.rerun_manifest_path.read_text(encoding="utf-8"))
     assert rerun_manifest["run"]["run_id"] == "main-run-mst-anomaly-rerun"
+    assert Path(rerun_manifest["run"]["output_root"]).is_absolute()
+    assert Path(rerun_manifest["run"]["mst_output_root"]).is_absolute()
     assert [experiment["models"] for experiment in rerun_manifest["experiments"]] == [
         ["Qwen/Qwen3-30B-A3B-Instruct-2507"]
     ]
@@ -1165,6 +1167,8 @@ def test_report_includes_evidence_paths_and_rerun_manifest_uses_distinct_workloa
     assert rerun_manifest["search"]["trial_min_duration_s"] >= 180
     assert rerun_manifest["search"]["trial_max_duration_s"] >= 300
     assert rerun_manifest["search"]["final_confirmation_duration_s"] >= 300
+    assert Path(rerun_manifest["run"]["output_root"]).is_absolute()
+    assert Path(rerun_manifest["run"]["mst_output_root"]).is_absolute()
     rerun_workload_relative = rerun_manifest["experiments"][0]["workloads"][0]
     rerun_workload_path = output_dir / rerun_workload_relative
     assert rerun_workload_path.stem.endswith("_mst_anomaly_rerun")
