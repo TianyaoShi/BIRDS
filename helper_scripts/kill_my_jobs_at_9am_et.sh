@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TARGET_TIME="10:00"
+TARGET_TIME="09:00"
 TARGET_TZ="America/New_York"
 GRACE_SECONDS=30
 DRY_RUN=0
