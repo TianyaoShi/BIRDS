@@ -11,6 +11,8 @@ _KNOWN_FAMILIES = {
     "within_size_outlier",
     "larger_model_inversion",
     "same_family_non_monotonicity",
+    "search_rate_cap_reached",
+    "missing_confirmed_mst_rate",
     "trace_instability_suspect",
     "slo_driven_disagreement",
 }

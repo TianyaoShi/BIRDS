@@ -50,6 +50,14 @@ def analyze_rows_with_diagnostics(
         if same_family_hit is not None:
             hits.append(same_family_hit)
 
+        rate_cap_hit = _search_rate_cap_hit(row, settings=resolved_settings)
+        if rate_cap_hit is not None:
+            hits.append(rate_cap_hit)
+
+        missing_mst_hit = _missing_confirmed_mst_hit(row, settings=resolved_settings)
+        if missing_mst_hit is not None:
+            hits.append(missing_mst_hit)
+
         trace_hit = _trace_instability_hit(row, settings=resolved_settings)
         if trace_hit is not None:
             hits.append(trace_hit)
@@ -301,6 +309,8 @@ def _same_family_non_monotonicity(
 def _trace_instability_hit(row: MSTRow, *, settings: AnalyzerSettings) -> _FindingHit | None:
     if _family_disabled("trace_instability_suspect", settings=settings):
         return None
+    if _promote_trace_only_termination(row.termination_reason):
+        return None
     if (
         settings.suppressions.suppress_trace_instability_below_rps is not None
         and row.mst_rps is not None
@@ -312,7 +322,10 @@ def _trace_instability_hit(row: MSTRow, *, settings: AnalyzerSettings) -> _Findi
         bool(instability.conflicting_rate_labels)
         or instability.majority_confirmation_used
         or instability.uncertain_retry_count >= settings.trace_instability_min_uncertain_retries
-        or instability.suspect_termination_reason
+        or (
+            instability.suspect_termination_reason
+            and not _promote_trace_only_termination(row.termination_reason)
+        )
     )
     if not strong_signal and not (
         instability.low_confidence
@@ -332,7 +345,7 @@ def _trace_instability_hit(row: MSTRow, *, settings: AnalyzerSettings) -> _Findi
         reasons.append("confirmation required the second-pass majority check")
     if instability.uncertain_retry_count:
         reasons.append(f"uncertain retries near the final bound: {instability.uncertain_retry_count}")
-    if instability.suspect_termination_reason:
+    if instability.suspect_termination_reason and not _promote_trace_only_termination(row.termination_reason):
         reasons.append(f"termination reason: {row.termination_reason}")
     if instability.low_confidence:
         reasons.append("final search confidence is low")
@@ -342,6 +355,37 @@ def _trace_instability_hit(row: MSTRow, *, settings: AnalyzerSettings) -> _Findi
         weight=settings.severity_weight_trace_instability_suspect,
         summary=f"{row.model} shows conflicting or low-confidence trace evidence near the selected MST.",
         reasons=reasons,
+        comparators=[],
+    )
+
+
+def _search_rate_cap_hit(row: MSTRow, *, settings: AnalyzerSettings) -> _FindingHit | None:
+    if _family_disabled("search_rate_cap_reached", settings=settings):
+        return None
+    if row.termination_reason != "max_request_rate_limited":
+        return None
+    reasons = ["search terminated at max_request_rate before finding an unstable upper bound"]
+    if row.mst_rps is not None:
+        reasons.append(f"reported MST equals the configured search cap: {row.mst_rps:.2f} rps")
+    return _FindingHit(
+        family="search_rate_cap_reached",
+        weight=settings.severity_weight_trace_instability_suspect,
+        summary=f"{row.model} hit the configured max_request_rate cap before the MST was bounded.",
+        reasons=reasons,
+        comparators=[],
+    )
+
+
+def _missing_confirmed_mst_hit(row: MSTRow, *, settings: AnalyzerSettings) -> _FindingHit | None:
+    if _family_disabled("missing_confirmed_mst_rate", settings=settings):
+        return None
+    if row.termination_reason != "no_confirmed_stable_open_loop_rate":
+        return None
+    return _FindingHit(
+        family="missing_confirmed_mst_rate",
+        weight=settings.severity_weight_trace_instability_suspect,
+        summary=f"{row.model} did not produce a confirmed stable open-loop MST rate.",
+        reasons=["search terminated without a confirmed stable open-loop rate for downstream planning"],
         comparators=[],
     )
 
