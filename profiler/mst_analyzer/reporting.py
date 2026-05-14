@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from fnmatch import fnmatchcase
 import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -502,6 +503,7 @@ def _write_suggested_rerun_manifest(
         )
 
     manifest_payload["experiments"] = filtered_experiments
+    _strip_shadowed_search_keys_from_overrides(manifest_payload)
     manifest_path = output_dir / "suggested_rerun_manifest.yaml"
     manifest_path.write_text(yaml.safe_dump(manifest_payload, sort_keys=False), encoding="utf-8")
     return SuggestedRerunPlan(
@@ -524,11 +526,66 @@ def _selected_row_for_base_job(
     for row in rows:
         if row.experiment_id not in selected_experiment_ids:
             continue
-        if row.workload_path not in selected_workloads:
-            continue
         if _row_matches_base_job(row=row, base_job=base_job):
             return row
     return None
+
+
+def _strip_shadowed_search_keys_from_overrides(manifest_payload: dict[str, Any]) -> None:
+    experiments = manifest_payload.get("experiments")
+    if not isinstance(experiments, list):
+        return
+    overrides = manifest_payload.get("overrides")
+    if not isinstance(overrides, list):
+        return
+
+    for raw_override in overrides:
+        if not isinstance(raw_override, dict):
+            continue
+        search = raw_override.get("search")
+        if not isinstance(search, dict):
+            continue
+        shadowed_keys: set[str] = set()
+        for raw_experiment in experiments:
+            if not isinstance(raw_experiment, Mapping):
+                continue
+            experiment_search = raw_experiment.get("search")
+            if not isinstance(experiment_search, Mapping):
+                continue
+            if _raw_override_matches_experiment(raw_override, raw_experiment):
+                shadowed_keys.update(str(key) for key in experiment_search)
+        for key in shadowed_keys:
+            search.pop(key, None)
+        if not search:
+            raw_override.pop("search", None)
+
+
+def _raw_override_matches_experiment(raw_override: Mapping[str, Any], raw_experiment: Mapping[str, Any]) -> bool:
+    match = raw_override.get("match")
+    if not isinstance(match, Mapping):
+        return True
+    models = _raw_string_values(raw_experiment.get("models")) + _raw_string_values(raw_experiment.get("model"))
+    workloads = _raw_string_values(raw_experiment.get("workloads")) + _raw_string_values(raw_experiment.get("workload"))
+    model_patterns = _raw_string_values(match.get("models")) + _raw_string_values(match.get("model"))
+    workload_patterns = _raw_string_values(match.get("workloads")) + _raw_string_values(match.get("workload"))
+    if model_patterns and not any(_matches_any_pattern(model, model_patterns) for model in models):
+        return False
+    if workload_patterns and not any(_matches_any_pattern(workload, workload_patterns) for workload in workloads):
+        return False
+    return True
+
+
+def _raw_string_values(raw: Any) -> list[str]:
+    if isinstance(raw, str):
+        return [raw]
+    if isinstance(raw, list):
+        return [str(item) for item in raw if isinstance(item, str)]
+    return []
+
+
+def _matches_any_pattern(value: str, patterns: Sequence[str]) -> bool:
+    lowered = value.lower()
+    return any(fnmatchcase(lowered, pattern.lower()) for pattern in patterns)
 
 
 def _row_matches_base_job(*, row: Any, base_job: ExpandedExperimentJob) -> bool:

@@ -1441,6 +1441,119 @@ def test_report_promotes_max_request_rate_limited_rows_to_rerun_candidates(
     assert rerun_manifest["experiments"][0]["search"]["max_request_rate"] == pytest.approx(80.0)
 
 
+def test_rate_limited_rerun_manifest_strips_shadowing_match_override_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    workload = _write_workload(tmp_path)
+    manifest_path = tmp_path / "experiments" / "manifest.yaml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        yaml.safe_dump(
+            {
+                "run": {
+                    "run_id": "fixture-run",
+                    "output_root": "results/orchestrator",
+                    "python_executable": "python",
+                },
+                "probe": {"enabled": False},
+                "launch": {
+                    "gpu_count": 1,
+                    "tensor_parallel_size": 1,
+                    "dtype": "float16",
+                    "max_model_len": 32768,
+                },
+                "search": {
+                    "search_mode": "hybrid",
+                    "trial_min_duration_s": 120,
+                    "trial_max_duration_s": 240,
+                    "final_confirmation_duration_s": 240,
+                    "initial_request_rate": 1,
+                    "max_request_rate": 12,
+                    "rate_precision": 0.1,
+                    "ttft_slo_ms": 250,
+                    "tpot_slo_ms": 50,
+                    "max_num_seqs": 1024,
+                    "max_num_batched_tokens": 8192,
+                },
+                "overrides": [
+                    {
+                        "match": {"models": ["Qwen/Qwen3-30B-A3B-Instruct-2507"]},
+                        "search": {
+                            "initial_request_rate": 0.5,
+                            "max_request_rate": 40,
+                            "max_binary_steps": 10,
+                        },
+                    }
+                ],
+                "experiments": [
+                    {
+                        "id": "qwen30-tp2",
+                        "model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+                        "workload": str(workload),
+                        "launch": {"gpu_count": 2, "tensor_parallel_size": 2},
+                    },
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    job = expand_manifest(load_manifest(manifest_path))[0]
+    _write_result_bundle(
+        job,
+        workload_path=workload,
+        mst_rps=40.0,
+        high_bound_rate=40.0,
+        ttft_slo_ms=250,
+        tpot_slo_ms=50,
+        max_num_seqs=1024,
+        max_num_batched_tokens=8192,
+        confidence="low",
+        termination_reason="max_request_rate_limited",
+    )
+    run_root = tmp_path / "results" / "orchestrator" / "fixture-run"
+    run_root.mkdir(parents=True, exist_ok=True)
+    (run_root / "state.json").write_text(
+        json.dumps({"manifest_path": str(manifest_path)}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (run_root / "summary.json").write_text(
+        json.dumps(
+            {
+                "jobs": [
+                    {
+                        "experiment_id": job.experiment_id,
+                        "status": "succeeded",
+                        "result_dir": str(job.result_dir),
+                        "artifacts": {
+                            "search_trace": str(job.result_dir / "search_trace.json"),
+                            "final_report_json": str(job.result_dir / "final_report.json"),
+                        },
+                    }
+                ]
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    artifacts = analyze_orchestrator_run(
+        orchestrator_run_root=run_root,
+        output_dir=tmp_path / "results" / "analysis" / "fixture-run",
+        emit_rerun_manifest=True,
+    )
+
+    assert artifacts.rerun_manifest_path is not None
+    rerun_manifest = yaml.safe_load(artifacts.rerun_manifest_path.read_text(encoding="utf-8"))
+    assert rerun_manifest["overrides"][0]["search"] == {"max_binary_steps": 10}
+    assert rerun_manifest["experiments"][0]["search"]["initial_request_rate"] == pytest.approx(10.0)
+    assert rerun_manifest["experiments"][0]["search"]["max_request_rate"] == pytest.approx(80.0)
+
+
 def test_report_promotes_missing_confirmed_stable_rate_to_rerun_candidate(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
