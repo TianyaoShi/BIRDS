@@ -17,7 +17,7 @@ def analyze_orchestrator_run(
     *,
     orchestrator_run_root: str | Path,
     output_dir: str | Path,
-    max_rerun_models: int = 7,
+    max_rerun_models: int | None = None,
     emit_rerun_manifest: bool = False,
     settings: AnalyzerSettings | None = None,
 ) -> AnalysisArtifacts:
@@ -35,7 +35,7 @@ def analyze_orchestrator_runs(
     *,
     orchestrator_run_roots: Sequence[str | Path],
     output_dir: str | Path,
-    max_rerun_models: int = 7,
+    max_rerun_models: int | None = None,
     emit_rerun_manifest: bool = False,
     settings: AnalyzerSettings | None = None,
 ) -> AnalysisArtifacts:
@@ -53,7 +53,7 @@ def _analyze_extracted_run(
     *,
     extracted: ExtractedRun,
     output_dir: str | Path,
-    max_rerun_models: int,
+    max_rerun_models: int | None,
     emit_rerun_manifest: bool,
     settings: AnalyzerSettings | None,
 ) -> AnalysisArtifacts:
@@ -320,7 +320,7 @@ def _render_markdown(report_payload: Mapping[str, Any]) -> str:
             "- Workload copies: " + ", ".join(f"`{path}`" for path in rerun_mapping["workload_copies"])
         )
         if rerun_mapping.get("truncated"):
-            lines.append("- Model selection was truncated to stay within the default rerun size cap.")
+            lines.append("- Model selection was truncated to stay within the requested rerun size cap.")
     lines.append("")
     return "\n".join(lines)
 
@@ -330,7 +330,7 @@ def _write_suggested_rerun_manifest(
     extracted: ExtractedRun,
     anomalies: Sequence[AnomalyCandidate],
     output_dir: Path,
-    max_rerun_models: int,
+    max_rerun_models: int | None,
 ) -> SuggestedRerunPlan | None:
     selected_models: list[str] = []
     selected_experiment_ids: list[str] = []
@@ -363,7 +363,7 @@ def _write_suggested_rerun_manifest(
             for model in required
             if model not in selected_models
         ]
-        if selected_models and len(selected_models) + len(would_add) > max_rerun_models:
+        if max_rerun_models is not None and selected_models and len(selected_models) + len(would_add) > max_rerun_models:
             truncated = True
             continue
         for model in required:

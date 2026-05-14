@@ -17,7 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
     analyze = subparsers.add_parser("analyze")
     analyze.add_argument("--orchestrator-run-root", type=Path, action="append", required=True)
     analyze.add_argument("--output-dir", type=Path, required=True)
-    analyze.add_argument("--max-rerun-models", type=int, default=7)
+    analyze.add_argument("--max-rerun-models", type=int, default=None)
     analyze.add_argument("--emit-rerun-manifest", action="store_true")
     analyze.add_argument("--settings-yaml", type=Path, default=None)
     analyze.set_defaults(handler=_analyze_command)

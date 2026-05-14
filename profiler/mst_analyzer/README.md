@@ -81,6 +81,7 @@ Each analysis run writes:
 ```
 
 `suggested_rerun_manifest.yaml` is only written when there are selected rerun targets.
+By default, rerun manifests include every selected actionable target. Use `--max-rerun-models` only when you explicitly want to cap the manifest size.
 
 ## Settings
 
