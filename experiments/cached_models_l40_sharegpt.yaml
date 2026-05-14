@@ -147,6 +147,13 @@ overrides:
 
   - match:
       models:
+        - meta-llama/CodeLlama-34b-Instruct-hf
+    reason: CodeLlama model configs derive a 16384-token maximum context; vLLM rejects the default 32768 engine length for this family.
+    launch:
+      max_model_len: 16384
+
+  - match:
+      models:
         - openai/gpt-oss-20b
         - openai/gpt-oss-120b
     reason: gpt-oss checkpoints should let vLLM select dtype from checkpoint metadata.
