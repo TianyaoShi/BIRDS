@@ -1359,6 +1359,8 @@ def test_report_promotes_max_request_rate_limited_rows_to_rerun_candidates(
     assert artifacts.rerun_manifest_path is not None
     rerun_manifest = yaml.safe_load(artifacts.rerun_manifest_path.read_text(encoding="utf-8"))
     assert rerun_manifest["experiments"][0]["id"] == "qwen30-tp2"
+    assert rerun_manifest["experiments"][0]["search"]["search_mode"] == "open-loop"
+    assert rerun_manifest["experiments"][0]["search"]["initial_request_rate"] == pytest.approx(10.0)
     assert rerun_manifest["experiments"][0]["search"]["max_request_rate"] == pytest.approx(80.0)
 
 

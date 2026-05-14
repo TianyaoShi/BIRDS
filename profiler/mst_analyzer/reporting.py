@@ -452,13 +452,13 @@ def _write_suggested_rerun_manifest(
             if relative not in selected_experiment_workloads:
                 selected_experiment_workloads.append(relative)
 
-        rate_cap = _rerun_max_request_rate_for_rate_limited_rows(
+        rate_limited_search = _rerun_search_for_rate_limited_rows(
             matched_rows=matched_rows,
             extracted=extracted,
         )
-        if rate_cap is not None:
+        if rate_limited_search:
             search = dict(experiment.get("search") or {})
-            search["max_request_rate"] = rate_cap
+            search.update(rate_limited_search)
             experiment["search"] = search
 
         experiment.pop("model", None)
@@ -480,12 +480,13 @@ def _write_suggested_rerun_manifest(
     )
 
 
-def _rerun_max_request_rate_for_rate_limited_rows(
+def _rerun_search_for_rate_limited_rows(
     *,
     matched_rows: Sequence[Any],
     extracted: ExtractedRun,
-) -> float | None:
+) -> dict[str, Any]:
     caps: list[float] = []
+    initial_rates: list[float] = []
     for row in matched_rows:
         if row.termination_reason != "max_request_rate_limited" or row.mst_rps is None:
             continue
@@ -493,9 +494,14 @@ def _rerun_max_request_rate_for_rate_limited_rows(
         current_cap = job.search.max_request_rate
         base = current_cap if current_cap is not None else row.mst_rps
         caps.append(max(float(base) * 2.0, float(row.mst_rps) * 2.0))
+        initial_rates.append(max(float(base) * 0.25, job.search.initial_request_rate))
     if not caps:
-        return None
-    return float(max(caps))
+        return {}
+    return {
+        "search_mode": "open-loop",
+        "initial_request_rate": float(min(initial_rates)),
+        "max_request_rate": float(max(caps)),
+    }
 
 
 def _copy_workload_file(*, workload_path: Path, output_dir: Path) -> Path:
