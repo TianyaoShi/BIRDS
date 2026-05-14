@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 from fnmatch import fnmatchcase
 import json
+import os
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -645,10 +646,40 @@ def _copy_workload_file(*, workload_path: Path, output_dir: Path) -> Path:
         updated = dict(payload)
         name = updated.get("name")
         updated["name"] = f"{name or workload_path.stem}_mst_anomaly_rerun"
+        _rewrite_copied_workload_paths(
+            workload_payload=updated,
+            source_workload_path=workload_path,
+            output_workload_path=output_path,
+        )
         output_path.write_text(yaml.safe_dump(updated, sort_keys=False), encoding="utf-8")
         return output_path
     output_path.write_text(workload_path.read_text(encoding="utf-8"), encoding="utf-8")
     return output_path
+
+
+def _rewrite_copied_workload_paths(
+    *,
+    workload_payload: dict[Any, Any],
+    source_workload_path: Path,
+    output_workload_path: Path,
+) -> None:
+    dataset = workload_payload.get("dataset")
+    if not isinstance(dataset, dict):
+        return
+    raw_path = dataset.get("path")
+    if not isinstance(raw_path, str) or not raw_path:
+        return
+    dataset_type = dataset.get("type")
+    if dataset_type == "hf":
+        return
+    raw_path_obj = Path(raw_path).expanduser()
+    if raw_path_obj.is_absolute():
+        return
+    source_path = (source_workload_path.parent / raw_path).resolve()
+    if dataset_type == "longbench" and not (source_path.exists() or raw_path.endswith(".zip") or raw_path.startswith(".")):
+        return
+    relative = os.path.relpath(source_path, start=output_workload_path.parent.resolve())
+    dataset["path"] = relative
 
 
 def _manifest_workload_matches(

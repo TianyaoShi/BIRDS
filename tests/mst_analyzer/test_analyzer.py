@@ -11,7 +11,7 @@ from local_orchestrator.matrix import expand_manifest
 from mst_analyzer.config import AnalyzerSettings, load_settings
 from mst_analyzer.extract import extract_run, extract_runs
 from mst_analyzer.models import MSTRow, TraceInstabilityEvidence, TrialArtifactRef
-from mst_analyzer.reporting import analyze_orchestrator_run, analyze_orchestrator_runs
+from mst_analyzer.reporting import _copy_workload_file, analyze_orchestrator_run, analyze_orchestrator_runs
 from mst_analyzer.rules import analyze_rows, analyze_rows_with_diagnostics, build_bucket_summaries
 from slurm_orchestrator.planning import deserialize_expanded_job, materialize_run_plan
 from slurm_orchestrator.state import collect_run, finalize_task
@@ -1174,6 +1174,40 @@ def test_report_includes_evidence_paths_and_rerun_manifest_uses_distinct_workloa
     assert rerun_workload_path.stem.endswith("_mst_anomaly_rerun")
     rerun_workload_payload = yaml.safe_load(rerun_workload_path.read_text(encoding="utf-8"))
     assert rerun_workload_payload["name"].endswith("_mst_anomaly_rerun")
+
+
+def test_copy_workload_rewrites_relative_dataset_path_for_new_location(tmp_path: Path) -> None:
+    source_dir = tmp_path / "experiments" / "workloads"
+    data_dir = tmp_path / "data" / "local"
+    output_dir = tmp_path / "results" / "analysis" / "run"
+    source_dir.mkdir(parents=True)
+    data_dir.mkdir(parents=True)
+    output_dir.mkdir(parents=True)
+    dataset_path = data_dir / "sample.jsonl"
+    dataset_path.write_text("{}\n", encoding="utf-8")
+    workload_path = source_dir / "sharegpt.yaml"
+    workload_path.write_text(
+        yaml.safe_dump(
+            {
+                "name": "sharegpt",
+                "dataset": {
+                    "type": "sharegpt",
+                    "path": "../../data/local/sample.jsonl",
+                },
+                "sampling": {"seed": 1, "num_requests": 1},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    copied = _copy_workload_file(workload_path=workload_path, output_dir=output_dir)
+    copied_payload = yaml.safe_load(copied.read_text(encoding="utf-8"))
+    copied_dataset_path = (copied.parent / copied_payload["dataset"]["path"]).resolve()
+
+    assert copied_payload["name"] == "sharegpt_mst_anomaly_rerun"
+    assert copied_dataset_path == dataset_path.resolve()
+    assert not Path(copied_payload["dataset"]["path"]).is_absolute()
 
 
 def test_rerun_manifest_keeps_duplicate_model_tensor_parallel_experiment_precise(
