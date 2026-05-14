@@ -11,7 +11,7 @@ from local_orchestrator.matrix import expand_manifest
 from mst_analyzer.config import AnalyzerSettings, load_settings
 from mst_analyzer.extract import extract_run, extract_runs
 from mst_analyzer.models import MSTRow, TraceInstabilityEvidence, TrialArtifactRef
-from mst_analyzer.reporting import analyze_orchestrator_run
+from mst_analyzer.reporting import analyze_orchestrator_run, analyze_orchestrator_runs
 from mst_analyzer.rules import analyze_rows, analyze_rows_with_diagnostics, build_bucket_summaries
 from slurm_orchestrator.planning import deserialize_expanded_job, materialize_run_plan
 from slurm_orchestrator.state import collect_run, finalize_task
@@ -530,6 +530,79 @@ def test_extract_runs_uses_later_roots_as_rerun_overrides(tmp_path: Path, monkey
     assert "rerun-run" in str(rows_by_model["Qwen/Qwen3-8B"].result_dir)
     assert rows_by_model["Qwen/Qwen3-14B"].mst_rps == pytest.approx(2.0)
     assert "main-run" in str(rows_by_model["Qwen/Qwen3-14B"].result_dir)
+
+
+def test_multi_root_rerun_manifest_uses_first_root_as_base_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    main_run = _write_orchestrator_run(
+        tmp_path / "main",
+        run_id="main-run",
+        models=["Qwen/Qwen3-30B-A3B-Instruct-2507", "Qwen/Qwen3-14B"],
+        bundle_specs={
+            "Qwen/Qwen3-30B-A3B-Instruct-2507": {
+                "mst_rps": 40.0,
+                "high_bound_rate": 40.0,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+                "confidence": "low",
+                "termination_reason": "max_request_rate_limited",
+            },
+            "Qwen/Qwen3-14B": {
+                "mst_rps": 8.0,
+                "high_bound_rate": 8.5,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+            },
+        },
+    )
+    rerun = _write_orchestrator_run(
+        tmp_path / "rerun",
+        run_id="rerun-run",
+        models=["Qwen/Qwen3-8B"],
+        bundle_specs={
+            "Qwen/Qwen3-8B": {
+                "mst_rps": 7.0,
+                "high_bound_rate": 7.5,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+            },
+        },
+    )
+
+    artifacts = analyze_orchestrator_runs(
+        orchestrator_run_roots=(main_run, rerun),
+        output_dir=tmp_path / "results" / "analysis" / "merged",
+        emit_rerun_manifest=True,
+        settings=AnalyzerSettings.from_dict(
+            {
+                "suppressions": {
+                    "disable_families": [
+                        "within_size_outlier",
+                        "larger_model_inversion",
+                        "same_family_non_monotonicity",
+                        "trace_instability_suspect",
+                        "slo_driven_disagreement",
+                    ],
+                },
+            }
+        ),
+    )
+
+    assert artifacts.rerun_manifest_path is not None
+    rerun_manifest = yaml.safe_load(artifacts.rerun_manifest_path.read_text(encoding="utf-8"))
+    assert rerun_manifest["run"]["run_id"] == "main-run-mst-anomaly-rerun"
+    assert [experiment["models"] for experiment in rerun_manifest["experiments"]] == [
+        ["Qwen/Qwen3-30B-A3B-Instruct-2507"]
+    ]
 
 
 def test_extract_run_accepts_collected_slurm_orchestrator_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

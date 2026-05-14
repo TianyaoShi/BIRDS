@@ -7,6 +7,10 @@ from typing import Any, Mapping, Sequence
 
 import yaml
 
+from local_orchestrator.manifest import load_manifest
+from local_orchestrator.matrix import expand_manifest
+from local_orchestrator.models import ExpandedExperimentJob
+
 from .config import AnalyzerSettings
 from .extract import ExtractedRun, extract_run, extract_runs
 from .models import AnalysisArtifacts, AnomalyCandidate, BucketSummary, SuggestedRerunPlan, TraceDiagnostic
@@ -338,11 +342,6 @@ def _write_suggested_rerun_manifest(
     truncated = False
 
     rows_by_experiment_id = {row.experiment_id: row for row in extracted.rows}
-    if len(set(extracted.source_manifest_paths)) > 1:
-        raise RuntimeError(
-            "suggested rerun manifest emission requires one source manifest; "
-            "run the analyzer per orchestrator root when aggregating different workloads"
-        )
     for anomaly in anomalies:
         row = rows_by_experiment_id.get(anomaly.experiment_id)
         if row is None:
@@ -403,8 +402,12 @@ def _write_suggested_rerun_manifest(
     experiments = manifest_payload.get("experiments")
     if not isinstance(experiments, list):
         raise RuntimeError("manifest.experiments must be a list")
+    base_jobs_by_source_index: dict[int, list[ExpandedExperimentJob]] = {}
+    for base_job in expand_manifest(load_manifest(extracted.manifest_path)):
+        base_jobs_by_source_index.setdefault(base_job.source_index, []).append(base_job)
 
     filtered_experiments: list[dict[str, Any]] = []
+    emitted_experiment_ids: set[str] = set()
     for source_index, raw_experiment in enumerate(experiments):
         if not isinstance(raw_experiment, Mapping):
             raise RuntimeError("manifest experiments[] entries must be mappings")
@@ -424,30 +427,48 @@ def _write_suggested_rerun_manifest(
             elif isinstance(raw_workloads, str):
                 workloads.append(raw_workloads)
 
-        matched_rows = [
-            row
-            for row in extracted.rows
-            if extracted.expanded_jobs[row.experiment_id].source_index == source_index
-            if row.experiment_id in selected_experiment_set
-            and row.model in selected_model_set
-            and row.workload_path in selected_workload_set
-            and row.model in models
-            and _manifest_workload_matches(
-                workload_path=row.workload_path,
+        source_jobs = base_jobs_by_source_index.get(source_index, [])
+        matched_rows = []
+        matched_base_jobs = []
+        for base_job in source_jobs:
+            if base_job.model not in selected_model_set:
+                continue
+            if base_job.model not in models:
+                continue
+            if not _manifest_workload_matches(
+                workload_path=base_job.workload,
                 manifest_workloads=workloads,
                 manifest_path=extracted.manifest_path,
+            ):
+                continue
+            row = _selected_row_for_base_job(
+                base_job=base_job,
+                rows=extracted.rows,
+                selected_experiment_ids=selected_experiment_set,
+                selected_workloads=selected_workload_set,
             )
-        ]
+            if row is None:
+                continue
+            matched_base_jobs.append(base_job)
+            matched_rows.append(row)
         if not matched_rows:
             continue
 
-        selected_experiment_models = [model for model in models if model in selected_model_set]
+        selected_experiment_models = []
+        for base_job in matched_base_jobs:
+            if base_job.model not in selected_experiment_models:
+                selected_experiment_models.append(base_job.model)
         if not selected_experiment_models:
             continue
 
         selected_experiment_workloads = []
-        for row in matched_rows:
-            copied = workload_copy_map[row.workload_path]
+        for base_job in matched_base_jobs:
+            if base_job.workload not in workload_copy_map:
+                workload_copy_map[base_job.workload] = _copy_workload_file(
+                    workload_path=base_job.workload,
+                    output_dir=output_dir,
+                )
+            copied = workload_copy_map[base_job.workload]
             relative = copied.name
             if relative not in selected_experiment_workloads:
                 selected_experiment_workloads.append(relative)
@@ -461,11 +482,20 @@ def _write_suggested_rerun_manifest(
             search.update(rate_limited_search)
             experiment["search"] = search
 
+        emitted_experiment_ids.update(row.experiment_id for row in matched_rows)
         experiment.pop("model", None)
         experiment["models"] = selected_experiment_models
         experiment.pop("workload", None)
         experiment["workloads"] = selected_experiment_workloads
         filtered_experiments.append(experiment)
+
+    missing_experiment_ids = set(selected_experiment_ids) - emitted_experiment_ids
+    if missing_experiment_ids:
+        raise RuntimeError(
+            "suggested rerun manifest could not map selected targets into the first/root manifest: "
+            + ", ".join(sorted(missing_experiment_ids))
+            + "; put the compatible base run first or analyze mixed workloads separately"
+        )
 
     manifest_payload["experiments"] = filtered_experiments
     manifest_path = output_dir / "suggested_rerun_manifest.yaml"
@@ -478,6 +508,48 @@ def _write_suggested_rerun_manifest(
         workload_copies=tuple(workload_copy_map[path] for path in selected_workloads),
         truncated=truncated,
     )
+
+
+def _selected_row_for_base_job(
+    *,
+    base_job: ExpandedExperimentJob,
+    rows: Sequence[Any],
+    selected_experiment_ids: set[str],
+    selected_workloads: set[Path],
+) -> Any | None:
+    for row in rows:
+        if row.experiment_id not in selected_experiment_ids:
+            continue
+        if row.workload_path not in selected_workloads:
+            continue
+        if _row_matches_base_job(row=row, base_job=base_job):
+            return row
+    return None
+
+
+def _row_matches_base_job(*, row: Any, base_job: ExpandedExperimentJob) -> bool:
+    return (
+        row.model == base_job.model
+        and row.endpoint == base_job.endpoint
+        and row.server_signature_key == base_job.server_signature_key
+        and _same_workload_for_rerun(row=row, workload_path=base_job.workload)
+    )
+
+
+def _same_workload_for_rerun(*, row: Any, workload_path: Path) -> bool:
+    if row.workload_path == workload_path:
+        return True
+    return row.workload_name == _workload_name(workload_path)
+
+
+def _workload_name(workload_path: Path) -> str:
+    try:
+        payload = yaml.safe_load(workload_path.read_text(encoding="utf-8"))
+    except OSError:
+        return workload_path.stem
+    if isinstance(payload, Mapping) and isinstance(payload.get("name"), str) and payload["name"]:
+        return str(payload["name"])
+    return workload_path.stem
 
 
 def _rerun_search_for_rate_limited_rows(

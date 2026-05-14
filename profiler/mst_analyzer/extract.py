@@ -106,12 +106,11 @@ def extract_runs(orchestrator_run_roots: tuple[str | Path, ...] | list[str | Pat
     decisive_rows = set(id(row) for row in selected_by_key.values())
     merged_rows = [row for row in all_rows if id(row) in decisive_rows]
     first = extracted_runs[0]
-    last = extracted_runs[-1]
     return ExtractedRun(
         run_id="+".join(extracted.run_id for extracted in extracted_runs),
         run_root=first.run_root,
-        manifest_path=last.manifest_path,
-        manifest_payload=last.manifest_payload,
+        manifest_path=first.manifest_path,
+        manifest_payload=first.manifest_payload,
         expanded_jobs=expanded_jobs,
         rows=tuple(merged_rows),
         source_manifest_paths=tuple(extracted.manifest_path for extracted in extracted_runs),
