@@ -256,7 +256,7 @@ def _artifacts_are_newer_than_state(state: dict[str, Any], *paths: Path) -> bool
     except ValueError:
         return True
     try:
-        return all(path.stat().st_mtime >= state_timestamp for path in paths)
+        return any(path.stat().st_mtime >= state_timestamp for path in paths)
     except OSError:
         return False
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -612,6 +613,71 @@ def test_collect_run_marks_nonterminal_job_succeeded_when_final_artifacts_exist(
     assert repaired["artifacts"]["search_trace"] == str(result_dir / "search_trace.json")
     assert repaired["artifacts"]["final_report_json"] == str(result_dir / "final_report.json")
     assert repaired["artifacts"]["final_report_md"] == str(result_dir / "final_report.md")
+
+
+def test_collect_run_repairs_failed_job_when_report_is_generated_after_state(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workload = _write_workload(tmp_path, "sharegpt.yaml")
+    manifest_path = _write_manifest(
+        tmp_path,
+        {
+            "run": {"output_root": str(tmp_path / "runs"), "mst_output_root": str(tmp_path / "mst")},
+            "experiments": [
+                {"id": "exp-report-only", "model": "model-report-only", "workload": str(workload)},
+            ],
+        },
+    )
+
+    plan = materialize_run_plan(load_manifest(manifest_path), "run-report-only-repair")
+    run_root = tmp_path / "runs" / "run-report-only-repair"
+    (run_root / "resume-submission.json").write_text(
+        json.dumps(
+            {
+                "groups": [{"group_key": "gpu1", "job_id": "12345"}],
+                "submitted_at": "2026-05-11T07:39:08+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    state_path = run_root / "jobs" / "exp-report-only.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["status"] = "failed"
+    state["last_error"] = (
+        "Slurm array task 12345_0 is no longer active, but orchestrator state remained running; "
+        "the task likely ended before finalization, for example due to scancel, time limit, or node failure."
+    )
+    state["updated_at"] = "1970-01-01T00:33:20+00:00"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    group_payload = json.loads(Path(plan["groups"][0]["plan_path"]).read_text(encoding="utf-8"))
+    result_dir = Path(group_payload["jobs"][0]["job"]["result_dir"])
+    result_dir.mkdir(parents=True, exist_ok=True)
+    search_trace = result_dir / "search_trace.json"
+    final_report_json = result_dir / "final_report.json"
+    final_report_md = result_dir / "final_report.md"
+    search_trace.write_text("{}", encoding="utf-8")
+    final_report_json.write_text("{}", encoding="utf-8")
+    final_report_md.write_text("# report\n", encoding="utf-8")
+    os.utime(search_trace, (1000.0, 1000.0))
+    os.utime(final_report_json, (3000.0, 3000.0))
+
+    def fake_run(command, **kwargs):
+        assert command[:4] == ["squeue", "-h", "-j", "12345"]
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("slurm_orchestrator.state.subprocess.run", fake_run)
+
+    collected = collect_run(plan["run_root"])
+
+    assert collected["summary"]["counts"]["succeeded"] == 1
+    repaired = json.loads(state_path.read_text(encoding="utf-8"))
+    assert repaired["status"] == "succeeded"
+    assert repaired["last_error"] is None
+    assert repaired["artifacts"]["search_trace"] == str(search_trace)
+    assert repaired["artifacts"]["final_report_json"] == str(final_report_json)
 
 
 def test_collect_run_repairs_false_stale_failure_while_slurm_array_is_active(

@@ -239,14 +239,15 @@ def _plot_multi_line(
         axis.plot(filtered_x, filtered_y, marker="o", linewidth=1.8, markersize=3.5, label=label, color=color)
         plotted += 1
     if plotted == 0:
-        raise ValueError(f"{title} requires at least one non-empty data series")
+        _mark_no_data(axis, title)
+    else:
+        axis.legend()
     axis.set_title(title)
     axis.set_xlabel(x_label)
     axis.set_ylabel(y_label)
     if y_min is not None or y_max is not None:
         axis.set_ylim(bottom=y_min, top=y_max)
     axis.grid(True, alpha=0.3)
-    axis.legend()
     figure.tight_layout()
     figure.savefig(output_path, dpi=150)
     plt.close(figure)
@@ -264,10 +265,11 @@ def _plot_scatter(
     color: str,
 ) -> Path:
     filtered = [(x, float(y)) for x, y in zip(x_values, y_values) if y is not None]
-    if not filtered:
-        raise ValueError(f"{title} requires at least one point")
     figure, axis = plt.subplots(figsize=(7, 4.5))
-    axis.scatter([item[0] for item in filtered], [item[1] for item in filtered], color=color, s=36)
+    if filtered:
+        axis.scatter([item[0] for item in filtered], [item[1] for item in filtered], color=color, s=36)
+    else:
+        _mark_no_data(axis, title)
     axis.set_title(title)
     axis.set_xlabel(x_label)
     axis.set_ylabel(y_label)
@@ -276,6 +278,19 @@ def _plot_scatter(
     figure.savefig(output_path, dpi=150)
     plt.close(figure)
     return output_path
+
+
+def _mark_no_data(axis, title: str) -> None:
+    axis.text(
+        0.5,
+        0.5,
+        "No data available",
+        transform=axis.transAxes,
+        ha="center",
+        va="center",
+        color="#6b7280",
+    )
+    axis.set_title(title)
 
 
 def _plot_classification_scatter(
