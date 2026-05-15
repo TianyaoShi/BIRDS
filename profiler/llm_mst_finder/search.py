@@ -587,7 +587,7 @@ class SearchController:
                 raise RuntimeError("search trial analysis result has unexpected type")
             if analysis.trial_validity == "valid":
                 return event
-            if analysis.trial_validity != "client_limited":
+            if not self._retryable_invalid_trial(analysis):
                 self._reject_invalid_trial(analysis, event["trial_id"])
             if attempt_index >= config.client_limited_retry_attempts:
                 self._reject_invalid_trial(analysis, event["trial_id"])
@@ -1009,6 +1009,10 @@ class SearchController:
             f"trial {trial_id} was not valid for search bounds: "
             f"{analysis.trial_validity}. Evidence: {reason_text}"
         )
+
+    @staticmethod
+    def _retryable_invalid_trial(analysis: TrialAnalysisResult) -> bool:
+        return analysis.trial_validity in {"client_limited", "metrics_invalid"}
 
     @staticmethod
     def _analysis_decision(analysis: TrialAnalysisResult) -> bool | None:

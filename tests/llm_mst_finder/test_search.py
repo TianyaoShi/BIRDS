@@ -560,6 +560,72 @@ def test_client_limited_open_loop_trial_cools_down_and_retries(tmp_path: Path) -
     asyncio.run(run())
 
 
+def test_metrics_invalid_open_loop_trial_is_retried(tmp_path: Path) -> None:
+    class MetricsInvalidOnceRunner(FakeRunner):
+        def __init__(self) -> None:
+            super().__init__(sustainable_rate=10.0)
+            self.rate_two_calls = 0
+
+        async def run_trial(self, config: TrialConfig, *, request_source, output_dir: str | Path):
+            result = await super().run_trial(config, request_source=request_source, output_dir=output_dir)
+            if config.mode == "open-loop" and config.request_rate == pytest.approx(2.0):
+                self.rate_two_calls += 1
+                if self.rate_two_calls == 1:
+                    self.analyses[config.trial_id] = _analysis(
+                        config.trial_id,
+                        validity="metrics_invalid",
+                    )
+            return result
+
+    async def run() -> None:
+        runner = MetricsInvalidOnceRunner()
+        controller = SearchController(
+            runner,
+            request_source=_source(),
+            output_dir=tmp_path / "search-metrics-invalid-retry",
+            analyze_trial=lambda trial_dir: runner.analyses[Path(trial_dir).name],
+            write_analysis=lambda trial_dir, result: Path(trial_dir) / "analysis.json",
+        )
+        result = await controller.search(
+            SearchConfig(
+                search_id="fixture-metrics-invalid-retry",
+                search_mode="open-loop",
+                model="fake-model",
+                trial_duration_s=1.0,
+                rate_precision=0.1,
+                initial_request_rate=1.0,
+                max_request_rate=2.0,
+                client_limited_retry_attempts=1,
+                client_limited_retry_cooldown_s=0.0,
+            )
+        )
+
+        assert result.termination_reason == "max_request_rate_limited"
+        rate_two_calls = [
+            call
+            for call in runner.calls
+            if call.mode == "open-loop" and call.request_rate == pytest.approx(2.0)
+        ]
+        assert len(rate_two_calls) == 2
+        trace = json.loads(
+            (tmp_path / "search-metrics-invalid-retry" / "search_trace.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        rate_two_events = [
+            event
+            for event in trace["events"]
+            if event["mode"] == "open-loop" and event["request_rate"] == pytest.approx(2.0)
+        ]
+        assert [event["purpose"] for event in rate_two_events] == [
+            "open_loop_bracket_high",
+            "open_loop_bracket_high_client_retry1",
+        ]
+        assert trace["bounds"]["low_rate"] == pytest.approx(2.0)
+
+    asyncio.run(run())
+
+
 def test_uncertain_open_loop_rate_is_retried_with_extended_duration(tmp_path: Path) -> None:
     class UncertainFirstHighRunner(FakeRunner):
         def __init__(self) -> None:
