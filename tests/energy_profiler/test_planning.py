@@ -22,7 +22,18 @@ def _write_manifest(
     *,
     model: str = "Qwen/Qwen3-8B",
     experiment_id: str = "exp-a",
+    launch: dict[str, object] | None = None,
 ) -> Path:
+    launch_payload = {
+        "executable": "vllm",
+        "dtype": "float16",
+        "tensor_parallel_size": 1,
+        "gpu_count": 1,
+        "max_model_len": 32768,
+        "max_num_seqs": 64,
+    }
+    if launch:
+        launch_payload.update(launch)
     manifest_path = tmp_path / "manifest.yaml"
     manifest_path.write_text(
         yaml.safe_dump(
@@ -35,14 +46,7 @@ def _write_manifest(
                     "base_port_end": 8199,
                     "metrics_port_offset": 2000,
                 },
-                "launch": {
-                    "executable": "vllm",
-                    "dtype": "float16",
-                    "tensor_parallel_size": 1,
-                    "gpu_count": 1,
-                    "max_model_len": 32768,
-                    "max_num_seqs": 64,
-                },
+                "launch": launch_payload,
                 "search": {
                     "search_mode": "open-loop",
                     "ttft_slo_ms": 2000,
@@ -72,11 +76,20 @@ def _write_orchestrator_run(
     model: str = "Qwen/Qwen3-8B",
     manifest_name: str = "manifest.yaml",
     workload_name: str = "sharegpt.yaml",
+    workload_display_name: str = "sharegpt",
     experiment_id: str = "exp-a",
+    launch: dict[str, object] | None = None,
 ) -> tuple[Path, Path]:
     workload = tmp_path / workload_name
-    workload.write_text("name: sharegpt\n", encoding="utf-8")
-    manifest_path = _write_manifest(tmp_path, workload, model=model, experiment_id=experiment_id)
+    workload.parent.mkdir(parents=True, exist_ok=True)
+    workload.write_text(f"name: {workload_display_name}\n", encoding="utf-8")
+    manifest_path = _write_manifest(
+        tmp_path,
+        workload,
+        model=model,
+        experiment_id=experiment_id,
+        launch=launch,
+    )
     if manifest_path.name != manifest_name:
         renamed = tmp_path / manifest_name
         manifest_path.rename(renamed)
@@ -279,3 +292,84 @@ def test_generate_plan_from_multiple_orchestrator_roots_includes_followup_only_m
         "main-loop",
         "thinking-rerun",
     }
+
+
+def test_generate_plan_from_multiple_roots_preserves_tensor_parallel_variants(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    tp1_run, _ = _write_orchestrator_run(
+        tmp_path / "tp1",
+        mst_rate=4.0,
+        run_id="tp1",
+        model="Qwen/Qwen3-32B",
+        experiment_id="qwen32-tp1",
+        manifest_name="tp1.yaml",
+    )
+    tp2_run, _ = _write_orchestrator_run(
+        tmp_path / "tp2",
+        mst_rate=7.0,
+        run_id="tp2",
+        model="Qwen/Qwen3-32B",
+        experiment_id="qwen32-tp2",
+        manifest_name="tp2.yaml",
+        launch={"gpu_count": 2, "tensor_parallel_size": 2},
+    )
+
+    plan = generate_plan_from_orchestrator_runs(
+        orchestrator_run_roots=(tp1_run, tp2_run),
+        output_plan=tmp_path / "experiments" / "energy" / "merged.yaml",
+    )
+
+    assert sorted((job.launch.tensor_parallel_size, job.mst_rate) for job in plan.jobs) == [
+        (1, 4.0),
+        (2, 7.0),
+    ]
+
+
+def test_generate_plan_from_multiple_roots_matches_rerun_workload_aliases_and_ignores_mixed_workloads(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    main_run, _ = _write_orchestrator_run(
+        tmp_path / "main",
+        mst_rate=4.0,
+        run_id="main",
+        model="Qwen/Qwen3-30B-A3B-Instruct-2507",
+        experiment_id="qwen30-main",
+        manifest_name="main.yaml",
+        workload_name="wildchat_hf_8192.yaml",
+        workload_display_name="wildchat-hf-8192",
+    )
+    rerun, _ = _write_orchestrator_run(
+        tmp_path / "rerun",
+        mst_rate=8.0,
+        run_id="rerun",
+        model="Qwen/Qwen3-30B-A3B-Instruct-2507",
+        experiment_id="qwen30-rerun",
+        manifest_name="rerun.yaml",
+        workload_name="wildchat_hf_8k_mst_anomaly_rerun.yaml",
+        workload_display_name="wildchat-hf-8k_mst_anomaly_rerun",
+    )
+    sharegpt_rerun, _ = _write_orchestrator_run(
+        tmp_path / "sharegpt",
+        mst_rate=11.0,
+        run_id="sharegpt-rerun",
+        model="Qwen/Qwen3-4B-Instruct-2507",
+        experiment_id="sharegpt-rerun",
+        manifest_name="sharegpt.yaml",
+        workload_name="sharegpt.yaml",
+        workload_display_name="live_sharegpt_workload_context",
+    )
+
+    plan = generate_plan_from_orchestrator_runs(
+        orchestrator_run_roots=(main_run, rerun, sharegpt_rerun),
+        output_plan=tmp_path / "experiments" / "energy" / "merged.yaml",
+    )
+
+    assert len(plan.jobs) == 1
+    assert plan.jobs[0].mst_rate == pytest.approx(8.0)
+    assert plan.jobs[0].metadata["source_orchestrator_run_id"] == "rerun"
+    assert plan.jobs[0].workload.name == "wildchat_hf_8k_mst_anomaly_rerun.yaml"

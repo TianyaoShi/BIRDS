@@ -167,26 +167,28 @@ def render_dry_run(plan: EnergyPlan) -> dict[str, Any]:
 
 
 def _load_orchestrator_jobs_from_roots(run_roots: tuple[Path, ...]) -> list[OrchestratorJobRecord]:
-    selected_by_experiment_id: dict[str, OrchestratorJobRecord] = {}
-    selected_by_key: dict[tuple[str, str, str], OrchestratorJobRecord] = {}
+    selected_by_key: dict[tuple[str, str, str, str], OrchestratorJobRecord] = {}
     all_jobs: list[OrchestratorJobRecord] = []
+    base_workload_keys: set[str] | None = None
     for run_root in run_roots:
         run_jobs = _load_orchestrator_jobs(run_root)
+        if base_workload_keys is None:
+            base_workload_keys = {_logical_workload_key(job.workload) for job in run_jobs}
+        run_jobs = [
+            job
+            for job in run_jobs
+            if _logical_workload_key(job.workload) in base_workload_keys
+        ]
         all_jobs.extend(run_jobs)
         for job in run_jobs:
             if job.status != "succeeded":
                 continue
-            selected_by_experiment_id[job.experiment_id] = job
             selected_by_key[_decisive_job_key(job)] = job
 
-    decisive_experiment_jobs = set(id(job) for job in selected_by_experiment_id.values())
     decisive_config_jobs = set(id(job) for job in selected_by_key.values())
     merged: list[OrchestratorJobRecord] = []
     for job in all_jobs:
-        if (
-            job.status == "succeeded"
-            and (id(job) not in decisive_experiment_jobs or id(job) not in decisive_config_jobs)
-        ):
+        if job.status == "succeeded" and id(job) not in decisive_config_jobs:
             continue
         merged.append(job)
     return merged
@@ -199,8 +201,29 @@ def _load_execution_from_orchestrator_run(run_root: Path) -> EnergyPlanExecution
     return EnergyPlanExecution.from_run_config(manifest.run)
 
 
-def _decisive_job_key(job: OrchestratorJobRecord) -> tuple[str, str, str]:
-    return (job.model, str(job.workload), job.endpoint)
+def _decisive_job_key(job: OrchestratorJobRecord) -> tuple[str, str, str, str]:
+    return (job.model, _logical_workload_key(job.workload), job.endpoint, job.server_signature_key)
+
+
+def _logical_workload_key(workload: Path) -> str:
+    name = _workload_name(workload)
+    normalized = name.strip().lower().replace("_", "-")
+    for suffix in ("-mst-anomaly-rerun", "-anomaly-rerun", "-rerun"):
+        if normalized.endswith(suffix):
+            normalized = normalized[: -len(suffix)]
+    normalized = normalized.replace("-8k", "-8192")
+    normalized = normalized.replace("-4k", "-4096")
+    return normalized
+
+
+def _workload_name(workload: Path) -> str:
+    try:
+        payload = yaml.safe_load(workload.read_text(encoding="utf-8"))
+    except OSError:
+        return workload.stem
+    if isinstance(payload, Mapping) and isinstance(payload.get("name"), str) and payload["name"]:
+        return str(payload["name"])
+    return workload.stem
 
 
 def _load_orchestrator_jobs(run_root: Path) -> list[OrchestratorJobRecord]:
