@@ -5,7 +5,7 @@ from fnmatch import fnmatchcase
 import json
 import os
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 import yaml
 
@@ -408,9 +408,9 @@ def _write_suggested_rerun_manifest(
     experiments = manifest_payload.get("experiments")
     if not isinstance(experiments, list):
         raise RuntimeError("manifest.experiments must be a list")
-    base_jobs_by_source_index: dict[int, list[ExpandedExperimentJob]] = {}
-    for base_job in extracted.expanded_jobs.values():
-        base_jobs_by_source_index.setdefault(base_job.source_index, []).append(base_job)
+    jobs_by_source_index: dict[int, list[ExpandedExperimentJob]] = {}
+    for job in extracted.expanded_jobs.values():
+        jobs_by_source_index.setdefault(job.source_index, []).append(job)
 
     filtered_experiments: list[dict[str, Any]] = []
     emitted_experiment_ids: set[str] = set()
@@ -433,7 +433,21 @@ def _write_suggested_rerun_manifest(
             elif isinstance(raw_workloads, str):
                 workloads.append(raw_workloads)
 
-        source_jobs = base_jobs_by_source_index.get(source_index, [])
+        source_jobs = _candidate_jobs_for_manifest_experiment(
+            jobs=jobs_by_source_index.get(source_index, ()),
+            experiment=experiment,
+            models=models,
+            workloads=workloads,
+            manifest_path=extracted.manifest_path,
+        )
+        if not source_jobs and isinstance(experiment.get("launch"), Mapping):
+            source_jobs = _candidate_jobs_for_manifest_experiment(
+                jobs=extracted.expanded_jobs.values(),
+                experiment=experiment,
+                models=models,
+                workloads=workloads,
+                manifest_path=extracted.manifest_path,
+            )
         matched_rows = []
         matched_base_jobs = []
         for base_job in source_jobs:
@@ -497,31 +511,13 @@ def _write_suggested_rerun_manifest(
 
     missing_experiment_ids = set(selected_experiment_ids) - emitted_experiment_ids
     if missing_experiment_ids:
-        rows_by_experiment_id = {row.experiment_id: row for row in extracted.rows}
-        for experiment_id in sorted(missing_experiment_ids):
-            job = extracted.expanded_jobs.get(experiment_id)
-            row = rows_by_experiment_id.get(experiment_id)
-            if job is None or row is None:
-                raise RuntimeError(
-                    "suggested rerun manifest could not map selected target into the first/root manifest "
-                    f"or frozen Slurm plan: {experiment_id}"
-                )
-            if job.workload not in workload_copy_map:
-                workload_copy_map[job.workload] = _copy_workload_file(
-                    workload_path=job.workload,
-                    output_dir=output_dir,
-                )
-            filtered_experiments.append(
-                _explicit_experiment_from_job(
-                    job=job,
-                    workload=workload_copy_map[job.workload].name,
-                    rate_limited_search=_rerun_search_for_rate_limited_rows(
-                        matched_rows=[row],
-                        extracted=extracted,
-                    ),
-                )
-            )
-            emitted_experiment_ids.add(experiment_id)
+        selected_experiment_ids = [
+            experiment_id
+            for experiment_id in selected_experiment_ids
+            if experiment_id in emitted_experiment_ids
+        ]
+    if not filtered_experiments:
+        return None
 
     manifest_payload["experiments"] = filtered_experiments
     _strip_shadowed_search_keys_from_overrides(manifest_payload)
@@ -537,89 +533,6 @@ def _write_suggested_rerun_manifest(
     )
 
 
-def _explicit_experiment_from_job(
-    *,
-    job: ExpandedExperimentJob,
-    workload: str,
-    rate_limited_search: dict[str, Any] | None,
-) -> dict[str, Any]:
-    search = _search_payload_from_job(job)
-    if rate_limited_search:
-        search.update(rate_limited_search)
-    return {
-        "id": job.experiment_id,
-        "model": job.model,
-        "workload": workload,
-        "launch": _launch_payload_from_job(job),
-        "search": search,
-    }
-
-
-def _launch_payload_from_job(job: ExpandedExperimentJob) -> dict[str, Any]:
-    launch = job.launch
-    payload: dict[str, Any] = {
-        "tensor_parallel_size": launch.tensor_parallel_size,
-        "gpu_count": launch.gpu_count,
-        "dtype": launch.dtype,
-        "gpu_memory_utilization": launch.gpu_memory_utilization,
-        "max_model_len": launch.max_model_len,
-        "max_num_seqs": launch.max_num_seqs,
-        "max_num_batched_tokens": launch.max_num_batched_tokens,
-        "readiness_timeout_s": launch.readiness_timeout_s,
-        "readiness_interval_s": launch.readiness_interval_s,
-    }
-    if launch.template is not None:
-        payload["template"] = list(launch.template)
-    if launch.executable != "vllm":
-        payload["executable"] = launch.executable
-    if launch.extra_args:
-        payload["extra_args"] = list(launch.extra_args)
-    if launch.env:
-        payload["env"] = dict(launch.env)
-    if launch.quantization is not None:
-        payload["quantization"] = launch.quantization
-    if launch.tokenizer_mode is not None:
-        payload["tokenizer_mode"] = launch.tokenizer_mode
-    if launch.host != "127.0.0.1":
-        payload["host"] = launch.host
-    if launch.readiness_path != "/v1/models":
-        payload["readiness_path"] = launch.readiness_path
-    return {key: value for key, value in payload.items() if value is not None}
-
-
-def _search_payload_from_job(job: ExpandedExperimentJob) -> dict[str, Any]:
-    search = job.search
-    payload: dict[str, Any] = {
-        "search_mode": search.search_mode,
-        "trial_min_duration_s": search.trial_min_duration_s,
-        "trial_max_duration_s": search.trial_max_duration_s,
-        "final_confirmation_duration_s": search.final_confirmation_duration_s,
-        "rate_precision": search.rate_precision,
-        "initial_request_rate": search.initial_request_rate,
-        "max_request_rate": search.max_request_rate,
-        "max_binary_steps": search.max_binary_steps,
-        "max_bracket_trials": search.max_bracket_trials,
-        "client_limited_retry_attempts": search.client_limited_retry_attempts,
-        "client_limited_retry_cooldown_s": search.client_limited_retry_cooldown_s,
-        "closed_loop_initial_concurrency": search.closed_loop_initial_concurrency,
-        "closed_loop_min_trials": search.closed_loop_min_trials,
-        "max_closed_loop_concurrency": search.max_closed_loop_concurrency,
-        "closed_loop_plateau_relative_gain": search.closed_loop_plateau_relative_gain,
-        "metrics_interval_s": search.metrics_interval_s,
-        "window_s": search.window_s,
-        "ttft_slo_ms": search.ttft_slo_ms,
-        "tpot_slo_ms": search.tpot_slo_ms,
-        "ttft_slo_field": search.ttft_slo_field,
-        "tpot_slo_field": search.tpot_slo_field,
-        "ttft_slo_mode": search.ttft_slo_mode,
-        "longbench_ttft_static_preset": search.longbench_ttft_static_preset,
-        "request_reuse_policy": search.request_reuse_policy,
-        "max_num_seqs": search.max_num_seqs,
-        "max_num_batched_tokens": search.max_num_batched_tokens,
-    }
-    return {key: value for key, value in payload.items() if value is not None}
-
-
 def _selected_row_for_base_job(
     *,
     base_job: ExpandedExperimentJob,
@@ -633,6 +546,69 @@ def _selected_row_for_base_job(
         if _row_matches_base_job(row=row, base_job=base_job):
             return row
     return None
+
+
+def _candidate_jobs_for_manifest_experiment(
+    *,
+    jobs: Iterable[ExpandedExperimentJob],
+    experiment: Mapping[str, Any],
+    models: Sequence[str],
+    workloads: Sequence[str],
+    manifest_path: Path,
+) -> list[ExpandedExperimentJob]:
+    candidates: list[ExpandedExperimentJob] = []
+    for job in jobs:
+        if models and job.model not in models:
+            continue
+        if workloads and not _manifest_workload_matches(
+            workload_path=job.workload,
+            manifest_workloads=workloads,
+            manifest_path=manifest_path,
+        ):
+            continue
+        if not _job_launch_matches_manifest_experiment(job=job, experiment=experiment):
+            continue
+        candidates.append(job)
+    return candidates
+
+
+def _job_launch_matches_manifest_experiment(
+    *,
+    job: ExpandedExperimentJob,
+    experiment: Mapping[str, Any],
+) -> bool:
+    raw_launch = experiment.get("launch")
+    if not isinstance(raw_launch, Mapping):
+        return True
+    launch = job.launch
+    comparable = {
+        "tensor_parallel_size": launch.tensor_parallel_size,
+        "gpu_count": launch.gpu_count,
+        "dtype": launch.dtype,
+        "quantization": launch.quantization,
+        "tokenizer_mode": launch.tokenizer_mode,
+        "gpu_memory_utilization": launch.gpu_memory_utilization,
+        "max_model_len": launch.max_model_len,
+        "max_num_seqs": launch.max_num_seqs,
+        "max_num_batched_tokens": launch.max_num_batched_tokens,
+        "readiness_timeout_s": launch.readiness_timeout_s,
+        "readiness_interval_s": launch.readiness_interval_s,
+    }
+    for key, actual in comparable.items():
+        if key in raw_launch and not _manifest_scalar_matches(actual, raw_launch[key]):
+            return False
+    raw_env = raw_launch.get("env")
+    if isinstance(raw_env, Mapping):
+        for key, expected in raw_env.items():
+            if str(launch.env.get(str(key))) != str(expected):
+                return False
+    return True
+
+
+def _manifest_scalar_matches(actual: Any, expected: Any) -> bool:
+    if isinstance(actual, (int, float)) and isinstance(expected, (int, float)):
+        return abs(float(actual) - float(expected)) < 1e-9
+    return actual == expected
 
 
 def _strip_shadowed_search_keys_from_overrides(manifest_payload: dict[str, Any]) -> None:
