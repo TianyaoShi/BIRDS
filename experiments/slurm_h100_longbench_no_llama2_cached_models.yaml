@@ -340,16 +340,12 @@ experiments:
 
   - id: longbench-expanded-single-gpu
     models:
-      - Qwen/Qwen3-0.6B
-      - Qwen/Qwen3-1.7B
       - Qwen/Qwen3-14B
       - Qwen/Qwen3-4B-Instruct-2507
       - Qwen/Qwen3-4B-Thinking-2507
       - Qwen/Qwen3-8B
-      - google/gemma-4-E2B-it
       - google/gemma-4-E4B-it
       - meta-llama/Llama-3.1-8B-Instruct
-      - meta-llama/Llama-3.2-1B-Instruct
       - meta-llama/Llama-3.2-3B-Instruct
       - openai/gpt-oss-20b
     workloads:
