@@ -420,7 +420,10 @@ def _build_plan_jobs(
             assert mst_rate is not None
             rounded_rate, step, clamped = round_mst_rate(mst_rate, rounding)
             metadata = _base_job_metadata(source_job, step, clamped)
+            metadata["rounding_policy"] = rounding.mst_mode
             metadata["rounded_from_rate"] = mst_rate
+            if rounding.mst_mode == "floor_decimal":
+                metadata["rounding_decimal_places"] = rounding.mst_decimal_places
             plan_job = _make_plan_job(
                 source_job=source_job,
                 request_rate=rounded_rate,
@@ -443,6 +446,7 @@ def _build_plan_jobs(
                 metadata = _base_job_metadata(source_job, step, clamped)
                 metadata.update(
                     {
+                        "rounding_policy": rounding.sweep_mode,
                         "rounded_from_rate": mst_rate,
                         "sweep_rate_index": index,
                         "sweep_rate_count": len(rates),
@@ -568,10 +572,16 @@ def choose_display_step(mst_rate: float, rounding: EnergyPlanRounding) -> float:
 def round_mst_rate(mst_rate: float, rounding: EnergyPlanRounding) -> tuple[float, float, bool]:
     if mst_rate <= 0.0:
         raise PlanningError(f"MST rate must be positive for rounded profiling, got {mst_rate}")
-    step = choose_display_step(mst_rate, rounding)
+    if rounding.mst_mode == "floor_decimal":
+        step = 10 ** (-rounding.mst_decimal_places)
+    else:
+        step = choose_display_step(mst_rate, rounding)
     if mst_rate < rounding.minimum_rate:
         return rounding.minimum_rate, step, True
-    rounded = _floor_to_step(mst_rate, step)
+    if rounding.mst_mode == "floor_decimal":
+        rounded = _floor_to_decimal_places(mst_rate, rounding.mst_decimal_places)
+    else:
+        rounded = _floor_to_step(mst_rate, step)
     if rounded < rounding.minimum_rate:
         return rounding.minimum_rate, step, True
     return rounded, step, False
@@ -625,6 +635,11 @@ def _floor_to_step(value: float, step: float) -> float:
     step_dec = _decimal_from_float(step)
     units = (value_dec / step_dec).to_integral_value(rounding=ROUND_FLOOR)
     return float(units * step_dec)
+
+
+def _floor_to_decimal_places(value: float, decimal_places: int) -> float:
+    quantum = Decimal("1").scaleb(-decimal_places)
+    return float(_decimal_from_float(value).quantize(quantum, rounding=ROUND_FLOOR))
 
 
 def _decimal_from_float(value: float) -> Decimal:

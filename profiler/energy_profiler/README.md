@@ -50,9 +50,10 @@ run ID.
 Supported modes:
 
 - `mst-rounded`: one fixed-rate profiling job per selected succeeded
-  orchestrator job, using a downward-rounded MST rate.
+  orchestrator job, using an MST rate floored to two decimal places by default.
 - `sweep`: multiple fixed-rate jobs from low load through rounded MST for
-  selected models or experiment IDs.
+  selected models or experiment IDs. Sweep mode uses preferred request-rate
+  steps to keep the grid compact.
 - `explicit`: fixed-rate jobs at request rates supplied with
   `--request-rates`.
 

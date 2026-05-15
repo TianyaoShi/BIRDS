@@ -319,11 +319,26 @@ class EnergyPlanExecution:
 @dataclass(frozen=True, slots=True)
 class EnergyPlanRounding:
     mode: str = "floor_preferred"
+    mst_mode: str = "floor_decimal"
+    mst_decimal_places: int = 2
+    sweep_mode: str = "floor_preferred"
     preferred_steps: tuple[float, ...] = (0.05, 0.1, 0.2, 0.25, 0.5, 1.0)
     minimum_rate: float = 0.1
 
     def __post_init__(self) -> None:
         _require_non_empty("rounding.mode", self.mode)
+        _require_non_empty("rounding.mst_mode", self.mst_mode)
+        _require_non_empty("rounding.sweep_mode", self.sweep_mode)
+        if self.mst_mode not in {"floor_decimal", "floor_preferred"}:
+            raise ValueError("rounding.mst_mode must be one of floor_decimal, floor_preferred")
+        if self.sweep_mode != "floor_preferred":
+            raise ValueError("rounding.sweep_mode must be floor_preferred")
+        if (
+            isinstance(self.mst_decimal_places, bool)
+            or not isinstance(self.mst_decimal_places, int)
+            or self.mst_decimal_places < 0
+        ):
+            raise ValueError("rounding.mst_decimal_places must be an integer >= 0")
         if not self.preferred_steps:
             raise ValueError("rounding.preferred_steps must be non-empty")
         previous = 0.0
@@ -337,14 +352,26 @@ class EnergyPlanRounding:
     def to_dict(self) -> dict[str, Any]:
         return {
             "mode": self.mode,
+            "mst_mode": self.mst_mode,
+            "mst_decimal_places": self.mst_decimal_places,
+            "sweep_mode": self.sweep_mode,
             "preferred_steps": list(self.preferred_steps),
             "minimum_rate": self.minimum_rate,
         }
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "EnergyPlanRounding":
+        legacy_mode = _expect_str(payload.get("mode", "floor_preferred"), "rounding.mode")
+        default_mst_mode = legacy_mode if "mode" in payload and "mst_mode" not in payload else "floor_decimal"
         return cls(
-            mode=_expect_str(payload.get("mode", "floor_preferred"), "rounding.mode"),
+            mode=legacy_mode,
+            mst_mode=_expect_str(payload.get("mst_mode", default_mst_mode), "rounding.mst_mode"),
+            mst_decimal_places=_expect_int(
+                payload.get("mst_decimal_places", 2),
+                "rounding.mst_decimal_places",
+                minimum=0,
+            ),
+            sweep_mode=_expect_str(payload.get("sweep_mode", legacy_mode), "rounding.sweep_mode"),
             preferred_steps=_expect_float_tuple(payload.get("preferred_steps", [0.05, 0.1, 0.2, 0.25, 0.5, 1.0]), "rounding.preferred_steps"),
             minimum_rate=_expect_float(payload.get("minimum_rate", 0.1), "rounding.minimum_rate", minimum=0.0, strict_gt=True),
         )

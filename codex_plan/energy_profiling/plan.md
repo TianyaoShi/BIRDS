@@ -106,8 +106,10 @@ selection:
 
 defaults:
   duration_s: 180
-  warmup_s: 30
+  idle_baseline_s: 30
+  traffic_warmup_s: 30
   cooldown_s: 15
+  repeats: 1
   metrics_interval_s: 1.0
   window_s: 10.0
   gpu_monitor_interval_s: 0.025
@@ -117,7 +119,9 @@ defaults:
   safety_max_outstanding: null
 
 rounding:
-  mode: floor_preferred
+  mst_mode: floor_decimal
+  mst_decimal_places: 2
+  sweep_mode: floor_preferred
   preferred_steps: [0.05, 0.1, 0.2, 0.25, 0.5, 1.0]
   minimum_rate: 0.1
 
@@ -148,9 +152,37 @@ The generated plan should be deterministic and should include enough launch/sear
 
 ## Rounding Policy
 
-The selected MST should be rounded down to a human-preferable precision such as `0.1`, `0.2`, `0.25`, `0.5`, or `1`. This keeps the follow-up profiling rate at or below the measured SLO-valid MST.
+Use different rounding semantics for one-shot MST profiling and sweep
+profiling.
 
-Recommended default:
+For `mst-rounded`, the selected MST should be floored to fixed decimal
+precision, not snapped to a preferred human step. The default should be
+two decimal places:
+
+```text
+profile_rate = floor(MST * 100) / 100
+```
+
+This keeps the follow-up profiling rate at or below the measured SLO-valid MST
+without unnecessarily moving a single-trial energy point away from the actual
+MST. Clamp to `minimum_rate` only when the positive MST is below the smallest
+useful open-loop rate.
+
+Examples:
+
+- `0.083` -> `0.1`, because positive rates below the minimum useful trial rate are clamped
+- `0.619` -> `0.61`
+- `1.849` -> `1.84`
+- `4.379` -> `4.37`
+- `17.499` -> `17.49`
+
+Implementation note: `--rounding-policy floor_decimal` is the default for
+`mst-rounded`; `--rounding-policy floor_preferred` remains available for the
+older preferred-step behavior. JSON policies can set `mst_mode`,
+`mst_decimal_places`, `sweep_mode`, `preferred_steps`, and `minimum_rate`.
+
+For `sweep`, preferred-step rounding is still useful because the goal is to
+construct a compact, readable grid from low load to MST. Recommended default:
 
 1. Choose a display quantum based on the MST scale.
    - `< 2 req/s`: use `0.1` or `0.05`
@@ -164,7 +196,7 @@ Recommended default:
 
 4. Prefer more total sweep points as long as the total step count stays within the configured cap, so that profiling and comparisons keep useful resolution.
 
-Examples:
+Sweep examples:
 
 - `0.083` -> `0.1`, because positive rates below the minimum useful trial rate are clamped, step = `0.05`
 - `0.61` -> `0.6`, step = `0.05`
@@ -308,14 +340,46 @@ The run command should:
 
 1. Launch or reuse vLLM using the same lifecycle semantics as `local_orchestrator`.
 2. Measure an idle-power baseline after the server reaches readiness and before request traffic starts.
-3. Start GPU power monitors for the assigned GPU IDs.
-4. Run one fixed-rate `llm_mst_finder.cli run-trial --mode open-loop` trial.
-5. Stop power monitors after the trial.
-6. Write one result directory per energy job.
-7. Continue to the next job on failure.
-8. Emit `summary.json` and `summary.md`.
+3. Run an unmeasured pre-measurement traffic warmup at the same request rate,
+   workload, endpoint, and launch settings as the measured trial.
+4. Start GPU power monitors for the assigned GPU IDs.
+5. Run one fixed-rate `llm_mst_finder.cli run-trial --mode open-loop` measured trial.
+6. Stop power monitors after the measured trial.
+7. Write one result directory per energy job/repeat.
+8. Continue to the next job on failure.
+9. Emit `summary.json` and `summary.md`.
 
 For sweep jobs, group trials by model/server signature, reuse the same warm vLLM server, and execute rates in ascending order.
+
+### Pre-Measurement Traffic Warmup
+
+The current `warmup_s` behavior is only an idle-power baseline; it starts GPU
+monitors and sleeps without sending requests. Add a separate traffic warmup
+phase before the measured energy trial.
+
+Required behavior:
+
+- Run after vLLM readiness and after the idle baseline.
+- Use the exact measured-trial workload, endpoint, model, request rate, request
+  timeout, and safety limit.
+- Do not include warmup request records, latency windows, server metrics, or GPU
+  power samples in the reported energy trial artifacts.
+- Write warmup artifacts under a separate subdirectory, for example
+  `jobs/<job_id>/warmup/`, or discard them only if the subprocess succeeded and
+  logs are preserved elsewhere.
+- If warmup fails, fail the energy job before measured power monitoring starts.
+- Default `traffic_warmup_s` should be nonzero for managed experiments; `30s` is
+  a reasonable first default, with `0` disabling it for smoke tests.
+- For repeated trials on the same server, apply traffic warmup before the first
+  measured repeat by default. Optionally support `warmup_each_repeat: true` for
+  highly variable workloads.
+
+This separates three different concepts that should not share one field name:
+
+- readiness: server API responds, usually `/v1/models`
+- idle baseline: no traffic, used for incremental energy subtraction
+- traffic warmup: unmeasured requests used to bring serving into a steadier
+  cache/CUDA graph/scheduler state before the measured trial
 
 ## Run-Trial Reuse and External Energy Monitoring
 
@@ -337,7 +401,13 @@ Preferred implementation path:
    - Store idle power stats separately.
    - Use idle stats to compute incremental energy above idle for later traffic trials on the same server.
 
-4. Reuse `profiler/gpu_monitor.py`.
+4. Run traffic warmup outside the measured monitor window.
+   - Invoke the same `run-trial` path with a warmup trial ID and separate output
+     directory.
+   - Set `duration_s=traffic_warmup_s`.
+   - Do not merge warmup artifacts into measured summaries.
+
+5. Reuse `profiler/gpu_monitor.py`.
    - Current `GPUMonitor` returns:
      - `avg_power_mw`
      - `power_stats`
@@ -345,7 +415,7 @@ Preferred implementation path:
      - optional `clock_trace_mhz`
    - Keep milliwatts internally and expose watts/joules in summary fields with clear names.
 
-5. Avoid using `benchmark_serving.py` as the executor.
+6. Avoid using `benchmark_serving.py` as the executor.
    - It already has useful power-stat logic, but MST finder has the workload compatibility, request client, response parsing, and artifact structure we now depend on.
    - Reuse the concepts, not the benchmark CLI as the new core path.
 
@@ -408,6 +478,10 @@ results/energy/<plan_id>/
       request_records.jsonl
       server_metrics.jsonl
       windows.csv
+      warmup/
+        summary.json
+        request_records.jsonl
+        server_metrics.jsonl
       gpu_power.json
       energy_summary.json
 ```
@@ -422,7 +496,42 @@ Each job result should preserve:
 - selected request rate
 - original MST rate and rounding policy
 - duration and warmup/truncation settings
+- repeat index and repeat count when repeats are enabled
 - raw power trace or a path to it
+
+## Repeat Policy
+
+Energy profiling should support repeats because single trials are sensitive to
+cold-start effects, transient cluster noise, and workload randomness.
+
+Recommended plan fields:
+
+```yaml
+defaults:
+  repeats: 3
+  repeat_cooldown_s: 15
+  traffic_warmup_s: 30
+  warmup_each_repeat: false
+```
+
+Execution behavior:
+
+- Expand each logical energy job into `repeats` measured trials at execution
+  time or during plan generation, but preserve a stable logical job ID for
+  aggregation.
+- Store repeat artifacts separately, for example
+  `jobs/<job_id>/repeat_001/`, `repeat_002/`, and `repeat_003/`.
+- Reuse the same vLLM server across repeats when the server signature matches.
+- Run traffic warmup before the first repeat by default; if
+  `warmup_each_repeat` is enabled, run warmup before every measured repeat.
+- Compute per-repeat energy summaries and aggregate median/mean/stdev/min/max
+  across repeats in the top-level job summary.
+- Treat partial repeat failure as a failed job unless a future explicit
+  `min_successful_repeats` setting is added.
+
+For cold-start analysis, keep repeat order in metadata rather than only
+reporting aggregate statistics. The first repeat can be compared against later
+repeats to quantify how much warmup/reuse changed the energy result.
 
 ## Local vs Slurm
 
@@ -453,7 +562,7 @@ python -m energy_profiler.cli plan-from-orchestrator \
   --output-plan experiments/energy/<plan_id>.yaml \
   --mode mst-rounded \
   --rate-source max_slo \
-  --rounding-policy floor_preferred
+  --rounding-policy '{"mst_mode":"floor_decimal","mst_decimal_places":2,"sweep_mode":"floor_preferred"}'
 
 python -m energy_profiler.cli plan-from-orchestrator \
   --orchestrator-run-root results/orchestrator/<run_id> \
@@ -508,6 +617,7 @@ Focused tests:
 - succeeded jobs are included, failed/skipped jobs are excluded
 - `max_slo` vs `max_no_drift` rate source selection
 - rounding behavior around low and high rates
+- `mst-rounded` floors to fixed decimal precision and does not snap to preferred sweep steps
 - sweep generation deduplicates rates and caps at 20 steps
 - sweep generation orders rates ascending for server reuse
 - explicit plan validates YAML-native model/workload/experiment selection
@@ -516,6 +626,7 @@ Focused tests:
 
 - Add energy-profiler-owned monitor wrappers around `profiler/gpu_monitor.py`.
 - Add idle baseline collection after vLLM readiness.
+- Add unmeasured pre-measurement traffic warmup before measured power monitoring.
 - Run `llm_mst_finder.cli run-trial` as an unchanged subprocess for the fixed-rate traffic trial.
 - Stop monitors after the subprocess exits.
 - Read the trial `summary.json`.
@@ -525,6 +636,8 @@ Focused tests:
 Focused tests:
 
 - fake monitor produces deterministic idle and traffic energy summaries
+- traffic warmup artifacts are isolated from measured energy artifacts
+- traffic warmup failure fails the energy job before power monitoring starts
 - run-trial command construction remains a plain MST finder command with no energy-specific CLI args
 - zero successful requests avoids division by zero and marks per-request energy as null
 - generated-token-only energy is omitted or explicitly marked as a non-primary compatibility metric
@@ -543,6 +656,8 @@ Focused tests:
 - launch fields from plan are honored
 - result directory overwrite policy is explicit
 - failed jobs do not block later jobs
+- repeat execution writes isolated repeat directories and aggregate repeat summaries
+- warmup runs once per logical job by default and can be configured per repeat
 
 ### Phase 4: Slurm Compatibility
 
@@ -589,6 +704,15 @@ This should wait until the Slurm MST adapter has settled.
 9. Prefer YAML-native selection for human-edited plans.
    - CLI filters are useful for quick generation, but selected models/rates/sweeps should be visible and editable in the plan YAML.
 
+10. Use fixed decimal flooring for one-shot MST energy trials.
+   - Preferred-step rounding is for sweep grid readability.
+   - `mst-rounded` should stay as close as possible to the measured MST while
+     never exceeding it.
+
+11. Support repeats as first-class energy measurements.
+   - Repeats reduce sensitivity to one unlucky run and reveal cold-start drift.
+   - Summaries should expose both per-repeat values and aggregate statistics.
+
 ## Open Questions
 
 1. How long should the idle-power baseline run?
@@ -610,3 +734,12 @@ This should wait until the Slurm MST adapter has settled.
 
 6. Should failed request classes like the gpt-oss Harmony stream parser error be excluded from energy-per-request denominators, treated as failed workload demand, or reported separately?
    - They should still consume energy so do not exclude them from the denominator, but they should be marked as failed requests in the summary so users can interpret energy-per-successful-request vs energy-per-total-request.
+
+7. Should traffic warmup duration be fixed in seconds or sized by request count?
+   - Draft default: seconds, because it is simple and matches trial duration.
+   - A future request-count mode may be better for very low request rates.
+
+8. Should repeat expansion happen in the plan generator or executor?
+   - Plan-time expansion makes Slurm arrays and artifact paths explicit.
+   - Executor-time expansion keeps the YAML smaller but requires richer state
+     handling.

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from energy_profiler.models import EnergyPlanSelection, EnergyPlanSelectionSweep
+from energy_profiler.models import EnergyPlanRounding, EnergyPlanSelection, EnergyPlanSelectionSweep
 from energy_profiler.planning import (
     PlanningError,
     generate_plan_from_orchestrator,
@@ -152,13 +152,30 @@ def test_generate_plan_from_orchestrator_rounds_mst_and_preserves_launch(tmp_pat
     assert plan.execution.metrics_port_offset == 2000
     assert len(plan.jobs) == 1
     job = plan.jobs[0]
-    assert job.request_rate == pytest.approx(4.25)
+    assert job.request_rate == pytest.approx(4.37)
     assert job.mst_rate == pytest.approx(4.37)
     assert job.workload == workload.resolve()
     assert job.launch.dtype == "float16"
     assert job.launch.max_model_len == 32768
-    assert job.metadata["rounding_step"] == pytest.approx(0.25)
+    assert job.metadata["rounding_policy"] == "floor_decimal"
+    assert job.metadata["rounding_step"] == pytest.approx(0.01)
+    assert job.metadata["rounding_decimal_places"] == 2
     assert job.metadata["search_id"] == "search-a"
+
+
+def test_generate_plan_can_use_legacy_preferred_step_rounding(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    run_root, _ = _write_orchestrator_run(tmp_path, mst_rate=4.37)
+
+    plan = generate_plan_from_orchestrator(
+        orchestrator_run_root=run_root,
+        output_plan=tmp_path / "experiments" / "energy" / "sharegpt_l40_energy_000.yaml",
+        rounding=EnergyPlanRounding(mst_mode="floor_preferred"),
+    )
+
+    assert plan.jobs[0].request_rate == pytest.approx(4.25)
+    assert plan.jobs[0].metadata["rounding_policy"] == "floor_preferred"
+    assert plan.jobs[0].metadata["rounding_step"] == pytest.approx(0.25)
 
 
 def test_generate_sweep_plan_uses_coarser_step_to_respect_cap(tmp_path: Path, monkeypatch) -> None:

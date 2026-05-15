@@ -210,7 +210,7 @@ def _add_plan_generation_args(parser: argparse.ArgumentParser) -> None:
         choices=("max_slo", "max_no_drift"),
         default="max_slo",
     )
-    parser.add_argument("--rounding-policy", default="floor_preferred")
+    parser.add_argument("--rounding-policy", default="floor_decimal")
     parser.add_argument("--selection-yaml", type=Path, default=None)
     parser.add_argument("--models", nargs="*", default=None)
     parser.add_argument("--workloads", nargs="*", default=None)
@@ -287,8 +287,10 @@ def _load_and_merge_selection(args: argparse.Namespace) -> EnergyPlanSelection:
 
 
 def _parse_rounding_policy(value: str) -> EnergyPlanRounding:
-    if value == "floor_preferred":
+    if value == "floor_decimal":
         return EnergyPlanRounding()
+    if value == "floor_preferred":
+        return EnergyPlanRounding(mst_mode="floor_preferred", sweep_mode="floor_preferred")
     if value.startswith("{"):
         payload = json.loads(value)
         if not isinstance(payload, dict):
