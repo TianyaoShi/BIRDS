@@ -17,7 +17,12 @@ selection:
 defaults:
   duration_s: 180.0
   warmup_s: 30.0
+  idle_baseline_s: 30.0
+  traffic_warmup_s: 30.0
   cooldown_s: 15.0
+  repeats: 1
+  repeat_cooldown_s: 15.0
+  warmup_each_repeat: false
   metrics_interval_s: 1.0
   window_s: 10.0
   gpu_monitor_interval_s: 0.025
@@ -37,6 +42,9 @@ execution:
   metrics_port_offset: 1000
 rounding:
   mode: floor_preferred
+  mst_mode: floor_decimal
+  mst_decimal_places: 2
+  sweep_mode: floor_preferred
   preferred_steps:
   - 0.05
   - 0.1
@@ -46,13 +54,13 @@ rounding:
   - 1.0
   minimum_rate: 0.1
 jobs:
-- id: qwen-qwen3-14b-live-sharegpt-workload-context-8-r1_1
+- id: qwen-qwen3-14b-live-sharegpt-workload-context-8-r1_16
   source_experiment_id: qwen3-14b-a100-tp1
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/qwen-qwen3-14b/live-sharegpt-workload-context-8192/server-ece20b14727b
   model: Qwen/Qwen3-14B
   workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
   endpoint: /v1/chat/completions
-  request_rate: 1.1
+  request_rate: 1.16
   mst_rate: 1.1659961447282599
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -81,16 +89,56 @@ jobs:
     search_id: qwen3-14b-a100-tp1
     search_mode: hybrid
     confirmation_trial_id: trial_012_openloop_r1_166
-    rounding_policy: floor_preferred
-    rounding_step: 0.1
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 1.1659961447282599
-- id: qwen-qwen3-30b-a3b-instruct-2507-live-sharegpt-workload-context-8-r15
+    rounding_decimal_places: 2
+- id: google-gemma-4-26b-a4b-it-live-sharegpt-workload-context-8-r10_55
+  source_experiment_id: gemma-4-26b-a4b-it-a100-tp2
+  source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/google-gemma-4-26b-a4b-it/live-sharegpt-workload-context-8192/server-f87f3fec3bd5
+  model: google/gemma-4-26B-A4B-it
+  workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
+  endpoint: /v1/chat/completions
+  request_rate: 10.55
+  mst_rate: 10.550126051907043
+  mst_rate_source: max_slo_satisfying_request_rate
+  launch:
+    template: null
+    executable: vllm
+    extra_args: []
+    env: {}
+    tensor_parallel_size: 2
+    gpu_count: 2
+    dtype: float16
+    quantization: null
+    tokenizer_mode: null
+    gpu_memory_utilization: 0.88
+    max_model_len: 8192
+    max_num_seqs: 128.0
+    max_num_batched_tokens: 2048.0
+    host: 127.0.0.1
+    readiness_path: /v1/models
+    readiness_timeout_s: 1200.0
+    readiness_interval_s: 2.0
+  server_signature_key: 06656575f0d4d456fdd3947938e162f6a4daafce6d5a99823e374375531eb728
+  server_config_slug: server-f87f3fec3bd5
+  metadata:
+    source_orchestrator_run_id: a100-sharegpt-single-turn-run-000
+    source_orchestrator_run_root: results/orchestrator/a100-sharegpt-single-turn-run-000
+    search_id: gemma-4-26b-a4b-it-a100-tp2
+    search_mode: hybrid
+    confirmation_trial_id: trial_014_openloop_r10_5501
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
+    rounded_from_rate: 10.550126051907043
+    rounding_decimal_places: 2
+- id: qwen-qwen3-30b-a3b-instruct-2507-live-sharegpt-workload-context-8-r15_75
   source_experiment_id: qwen3-30b-a3b-instruct-a100-tp4
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/analysis/results/mst/a100-40gx4-sharegpt-cached-models-000/qwen-qwen3-30b-a3b-instruct-2507/live-sharegpt-workload-context-8192-mst-anomaly-rerun/server-f646319cb430
   model: Qwen/Qwen3-30B-A3B-Instruct-2507
   workload: /anvil/scratch/x-tshi1/BioLLM/results/analysis/run-sharegpt-singleturn-000/live_sharegpt_workload_context_8192_mst_anomaly_rerun.yaml
   endpoint: /v1/chat/completions
-  request_rate: 15.0
+  request_rate: 15.75
   mst_rate: 15.75
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -120,16 +168,17 @@ jobs:
     search_id: qwen3-30b-a3b-instruct-a100-tp4
     search_mode: open-loop
     confirmation_trial_id: trial_008_openloop_r15_75
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 15.75
-- id: meta-llama-llama-3-2-3b-instruct-live-sharegpt-workload-context-8-r21
+    rounding_decimal_places: 2
+- id: meta-llama-llama-3-2-3b-instruct-live-sharegpt-workload-context-8-r21_41
   source_experiment_id: llama-3-2-3b-instruct-a100-tp1
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/meta-llama-llama-3-2-3b-instruct/live-sharegpt-workload-context-8192/server-501804cc513b
   model: meta-llama/Llama-3.2-3B-Instruct
   workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
   endpoint: /v1/chat/completions
-  request_rate: 21.0
+  request_rate: 21.41
   mst_rate: 21.41477114676679
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -158,16 +207,17 @@ jobs:
     search_id: llama-3-2-3b-instruct-a100-tp1
     search_mode: hybrid
     confirmation_trial_id: trial_018_openloop_r21_4148
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 21.41477114676679
-- id: qwen-qwen3-0-6b-live-sharegpt-workload-context-8-r40
+    rounding_decimal_places: 2
+- id: qwen-qwen3-0-6b-live-sharegpt-workload-context-8-r40_16
   source_experiment_id: qwen3-0-6b-a100-tp1
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/qwen-qwen3-0-6b/live-sharegpt-workload-context-8192/server-5766d8c6f64a
   model: Qwen/Qwen3-0.6B
   workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
   endpoint: /v1/chat/completions
-  request_rate: 40.0
+  request_rate: 40.16
   mst_rate: 40.16276875979915
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -196,16 +246,17 @@ jobs:
     search_id: qwen3-0-6b-a100-tp1
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r40_1628
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 40.16276875979915
-- id: qwen-qwen3-1-7b-live-sharegpt-workload-context-8-r33
+    rounding_decimal_places: 2
+- id: qwen-qwen3-1-7b-live-sharegpt-workload-context-8-r33_43
   source_experiment_id: qwen3-1-7b-a100-tp1
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/analysis/results/mst/a100-40gx4-sharegpt-cached-models-000/qwen-qwen3-1-7b/live-sharegpt-workload-context-8192-mst-anomaly-rerun/server-85d573c7f83f
   model: Qwen/Qwen3-1.7B
   workload: /anvil/scratch/x-tshi1/BioLLM/results/analysis/run-sharegpt-singleturn-000/live_sharegpt_workload_context_8192_mst_anomaly_rerun.yaml
   endpoint: /v1/chat/completions
-  request_rate: 33.0
+  request_rate: 33.43
   mst_rate: 33.435275828632136
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -234,16 +285,56 @@ jobs:
     search_id: qwen3-1-7b-a100-tp1
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r33_4353
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 33.435275828632136
-- id: qwen-qwen3-4b-instruct-2507-live-sharegpt-workload-context-8-r15
+    rounding_decimal_places: 2
+- id: qwen-qwen3-30b-a3b-instruct-2507-live-sharegpt-workload-context-8-r2_88
+  source_experiment_id: qwen3-30b-a3b-instruct-a100-tp2
+  source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/qwen-qwen3-30b-a3b-instruct-2507/live-sharegpt-workload-context-8192/server-4d0b973dbf77
+  model: Qwen/Qwen3-30B-A3B-Instruct-2507
+  workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
+  endpoint: /v1/chat/completions
+  request_rate: 2.88
+  mst_rate: 2.887705617349475
+  mst_rate_source: max_slo_satisfying_request_rate
+  launch:
+    template: null
+    executable: vllm
+    extra_args: []
+    env: {}
+    tensor_parallel_size: 2
+    gpu_count: 2
+    dtype: float16
+    quantization: null
+    tokenizer_mode: null
+    gpu_memory_utilization: 0.88
+    max_model_len: 8192
+    max_num_seqs: 128.0
+    max_num_batched_tokens: 2048.0
+    host: 127.0.0.1
+    readiness_path: /v1/models
+    readiness_timeout_s: 1200.0
+    readiness_interval_s: 2.0
+  server_signature_key: 20e7a7361bd049bb1d083bfd5c204cea55f9a7841c558741d325d2f142586fc1
+  server_config_slug: server-4d0b973dbf77
+  metadata:
+    source_orchestrator_run_id: a100-sharegpt-single-turn-run-000
+    source_orchestrator_run_root: results/orchestrator/a100-sharegpt-single-turn-run-000
+    search_id: qwen3-30b-a3b-instruct-a100-tp2
+    search_mode: hybrid
+    confirmation_trial_id: trial_015_openloop_r2_88771
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
+    rounded_from_rate: 2.887705617349475
+    rounding_decimal_places: 2
+- id: qwen-qwen3-4b-instruct-2507-live-sharegpt-workload-context-8-r15_28
   source_experiment_id: qwen3-4b-instruct-a100-tp1
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/analysis/results/mst/a100-40gx4-sharegpt-cached-models-000/qwen-qwen3-4b-instruct-2507/live-sharegpt-workload-context-8192-mst-anomaly-rerun/server-026859635718
   model: Qwen/Qwen3-4B-Instruct-2507
   workload: /anvil/scratch/x-tshi1/BioLLM/results/analysis/run-sharegpt-singleturn-000/live_sharegpt_workload_context_8192_mst_anomaly_rerun.yaml
   endpoint: /v1/chat/completions
-  request_rate: 15.0
+  request_rate: 15.28
   mst_rate: 15.287643537602374
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -272,16 +363,17 @@ jobs:
     search_id: qwen3-4b-instruct-a100-tp1
     search_mode: hybrid
     confirmation_trial_id: trial_016_openloop_r15_2876
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 15.287643537602374
-- id: openai-gpt-oss-20b-live-sharegpt-workload-context-8-r22
+    rounding_decimal_places: 2
+- id: openai-gpt-oss-20b-live-sharegpt-workload-context-8-r22_48
   source_experiment_id: gpt-oss-20b-a100-tp1
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/openai-gpt-oss-20b/live-sharegpt-workload-context-8192/server-e74d0de009e9
   model: openai/gpt-oss-20b
   workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
   endpoint: /v1/chat/completions
-  request_rate: 22.0
+  request_rate: 22.48
   mst_rate: 22.485065280802978
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -310,16 +402,134 @@ jobs:
     search_id: gpt-oss-20b-a100-tp1
     search_mode: hybrid
     confirmation_trial_id: trial_016_openloop_r22_4851
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 22.485065280802978
-- id: qwen-qwen3-4b-thinking-2507-live-sharegpt-workload-context-8-r15
+    rounding_decimal_places: 2
+- id: meta-llama-llama-3-2-1b-instruct-live-sharegpt-workload-context-8-r15_9
+  source_experiment_id: llama-3-2-1b-instruct-a100-tp1
+  source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/meta-llama-llama-3-2-1b-instruct/live-sharegpt-workload-context-8192/server-8adb215e0320
+  model: meta-llama/Llama-3.2-1B-Instruct
+  workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
+  endpoint: /v1/chat/completions
+  request_rate: 15.9
+  mst_rate: 15.902119374220922
+  mst_rate_source: max_slo_satisfying_request_rate
+  launch:
+    template: null
+    executable: vllm
+    extra_args: []
+    env: {}
+    tensor_parallel_size: 1
+    gpu_count: 1
+    dtype: float16
+    quantization: null
+    tokenizer_mode: null
+    gpu_memory_utilization: 0.88
+    max_model_len: 8192
+    max_num_seqs: 512.0
+    max_num_batched_tokens: 8192.0
+    host: 127.0.0.1
+    readiness_path: /v1/models
+    readiness_timeout_s: 1200.0
+    readiness_interval_s: 2.0
+  server_signature_key: 298ac6de9ce7bd65930e1a82b3f466c5d383db91919eea0c48c5d0e562cf70d9
+  server_config_slug: server-8adb215e0320
+  metadata:
+    source_orchestrator_run_id: a100-sharegpt-single-turn-run-000
+    source_orchestrator_run_root: results/orchestrator/a100-sharegpt-single-turn-run-000
+    search_id: llama-3-2-1b-instruct-a100-tp1
+    search_mode: hybrid
+    confirmation_trial_id: trial_015_openloop_r15_9021
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
+    rounded_from_rate: 15.902119374220922
+    rounding_decimal_places: 2
+- id: qwen-qwen3-8b-live-sharegpt-workload-context-8-r12_48
+  source_experiment_id: qwen3-8b-a100-tp1
+  source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/qwen-qwen3-8b/live-sharegpt-workload-context-8192/server-06c0580c54d1
+  model: Qwen/Qwen3-8B
+  workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
+  endpoint: /v1/chat/completions
+  request_rate: 12.48
+  mst_rate: 12.48072473644227
+  mst_rate_source: max_slo_satisfying_request_rate
+  launch:
+    template: null
+    executable: vllm
+    extra_args: []
+    env: {}
+    tensor_parallel_size: 1
+    gpu_count: 1
+    dtype: float16
+    quantization: null
+    tokenizer_mode: null
+    gpu_memory_utilization: 0.88
+    max_model_len: 8192
+    max_num_seqs: 256.0
+    max_num_batched_tokens: 4096.0
+    host: 127.0.0.1
+    readiness_path: /v1/models
+    readiness_timeout_s: 1200.0
+    readiness_interval_s: 2.0
+  server_signature_key: 2f31cfdf23481711ecfef21dcbe8c427a236568dfea830524dbc5fbc7da49381
+  server_config_slug: server-06c0580c54d1
+  metadata:
+    source_orchestrator_run_id: a100-sharegpt-single-turn-run-000
+    source_orchestrator_run_root: results/orchestrator/a100-sharegpt-single-turn-run-000
+    search_id: qwen3-8b-a100-tp1
+    search_mode: hybrid
+    confirmation_trial_id: trial_017_openloop_r12_4807
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
+    rounded_from_rate: 12.48072473644227
+    rounding_decimal_places: 2
+- id: qwen-qwen3-32b-live-sharegpt-workload-context-8-r2_7
+  source_experiment_id: qwen3-32b-a100-tp2
+  source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/qwen-qwen3-32b/live-sharegpt-workload-context-8192/server-b989de2f9eec
+  model: Qwen/Qwen3-32B
+  workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
+  endpoint: /v1/chat/completions
+  request_rate: 2.7
+  mst_rate: 2.705530455576589
+  mst_rate_source: max_slo_satisfying_request_rate
+  launch:
+    template: null
+    executable: vllm
+    extra_args: []
+    env: {}
+    tensor_parallel_size: 2
+    gpu_count: 2
+    dtype: float16
+    quantization: null
+    tokenizer_mode: null
+    gpu_memory_utilization: 0.88
+    max_model_len: 8192
+    max_num_seqs: 128.0
+    max_num_batched_tokens: 2048.0
+    host: 127.0.0.1
+    readiness_path: /v1/models
+    readiness_timeout_s: 1800.0
+    readiness_interval_s: 2.0
+  server_signature_key: 3193c4d504781cdf1abf24a3096ad5a1f1d00ed434fa429769c6a606517ced04
+  server_config_slug: server-b989de2f9eec
+  metadata:
+    source_orchestrator_run_id: a100-sharegpt-single-turn-run-000
+    source_orchestrator_run_root: results/orchestrator/a100-sharegpt-single-turn-run-000
+    search_id: qwen3-32b-a100-tp2
+    search_mode: hybrid
+    confirmation_trial_id: trial_015_openloop_r2_70553
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
+    rounded_from_rate: 2.705530455576589
+    rounding_decimal_places: 2
+- id: qwen-qwen3-4b-thinking-2507-live-sharegpt-workload-context-8-r15_67
   source_experiment_id: qwen3-4b-thinking-a100-tp1
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/qwen-qwen3-4b-thinking-2507/live-sharegpt-workload-context-8192/server-1c44187ec1de
   model: Qwen/Qwen3-4B-Thinking-2507
   workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
   endpoint: /v1/chat/completions
-  request_rate: 15.0
+  request_rate: 15.67
   mst_rate: 15.67664234788178
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -348,16 +558,17 @@ jobs:
     search_id: qwen3-4b-thinking-a100-tp1
     search_mode: hybrid
     confirmation_trial_id: trial_022_openloop_r15_6766
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 15.67664234788178
-- id: meta-llama-llama-2-13b-chat-hf-live-sharegpt-workload-context-4-r1
+    rounding_decimal_places: 2
+- id: meta-llama-llama-2-13b-chat-hf-live-sharegpt-workload-context-4-r1_05
   source_experiment_id: llama-2-13b-chat-a100-tp1
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/meta-llama-llama-2-13b-chat-hf/live-sharegpt-workload-context-4096/server-81c2982e79d1
   model: meta-llama/Llama-2-13b-chat-hf
   workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_4096.yaml
   endpoint: /v1/chat/completions
-  request_rate: 1.0
+  request_rate: 1.05
   mst_rate: 1.0541548189057175
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -386,16 +597,56 @@ jobs:
     search_id: llama-2-13b-chat-a100-tp1
     search_mode: hybrid
     confirmation_trial_id: trial_023_openloop_r1_05415
-    rounding_policy: floor_preferred
-    rounding_step: 0.1
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 1.0541548189057175
-- id: meta-llama-llama-3-2-1b-instruct-live-sharegpt-workload-context-8-r57
+    rounding_decimal_places: 2
+- id: meta-llama-codellama-34b-instruct-hf-live-sharegpt-workload-context-8-r2_11
+  source_experiment_id: codellama-34b-instruct-a100-tp2
+  source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/meta-llama-codellama-34b-instruct-hf/live-sharegpt-workload-context-8192/server-c0ee9027fd51
+  model: meta-llama/CodeLlama-34b-Instruct-hf
+  workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
+  endpoint: /v1/chat/completions
+  request_rate: 2.11
+  mst_rate: 2.1136621845297094
+  mst_rate_source: max_slo_satisfying_request_rate
+  launch:
+    template: null
+    executable: vllm
+    extra_args: []
+    env: {}
+    tensor_parallel_size: 2
+    gpu_count: 2
+    dtype: float16
+    quantization: null
+    tokenizer_mode: null
+    gpu_memory_utilization: 0.88
+    max_model_len: 8192
+    max_num_seqs: 128.0
+    max_num_batched_tokens: 2048.0
+    host: 127.0.0.1
+    readiness_path: /v1/models
+    readiness_timeout_s: 1200.0
+    readiness_interval_s: 2.0
+  server_signature_key: 4c995ecba6964311e4e13f4d37cfcf49999522e5dfe6eab07bd1fd1af85cf3c0
+  server_config_slug: server-c0ee9027fd51
+  metadata:
+    source_orchestrator_run_id: a100-sharegpt-single-turn-run-000
+    source_orchestrator_run_root: results/orchestrator/a100-sharegpt-single-turn-run-000
+    search_id: codellama-34b-instruct-a100-tp2
+    search_mode: hybrid
+    confirmation_trial_id: trial_025_openloop_r2_11366
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
+    rounded_from_rate: 2.1136621845297094
+    rounding_decimal_places: 2
+- id: meta-llama-llama-3-2-1b-instruct-live-sharegpt-workload-context-8-r57_98
   source_experiment_id: llama-3-2-1b-instruct-a100-tp1
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/analysis/results/mst/a100-40gx4-sharegpt-cached-models-000/meta-llama-llama-3-2-1b-instruct/live-sharegpt-workload-context-8192-mst-anomaly-rerun/server-ac7d98ac9d21
   model: meta-llama/Llama-3.2-1B-Instruct
   workload: /anvil/scratch/x-tshi1/BioLLM/results/analysis/run-sharegpt-singleturn-000/live_sharegpt_workload_context_8192_mst_anomaly_rerun.yaml
   endpoint: /v1/chat/completions
-  request_rate: 57.0
+  request_rate: 57.98
   mst_rate: 57.98280108767439
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -424,16 +675,56 @@ jobs:
     search_id: llama-3-2-1b-instruct-a100-tp1
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r57_9828
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 57.98280108767439
-- id: google-gemma-4-31b-it-live-sharegpt-workload-context-8-r8
+    rounding_decimal_places: 2
+- id: google-gemma-4-31b-it-live-sharegpt-workload-context-8-r1_11
+  source_experiment_id: gemma-4-31b-it-a100-tp2
+  source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/google-gemma-4-31b-it/live-sharegpt-workload-context-8192/server-56ad80f0d319
+  model: google/gemma-4-31B-it
+  workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
+  endpoint: /v1/chat/completions
+  request_rate: 1.11
+  mst_rate: 1.1154629034903942
+  mst_rate_source: max_slo_satisfying_request_rate
+  launch:
+    template: null
+    executable: vllm
+    extra_args: []
+    env: {}
+    tensor_parallel_size: 2
+    gpu_count: 2
+    dtype: float16
+    quantization: null
+    tokenizer_mode: null
+    gpu_memory_utilization: 0.88
+    max_model_len: 8192
+    max_num_seqs: 128.0
+    max_num_batched_tokens: 2048.0
+    host: 127.0.0.1
+    readiness_path: /v1/models
+    readiness_timeout_s: 1200.0
+    readiness_interval_s: 2.0
+  server_signature_key: 6df19ba44e569c2718f364443907f2ad7ae3f8adb608a64d52c096ce74df92d5
+  server_config_slug: server-56ad80f0d319
+  metadata:
+    source_orchestrator_run_id: a100-sharegpt-single-turn-run-000
+    source_orchestrator_run_root: results/orchestrator/a100-sharegpt-single-turn-run-000
+    search_id: gemma-4-31b-it-a100-tp2
+    search_mode: hybrid
+    confirmation_trial_id: trial_013_openloop_r1_11546
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
+    rounded_from_rate: 1.1154629034903942
+    rounding_decimal_places: 2
+- id: google-gemma-4-31b-it-live-sharegpt-workload-context-8-r8_19
   source_experiment_id: gemma-4-31b-it-a100-tp4
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/google-gemma-4-31b-it/live-sharegpt-workload-context-8192/server-d40156c1da28
   model: google/gemma-4-31B-it
   workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
   endpoint: /v1/chat/completions
-  request_rate: 8.0
+  request_rate: 8.19
   mst_rate: 8.198128130529152
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -462,16 +753,17 @@ jobs:
     search_id: gemma-4-31b-it-a100-tp4
     search_mode: hybrid
     confirmation_trial_id: trial_014_openloop_r8_19813
-    rounding_policy: floor_preferred
-    rounding_step: 0.5
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 8.198128130529152
-- id: google-gemma-4-26b-a4b-it-live-sharegpt-workload-context-8-r14
+    rounding_decimal_places: 2
+- id: google-gemma-4-26b-a4b-it-live-sharegpt-workload-context-8-r14_62
   source_experiment_id: gemma-4-26b-a4b-it-a100-tp4
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/analysis/results/mst/a100-40gx4-sharegpt-cached-models-000/google-gemma-4-26b-a4b-it/live-sharegpt-workload-context-8192-mst-anomaly-rerun/server-4fc1df98b3a9
   model: google/gemma-4-26B-A4B-it
   workload: /anvil/scratch/x-tshi1/BioLLM/results/analysis/run-sharegpt-singleturn-000/live_sharegpt_workload_context_8192_mst_anomaly_rerun.yaml
   endpoint: /v1/chat/completions
-  request_rate: 14.0
+  request_rate: 14.62
   mst_rate: 14.625
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -501,16 +793,17 @@ jobs:
     search_id: gemma-4-26b-a4b-it-a100-tp4
     search_mode: open-loop
     confirmation_trial_id: trial_009_openloop_r14_625
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 14.625
-- id: google-gemma-4-e2b-it-live-sharegpt-workload-context-8-r44
+    rounding_decimal_places: 2
+- id: google-gemma-4-e2b-it-live-sharegpt-workload-context-8-r44_2
   source_experiment_id: gemma-4-e2b-it-a100-tp1
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/analysis/results/mst/a100-40gx4-sharegpt-cached-models-000/google-gemma-4-e2b-it/live-sharegpt-workload-context-8192-mst-anomaly-rerun/server-2d57b77582da
   model: google/gemma-4-E2B-it
   workload: /anvil/scratch/x-tshi1/BioLLM/results/analysis/run-sharegpt-singleturn-000/live_sharegpt_workload_context_8192_mst_anomaly_rerun.yaml
   endpoint: /v1/chat/completions
-  request_rate: 44.0
+  request_rate: 44.2
   mst_rate: 44.202429429249165
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -539,16 +832,95 @@ jobs:
     search_id: gemma-4-e2b-it-a100-tp1
     search_mode: hybrid
     confirmation_trial_id: trial_024_openloop_r44_2024
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 44.202429429249165
-- id: meta-llama-llama-3-1-8b-instruct-live-sharegpt-workload-context-8-r9
+    rounding_decimal_places: 2
+- id: qwen-qwen3-1-7b-live-sharegpt-workload-context-8-r32_81
+  source_experiment_id: qwen3-1-7b-a100-tp1
+  source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/qwen-qwen3-1-7b/live-sharegpt-workload-context-8192/server-82de2db19555
+  model: Qwen/Qwen3-1.7B
+  workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
+  endpoint: /v1/chat/completions
+  request_rate: 32.81
+  mst_rate: 32.81427227661737
+  mst_rate_source: max_slo_satisfying_request_rate
+  launch:
+    template: null
+    executable: vllm
+    extra_args: []
+    env: {}
+    tensor_parallel_size: 1
+    gpu_count: 1
+    dtype: float16
+    quantization: null
+    tokenizer_mode: null
+    gpu_memory_utilization: 0.88
+    max_model_len: 8192
+    max_num_seqs: 512.0
+    max_num_batched_tokens: 8192.0
+    host: 127.0.0.1
+    readiness_path: /v1/models
+    readiness_timeout_s: 1200.0
+    readiness_interval_s: 2.0
+  server_signature_key: 9d56679f705186f42f1fd76e5e7937d877e3cc773da73b6a6f5bad2b13b32519
+  server_config_slug: server-82de2db19555
+  metadata:
+    source_orchestrator_run_id: a100-sharegpt-single-turn-run-000
+    source_orchestrator_run_root: results/orchestrator/a100-sharegpt-single-turn-run-000
+    search_id: qwen3-1-7b-a100-tp1
+    search_mode: hybrid
+    confirmation_trial_id: trial_016_openloop_r32_8143
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
+    rounded_from_rate: 32.81427227661737
+    rounding_decimal_places: 2
+- id: google-gemma-4-e2b-it-live-sharegpt-workload-context-8-r0_6
+  source_experiment_id: gemma-4-e2b-it-a100-tp1
+  source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/google-gemma-4-e2b-it/live-sharegpt-workload-context-8192/server-b13e2a0badb4
+  model: google/gemma-4-E2B-it
+  workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
+  endpoint: /v1/chat/completions
+  request_rate: 0.6
+  mst_rate: 0.6069329309297393
+  mst_rate_source: max_slo_satisfying_request_rate
+  launch:
+    template: null
+    executable: vllm
+    extra_args: []
+    env: {}
+    tensor_parallel_size: 1
+    gpu_count: 1
+    dtype: float16
+    quantization: null
+    tokenizer_mode: null
+    gpu_memory_utilization: 0.88
+    max_model_len: 8192
+    max_num_seqs: 512.0
+    max_num_batched_tokens: 8192.0
+    host: 127.0.0.1
+    readiness_path: /v1/models
+    readiness_timeout_s: 1200.0
+    readiness_interval_s: 2.0
+  server_signature_key: a6a264c0f81899b66a7dd4896174ef81e9893d5ac754506036ebec8c2da5c423
+  server_config_slug: server-b13e2a0badb4
+  metadata:
+    source_orchestrator_run_id: a100-sharegpt-single-turn-run-000
+    source_orchestrator_run_root: results/orchestrator/a100-sharegpt-single-turn-run-000
+    search_id: gemma-4-e2b-it-a100-tp1
+    search_mode: hybrid
+    confirmation_trial_id: trial_010_openloop_r0_606933
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
+    rounded_from_rate: 0.6069329309297393
+    rounding_decimal_places: 2
+- id: meta-llama-llama-3-1-8b-instruct-live-sharegpt-workload-context-8-r9_24
   source_experiment_id: llama-3-1-8b-instruct-a100-tp1
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/meta-llama-llama-3-1-8b-instruct/live-sharegpt-workload-context-8192/server-c8f9698e8ab6
   model: meta-llama/Llama-3.1-8B-Instruct
   workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
   endpoint: /v1/chat/completions
-  request_rate: 9.0
+  request_rate: 9.24
   mst_rate: 9.245165996961203
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -577,16 +949,56 @@ jobs:
     search_id: llama-3-1-8b-instruct-a100-tp1
     search_mode: hybrid
     confirmation_trial_id: trial_016_openloop_r9_24517
-    rounding_policy: floor_preferred
-    rounding_step: 0.5
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 9.245165996961203
-- id: openai-gpt-oss-120b-live-sharegpt-workload-context-8-r16
+    rounding_decimal_places: 2
+- id: qwen-qwen3-4b-instruct-2507-live-sharegpt-workload-context-8-r14_28
+  source_experiment_id: qwen3-4b-instruct-a100-tp1
+  source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/qwen-qwen3-4b-instruct-2507/live-sharegpt-workload-context-8192/server-7d03509cac2d
+  model: Qwen/Qwen3-4B-Instruct-2507
+  workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
+  endpoint: /v1/chat/completions
+  request_rate: 14.28
+  mst_rate: 14.285232429516988
+  mst_rate_source: max_slo_satisfying_request_rate
+  launch:
+    template: null
+    executable: vllm
+    extra_args: []
+    env: {}
+    tensor_parallel_size: 1
+    gpu_count: 1
+    dtype: float16
+    quantization: null
+    tokenizer_mode: null
+    gpu_memory_utilization: 0.88
+    max_model_len: 8192
+    max_num_seqs: 256.0
+    max_num_batched_tokens: 4096.0
+    host: 127.0.0.1
+    readiness_path: /v1/models
+    readiness_timeout_s: 1200.0
+    readiness_interval_s: 2.0
+  server_signature_key: b7216d80895fd0998e28c899cac5b60755c57990da834f8256812b7b98813b9f
+  server_config_slug: server-7d03509cac2d
+  metadata:
+    source_orchestrator_run_id: a100-sharegpt-single-turn-run-000
+    source_orchestrator_run_root: results/orchestrator/a100-sharegpt-single-turn-run-000
+    search_id: qwen3-4b-instruct-a100-tp1
+    search_mode: hybrid
+    confirmation_trial_id: trial_015_openloop_r14_2852
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
+    rounded_from_rate: 14.285232429516988
+    rounding_decimal_places: 2
+- id: openai-gpt-oss-120b-live-sharegpt-workload-context-8-r16_5
   source_experiment_id: gpt-oss-120b-a100-tp4
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/analysis/results/mst/a100-40gx4-sharegpt-cached-models-000/openai-gpt-oss-120b/live-sharegpt-workload-context-8192-mst-anomaly-rerun/server-11ebcaee819b
   model: openai/gpt-oss-120b
   workload: /anvil/scratch/x-tshi1/BioLLM/results/analysis/run-sharegpt-singleturn-000/live_sharegpt_workload_context_8192_mst_anomaly_rerun.yaml
   endpoint: /v1/chat/completions
-  request_rate: 16.0
+  request_rate: 16.5
   mst_rate: 16.5
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -616,16 +1028,17 @@ jobs:
     search_id: gpt-oss-120b-a100-tp4
     search_mode: open-loop
     confirmation_trial_id: trial_008_openloop_r16_5
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 16.5
-- id: meta-llama-codellama-34b-instruct-hf-live-sharegpt-workload-context-8-r4_75
+    rounding_decimal_places: 2
+- id: meta-llama-codellama-34b-instruct-hf-live-sharegpt-workload-context-8-r4_96
   source_experiment_id: codellama-34b-instruct-a100-tp4
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/meta-llama-codellama-34b-instruct-hf/live-sharegpt-workload-context-8192/server-17ad6ef18bc3
   model: meta-llama/CodeLlama-34b-Instruct-hf
   workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
   endpoint: /v1/chat/completions
-  request_rate: 4.75
+  request_rate: 4.96
   mst_rate: 4.969395889120367
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -654,16 +1067,17 @@ jobs:
     search_id: codellama-34b-instruct-a100-tp4
     search_mode: hybrid
     confirmation_trial_id: trial_014_openloop_r4_9694
-    rounding_policy: floor_preferred
-    rounding_step: 0.25
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 4.969395889120367
-- id: meta-llama-llama-2-7b-chat-hf-live-sharegpt-workload-context-4-r5_5
+    rounding_decimal_places: 2
+- id: meta-llama-llama-2-7b-chat-hf-live-sharegpt-workload-context-4-r5_95
   source_experiment_id: llama-2-7b-chat-a100-tp1
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/meta-llama-llama-2-7b-chat-hf/live-sharegpt-workload-context-4096/server-5611b578b616
   model: meta-llama/Llama-2-7b-chat-hf
   workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_4096.yaml
   endpoint: /v1/chat/completions
-  request_rate: 5.5
+  request_rate: 5.95
   mst_rate: 5.959403111982255
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -692,16 +1106,17 @@ jobs:
     search_id: llama-2-7b-chat-a100-tp1
     search_mode: hybrid
     confirmation_trial_id: trial_023_openloop_r5_9594
-    rounding_policy: floor_preferred
-    rounding_step: 0.5
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 5.959403111982255
-- id: google-gemma-4-e4b-it-live-sharegpt-workload-context-8-r20
+    rounding_decimal_places: 2
+- id: google-gemma-4-e4b-it-live-sharegpt-workload-context-8-r20_84
   source_experiment_id: gemma-4-e4b-it-a100-tp1
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/google-gemma-4-e4b-it/live-sharegpt-workload-context-8192/server-99c7fb0e7b6f
   model: google/gemma-4-E4B-it
   workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
   endpoint: /v1/chat/completions
-  request_rate: 20.0
+  request_rate: 20.84
   mst_rate: 20.841753347021893
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -730,16 +1145,56 @@ jobs:
     search_id: gemma-4-e4b-it-a100-tp1
     search_mode: hybrid
     confirmation_trial_id: trial_018_openloop_r20_8418
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 20.841753347021893
-- id: qwen-qwen3-30b-a3b-thinking-2507-live-sharegpt-workload-context-8-r16
+    rounding_decimal_places: 2
+- id: qwen-qwen3-30b-a3b-thinking-2507-live-sharegpt-workload-context-8-r10_29
+  source_experiment_id: qwen3-30b-a3b-thinking-a100-tp2
+  source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/qwen-qwen3-30b-a3b-thinking-2507/live-sharegpt-workload-context-8192/server-95bd4753bd6c
+  model: Qwen/Qwen3-30B-A3B-Thinking-2507
+  workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
+  endpoint: /v1/chat/completions
+  request_rate: 10.29
+  mst_rate: 10.290074106641176
+  mst_rate_source: max_slo_satisfying_request_rate
+  launch:
+    template: null
+    executable: vllm
+    extra_args: []
+    env: {}
+    tensor_parallel_size: 2
+    gpu_count: 2
+    dtype: float16
+    quantization: null
+    tokenizer_mode: null
+    gpu_memory_utilization: 0.88
+    max_model_len: 8192
+    max_num_seqs: 128.0
+    max_num_batched_tokens: 2048.0
+    host: 127.0.0.1
+    readiness_path: /v1/models
+    readiness_timeout_s: 1200.0
+    readiness_interval_s: 2.0
+  server_signature_key: f6499ad01ec7c5c60d1436524ed003953380a75e18e0f060026a914665a0101a
+  server_config_slug: server-95bd4753bd6c
+  metadata:
+    source_orchestrator_run_id: a100-sharegpt-single-turn-run-000
+    source_orchestrator_run_root: results/orchestrator/a100-sharegpt-single-turn-run-000
+    search_id: qwen3-30b-a3b-thinking-a100-tp2
+    search_mode: hybrid
+    confirmation_trial_id: trial_015_openloop_r10_2901
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
+    rounded_from_rate: 10.290074106641176
+    rounding_decimal_places: 2
+- id: qwen-qwen3-30b-a3b-thinking-2507-live-sharegpt-workload-context-8-r16_5
   source_experiment_id: qwen3-30b-a3b-thinking-a100-tp4
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/analysis/results/mst/a100-40gx4-sharegpt-cached-models-000/qwen-qwen3-30b-a3b-thinking-2507/live-sharegpt-workload-context-8192-mst-anomaly-rerun/server-97d121dec965
   model: Qwen/Qwen3-30B-A3B-Thinking-2507
   workload: /anvil/scratch/x-tshi1/BioLLM/results/analysis/run-sharegpt-singleturn-000/live_sharegpt_workload_context_8192_mst_anomaly_rerun.yaml
   endpoint: /v1/chat/completions
-  request_rate: 16.0
+  request_rate: 16.5
   mst_rate: 16.5
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -769,16 +1224,17 @@ jobs:
     search_id: qwen3-30b-a3b-thinking-a100-tp4
     search_mode: open-loop
     confirmation_trial_id: trial_016_openloop_r16_5
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 16.5
-- id: qwen-qwen3-32b-live-sharegpt-workload-context-8-r8_5
+    rounding_decimal_places: 2
+- id: qwen-qwen3-32b-live-sharegpt-workload-context-8-r8_8
   source_experiment_id: qwen3-32b-a100-tp4
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/mst/qwen-qwen3-32b/live-sharegpt-workload-context-8192/server-b7f361fccf3d
   model: Qwen/Qwen3-32B
   workload: /anvil/scratch/x-tshi1/BioLLM/experiments/workloads/live_sharegpt_workload_context_8192.yaml
   endpoint: /v1/chat/completions
-  request_rate: 8.5
+  request_rate: 8.8
   mst_rate: 8.804502924610983
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -807,16 +1263,17 @@ jobs:
     search_id: qwen3-32b-a100-tp4
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r8_8045
-    rounding_policy: floor_preferred
-    rounding_step: 0.5
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 8.804502924610983
-- id: qwen-qwen3-8b-live-sharegpt-workload-context-8-r11
+    rounding_decimal_places: 2
+- id: qwen-qwen3-8b-live-sharegpt-workload-context-8-r11_89
   source_experiment_id: qwen3-8b-a100-tp1
   source_result_dir: /anvil/scratch/x-tshi1/BioLLM/results/analysis/results/mst/a100-40gx4-sharegpt-cached-models-000/qwen-qwen3-8b/live-sharegpt-workload-context-8192-mst-anomaly-rerun/server-399d00862267
   model: Qwen/Qwen3-8B
   workload: /anvil/scratch/x-tshi1/BioLLM/results/analysis/run-sharegpt-singleturn-000/live_sharegpt_workload_context_8192_mst_anomaly_rerun.yaml
   endpoint: /v1/chat/completions
-  request_rate: 11.0
+  request_rate: 11.89
   mst_rate: 11.892677811477041
   mst_rate_source: max_slo_satisfying_request_rate
   launch:
@@ -845,6 +1302,7 @@ jobs:
     search_id: qwen3-8b-a100-tp1
     search_mode: hybrid
     confirmation_trial_id: trial_016_openloop_r11_8927
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
     rounded_from_rate: 11.892677811477041
+    rounding_decimal_places: 2
