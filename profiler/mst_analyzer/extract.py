@@ -11,6 +11,7 @@ from local_orchestrator.manifest import load_manifest
 from local_orchestrator.matrix import expand_manifest
 from local_orchestrator.models import ExpandedExperimentJob
 from local_orchestrator.planning import infer_model_size_billions, load_cached_hf_config
+from slurm_orchestrator.planning import deserialize_expanded_job
 
 from .models import MSTRow, TraceInstabilityEvidence, TrialArtifactRef
 
@@ -49,7 +50,7 @@ def extract_run(orchestrator_run_root: str | Path) -> ExtractedRun:
     )
     manifest_payload = _load_yaml_mapping(manifest_path)
     manifest = load_manifest(manifest_path)
-    expanded_jobs = {job.experiment_id: job for job in expand_manifest(manifest)}
+    expanded_jobs = _load_expanded_jobs(run_root=run_root, manifest=manifest, manifest_path=manifest_path)
 
     summary_jobs = summary_payload.get("jobs")
     if not isinstance(summary_jobs, list):
@@ -86,6 +87,53 @@ def extract_run(orchestrator_run_root: str | Path) -> ExtractedRun:
         rows=tuple(rows),
         source_manifest_paths=(manifest_path,),
     )
+
+
+def _load_expanded_jobs(
+    *,
+    run_root: Path,
+    manifest: Any,
+    manifest_path: Path,
+) -> dict[str, ExpandedExperimentJob]:
+    expanded_jobs = {job.experiment_id: job for job in expand_manifest(manifest)}
+    planned_jobs = _load_planned_expanded_jobs(run_root=run_root, manifest_path=manifest_path)
+    if planned_jobs:
+        expanded_jobs.update(planned_jobs)
+    return expanded_jobs
+
+
+def _load_planned_expanded_jobs(*, run_root: Path, manifest_path: Path) -> dict[str, ExpandedExperimentJob]:
+    plan_path = run_root / "plan.json"
+    if not plan_path.is_file():
+        return {}
+    plan_payload = _load_json_mapping(plan_path)
+    groups = plan_payload.get("groups")
+    if not isinstance(groups, list):
+        return {}
+
+    planned_jobs: dict[str, ExpandedExperimentJob] = {}
+    for raw_group in groups:
+        if not isinstance(raw_group, Mapping):
+            continue
+        raw_plan_path = raw_group.get("plan_path")
+        if not isinstance(raw_plan_path, str) or not raw_plan_path:
+            continue
+        group_plan_path = _resolve_general_path(raw_plan_path, run_root=run_root, manifest_path=manifest_path)
+        if not group_plan_path.is_file():
+            continue
+        group_payload = _load_json_mapping(group_plan_path)
+        group_jobs = group_payload.get("jobs")
+        if not isinstance(group_jobs, list):
+            continue
+        for raw_task in group_jobs:
+            if not isinstance(raw_task, Mapping):
+                continue
+            raw_job = raw_task.get("job")
+            if not isinstance(raw_job, dict):
+                continue
+            job = deserialize_expanded_job(raw_job)
+            planned_jobs[job.experiment_id] = job
+    return planned_jobs
 
 
 def extract_runs(orchestrator_run_roots: tuple[str | Path, ...] | list[str | Path]) -> ExtractedRun:

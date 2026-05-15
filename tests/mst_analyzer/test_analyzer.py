@@ -625,9 +625,49 @@ def test_extract_run_accepts_collected_slurm_orchestrator_run(tmp_path: Path, mo
         tpot_slo_ms=50,
         max_num_seqs=1024,
         max_num_batched_tokens=8192,
+        confidence="low",
+        termination_reason="max_request_rate_limited",
     )
     finalize_task(group_plan_path, 0, exit_code=0, search_started=True)
     collect_run(Path(plan["run_root"]))
+    manifest_path.write_text(
+        yaml.safe_dump(
+            {
+                "run": {
+                    "run_id": "slurm-fixture-run",
+                    "output_root": "results/orchestrator",
+                    "python_executable": "python",
+                },
+                "probe": {"enabled": False},
+                "launch": {
+                    "gpu_count": 1,
+                    "tensor_parallel_size": 1,
+                    "dtype": "float16",
+                    "max_model_len": 32768,
+                },
+                "search": {
+                    "search_mode": "open-loop",
+                    "trial_min_duration_s": 120,
+                    "trial_max_duration_s": 240,
+                    "final_confirmation_duration_s": 240,
+                    "rate_precision": 0.1,
+                    "ttft_slo_ms": 250,
+                    "tpot_slo_ms": 50,
+                    "max_num_seqs": 1024,
+                    "max_num_batched_tokens": 8192,
+                },
+                "experiments": [
+                    {
+                        "id": "mutated-loop",
+                        "models": ["Qwen/Qwen3-8B"],
+                        "workloads": [str(workload)],
+                    }
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
 
     extracted = extract_run(Path(plan["run_root"]))
 
@@ -635,6 +675,30 @@ def test_extract_run_accepts_collected_slurm_orchestrator_run(tmp_path: Path, mo
     assert len(extracted.rows) == 1
     assert extracted.rows[0].experiment_id == job.experiment_id
     assert extracted.rows[0].mst_rps == pytest.approx(4.0)
+
+    artifacts = analyze_orchestrator_run(
+        orchestrator_run_root=Path(plan["run_root"]),
+        output_dir=tmp_path / "results" / "analysis" / "slurm-fixture-run",
+        emit_rerun_manifest=True,
+        settings=AnalyzerSettings.from_dict(
+            {
+                "suppressions": {
+                    "disable_families": [
+                        "within_size_outlier",
+                        "larger_model_inversion",
+                        "same_family_non_monotonicity",
+                        "trace_instability_suspect",
+                        "slo_driven_disagreement",
+                    ],
+                },
+            }
+        ),
+    )
+
+    assert artifacts.rerun_manifest_path is not None
+    rerun_manifest = yaml.safe_load(artifacts.rerun_manifest_path.read_text(encoding="utf-8"))
+    assert rerun_manifest["experiments"][0]["id"] == "mutated-loop"
+    assert rerun_manifest["experiments"][0]["models"] == ["Qwen/Qwen3-8B"]
 
 
 def test_rules_flag_expected_anomalies_and_contextual_slo_mismatch(tmp_path: Path) -> None:
@@ -1208,6 +1272,36 @@ def test_copy_workload_rewrites_relative_dataset_path_for_new_location(tmp_path:
     assert copied_payload["name"] == "sharegpt_mst_anomaly_rerun"
     assert copied_dataset_path == dataset_path.resolve()
     assert not Path(copied_payload["dataset"]["path"]).is_absolute()
+
+
+def test_copy_workload_avoids_same_basename_collisions(tmp_path: Path) -> None:
+    output_dir = tmp_path / "results" / "analysis" / "run"
+    output_dir.mkdir(parents=True)
+    workload_paths = [
+        tmp_path / "experiments" / "code_a" / "workload_yamls" / "shard_000.yaml",
+        tmp_path / "experiments" / "code_b" / "workload_yamls" / "shard_000.yaml",
+    ]
+    for index, workload_path in enumerate(workload_paths):
+        workload_path.parent.mkdir(parents=True, exist_ok=True)
+        workload_path.write_text(
+            yaml.safe_dump(
+                {
+                    "name": f"code_workload_{index}-shard_000",
+                    "dataset": {"type": "jsonl", "path": "/tmp/data.jsonl"},
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+
+    copied = [
+        _copy_workload_file(workload_path=workload_path, output_dir=output_dir)
+        for workload_path in workload_paths
+    ]
+
+    assert copied[0] != copied[1]
+    assert copied[0].is_file()
+    assert copied[1].is_file()
 
 
 def test_rerun_manifest_keeps_duplicate_model_tensor_parallel_experiment_precise(
