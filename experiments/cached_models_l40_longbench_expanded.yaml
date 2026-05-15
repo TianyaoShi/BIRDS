@@ -174,12 +174,9 @@ overrides:
 
   - match:
       model: openai/gpt-oss-120b
-    reason: gpt-oss-120B uses quantized checkpoint metadata; local L40 runs keep allocator settings explicit.
+    reason: gpt-oss-120B uses quantized checkpoint metadata; local L40 runs avoid expandable-segments allocator settings because they can break TP2 custom all-reduce startup.
     launch:
       dtype: auto
-      env:
-        PYTORCH_ALLOC_CONF: expandable_segments:True
-        PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
 
 experiments:
   - id: longbench-expanded-single-gpu

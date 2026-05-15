@@ -130,9 +130,6 @@ overrides:
     reason: gpt-oss-120B uses quantized checkpoint metadata; L40 TP2/TP4 runs keep the 8192-token cap and conservative batching.
     launch:
       dtype: auto
-      env:
-        PYTORCH_ALLOC_CONF: expandable_segments:True
-        PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
 
 experiments:
   - id: reasoning-mmlu-supergpqa-single-gpu

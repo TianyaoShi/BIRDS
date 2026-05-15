@@ -159,9 +159,6 @@ overrides:
     reason: gpt-oss checkpoints should let vLLM select dtype from checkpoint metadata.
     launch:
       dtype: auto
-      env:
-        PYTORCH_ALLOC_CONF: expandable_segments:True
-        PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
 
   - match:
       model: openai/gpt-oss-20b
