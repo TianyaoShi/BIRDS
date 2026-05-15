@@ -14,7 +14,7 @@ from local_orchestrator.models import ExpandedExperimentJob
 from local_orchestrator.utils import slugify
 
 from .config import AnalyzerSettings
-from .extract import ExtractedRun, extract_run, extract_runs
+from .extract import ExtractedRun, _load_expanded_jobs, extract_run, extract_runs
 from .models import AnalysisArtifacts, AnomalyCandidate, BucketSummary, SuggestedRerunPlan, TraceDiagnostic
 from .rules import analyze_rows_with_diagnostics
 
@@ -408,8 +408,13 @@ def _write_suggested_rerun_manifest(
     experiments = manifest_payload.get("experiments")
     if not isinstance(experiments, list):
         raise RuntimeError("manifest.experiments must be a list")
+    base_expanded_jobs = _load_expanded_jobs(
+        run_root=extracted.run_root,
+        manifest=base_manifest,
+        manifest_path=extracted.manifest_path,
+    )
     jobs_by_source_index: dict[int, list[ExpandedExperimentJob]] = {}
-    for job in extracted.expanded_jobs.values():
+    for job in base_expanded_jobs.values():
         jobs_by_source_index.setdefault(job.source_index, []).append(job)
 
     filtered_experiments: list[dict[str, Any]] = []
@@ -442,7 +447,7 @@ def _write_suggested_rerun_manifest(
         )
         if not source_jobs and isinstance(experiment.get("launch"), Mapping):
             source_jobs = _candidate_jobs_for_manifest_experiment(
-                jobs=extracted.expanded_jobs.values(),
+                jobs=base_expanded_jobs.values(),
                 experiment=experiment,
                 models=models,
                 workloads=workloads,
@@ -680,7 +685,7 @@ def _row_matches_base_job(*, row: Any, base_job: ExpandedExperimentJob) -> bool:
 def _same_workload_for_rerun(*, row: Any, workload_path: Path) -> bool:
     if row.workload_path == workload_path:
         return True
-    return row.workload_name == _workload_name(workload_path)
+    return _canonical_workload_name(row.workload_name) == _logical_workload_name(workload_path)
 
 
 def _workload_name(workload_path: Path) -> str:
@@ -691,6 +696,23 @@ def _workload_name(workload_path: Path) -> str:
     if isinstance(payload, Mapping) and isinstance(payload.get("name"), str) and payload["name"]:
         return str(payload["name"])
     return workload_path.stem
+
+
+def _logical_workload_name(workload_path: Path) -> str:
+    return _canonical_workload_name(_workload_name(workload_path))
+
+
+def _canonical_workload_name(value: str) -> str:
+    normalized = value.strip().lower().replace("_", "-")
+    changed = True
+    while changed:
+        changed = False
+        for suffix in ("-mst-anomaly-rerun", "-anomaly-rerun", "-rerun"):
+            if normalized.endswith(suffix):
+                normalized = normalized[: -len(suffix)]
+                changed = True
+    normalized = normalized.replace("-4k", "-4096").replace("-8k", "-8192")
+    return normalized
 
 
 def _rerun_search_for_rate_limited_rows(
@@ -775,17 +797,22 @@ def _manifest_workload_matches(
         str(workload_path),
         workload_path.name,
         workload_path.stem,
+        _logical_workload_name(workload_path),
     }
     for raw_workload in manifest_workloads:
         resolved = Path(raw_workload)
         if not resolved.is_absolute():
             resolved = (manifest_path.parent / resolved).resolve()
+        resolved_logical_name = _logical_workload_name(resolved) if resolved.exists() else ""
         raw_candidates = {
             raw_workload,
             str(resolved),
             Path(raw_workload).name,
             Path(raw_workload).stem,
+            _canonical_workload_name(Path(raw_workload).stem),
+            resolved_logical_name,
         }
+        raw_candidates.discard("")
         if candidates & raw_candidates:
             return True
     return False

@@ -11,7 +11,12 @@ from local_orchestrator.matrix import expand_manifest
 from mst_analyzer.config import AnalyzerSettings, load_settings
 from mst_analyzer.extract import extract_run, extract_runs
 from mst_analyzer.models import MSTRow, TraceInstabilityEvidence, TrialArtifactRef
-from mst_analyzer.reporting import _copy_workload_file, analyze_orchestrator_run, analyze_orchestrator_runs
+from mst_analyzer.reporting import (
+    _copy_workload_file,
+    _manifest_workload_matches,
+    analyze_orchestrator_run,
+    analyze_orchestrator_runs,
+)
 from mst_analyzer.rules import analyze_rows, analyze_rows_with_diagnostics, build_bucket_summaries
 from slurm_orchestrator.planning import deserialize_expanded_job, materialize_run_plan
 from slurm_orchestrator.state import collect_run, finalize_task
@@ -1302,6 +1307,31 @@ def test_copy_workload_avoids_same_basename_collisions(tmp_path: Path) -> None:
     assert copied[0] != copied[1]
     assert copied[0].is_file()
     assert copied[1].is_file()
+
+
+def test_manifest_workload_match_accepts_rerun_alias_names(tmp_path: Path) -> None:
+    manifest_dir = tmp_path / "experiments"
+    analysis_dir = tmp_path / "results" / "analysis" / "run"
+    manifest_dir.mkdir(parents=True)
+    analysis_dir.mkdir(parents=True)
+    manifest_path = manifest_dir / "manifest.yaml"
+    manifest_path.write_text("run: {}\n", encoding="utf-8")
+    original_workload = manifest_dir / "live_sharegpt_workload_context_4096.yaml"
+    original_workload.write_text(
+        yaml.safe_dump({"name": "live_sharegpt_workload_context_4096"}, sort_keys=False),
+        encoding="utf-8",
+    )
+    rerun_workload = analysis_dir / "live-sharegpt-workload-context-4k_mst_anomaly_rerun.yaml"
+    rerun_workload.write_text(
+        yaml.safe_dump({"name": "live-sharegpt-workload-context-4k_mst_anomaly_rerun"}, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    assert _manifest_workload_matches(
+        workload_path=rerun_workload,
+        manifest_workloads=["live_sharegpt_workload_context_4096.yaml"],
+        manifest_path=manifest_path,
+    )
 
 
 def test_rerun_manifest_keeps_duplicate_model_tensor_parallel_experiment_precise(

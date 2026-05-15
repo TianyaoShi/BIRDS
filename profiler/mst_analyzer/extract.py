@@ -600,7 +600,14 @@ def _resolve_trace_trial_dir(*, result_dir: Path, trial_dir_value: str) -> Path:
 
 
 def _load_json_mapping(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    text = path.read_text(encoding="utf-8")
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        decoder = json.JSONDecoder()
+        payload, end = decoder.raw_decode(text)
+        if text[end:].strip(" \t\r\n\0"):
+            raise
     if not isinstance(payload, dict):
         raise RuntimeError(f"expected JSON object in {path}")
     return payload
