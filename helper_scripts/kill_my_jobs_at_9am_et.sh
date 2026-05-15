@@ -16,14 +16,16 @@ Usage:
 Wait until 9:00 AM Eastern time, then terminate this user's GPU processes.
 By default it only kills processes owned by the current user that appear in
 nvidia-smi. Use --related-procs to also clear remaining MST finder /
-local-orchestrator processes owned by this user on the node.
+local-orchestrator processes owned by this user on the node. In related-procs
+mode, the script first stops orchestrator processes, then vLLM, then the GPU
+process sweep.
 
 Options:
   --time HH:MM          Target time in Eastern time. Default: 09:00
   --timezone TZ        IANA timezone. Default: America/New_York
   --grace SECONDS      Seconds between SIGTERM and SIGKILL. Default: 30
-  --related-procs      After GPU cleanup, terminate remaining MST/orchestrator
-                       processes owned by this user
+  --related-procs      Terminate remaining MST/orchestrator processes owned by
+                       this user, then vLLM, then GPU processes
   --dry-run            Print what would be killed without killing anything
   --run-now            Do not wait; execute cleanup immediately
   -h, --help           Show this help
@@ -135,6 +137,34 @@ kill_pids() {
   fi
 }
 
+if [[ "$RELATED_PROCS" -eq 1 ]]; then
+  orchestrator_pids=()
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    [[ "$pid" == "$current_shell_pid" ]] && continue
+    pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+    [[ "$pgid" == "$current_process_group" ]] && continue
+    cmdline="$(ps -o args= -p "$pid" 2>/dev/null || true)"
+    if [[ "$cmdline" =~ (llm_mst_finder|local_orchestrator|slurm_orchestrator|mst_adapter|run-trial|run_trial|live_reasoning_smoke|live_code_workloads|single_gpu_model_loop|single-gpu-model-loop) ]]; then
+      orchestrator_pids+=("$pid")
+    fi
+  done < <(pgrep -u "$USER" || true)
+  kill_pids "remaining-mst-orchestrator-processes-owned-by-$USER" "${orchestrator_pids[@]}"
+
+  vllm_pids=()
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    [[ "$pid" == "$current_shell_pid" ]] && continue
+    pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+    [[ "$pgid" == "$current_process_group" ]] && continue
+    cmdline="$(ps -o args= -p "$pid" 2>/dev/null || true)"
+    if [[ "$cmdline" =~ (vllm|vllm.entrypoints) ]]; then
+      vllm_pids+=("$pid")
+    fi
+  done < <(pgrep -u "$USER" || true)
+  kill_pids "remaining-vllm-processes-owned-by-$USER" "${vllm_pids[@]}"
+fi
+
 gpu_pids=()
 if command -v nvidia-smi >/dev/null 2>&1; then
   while IFS= read -r raw_pid; do
@@ -151,20 +181,5 @@ else
 fi
 
 kill_pids "gpu-processes-owned-by-$USER" "${gpu_pids[@]}"
-
-if [[ "$RELATED_PROCS" -eq 1 ]]; then
-  related_pids=()
-  while IFS= read -r pid; do
-    [[ -z "$pid" ]] && continue
-    [[ "$pid" == "$current_shell_pid" ]] && continue
-    pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
-    [[ "$pgid" == "$current_process_group" ]] && continue
-    cmdline="$(ps -o args= -p "$pid" 2>/dev/null || true)"
-    if [[ "$cmdline" =~ (llm_mst_finder|local_orchestrator|slurm_orchestrator|mst_adapter|run-trial|run_trial|search|vllm|vllm.entrypoints|live_reasoning_smoke|live_code_workloads|single_gpu_model_loop|single-gpu-model-loop) ]]; then
-      related_pids+=("$pid")
-    fi
-  done < <(pgrep -u "$USER" || true)
-  kill_pids "remaining-mst-orchestrator-processes-owned-by-$USER" "${related_pids[@]}"
-fi
 
 echo "cleanup finished at $(date)"
