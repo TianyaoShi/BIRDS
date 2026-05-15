@@ -10,7 +10,9 @@ import yaml
 
 from local_orchestrator.manifest import load_manifest
 from local_orchestrator.matrix import expand_manifest
+from local_orchestrator.models import ExpandedExperimentJob
 from local_orchestrator.utils import slugify, stable_hash
+from slurm_orchestrator.planning import deserialize_expanded_job
 
 from .models import (
     EnergyLaunchConfig,
@@ -165,6 +167,7 @@ def render_dry_run(plan: EnergyPlan) -> dict[str, Any]:
 
 
 def _load_orchestrator_jobs_from_roots(run_roots: tuple[Path, ...]) -> list[OrchestratorJobRecord]:
+    selected_by_experiment_id: dict[str, OrchestratorJobRecord] = {}
     selected_by_key: dict[tuple[str, str, str], OrchestratorJobRecord] = {}
     all_jobs: list[OrchestratorJobRecord] = []
     for run_root in run_roots:
@@ -173,12 +176,17 @@ def _load_orchestrator_jobs_from_roots(run_roots: tuple[Path, ...]) -> list[Orch
         for job in run_jobs:
             if job.status != "succeeded":
                 continue
+            selected_by_experiment_id[job.experiment_id] = job
             selected_by_key[_decisive_job_key(job)] = job
 
-    decisive_jobs = set(id(job) for job in selected_by_key.values())
+    decisive_experiment_jobs = set(id(job) for job in selected_by_experiment_id.values())
+    decisive_config_jobs = set(id(job) for job in selected_by_key.values())
     merged: list[OrchestratorJobRecord] = []
     for job in all_jobs:
-        if job.status == "succeeded" and id(job) not in decisive_jobs:
+        if (
+            job.status == "succeeded"
+            and (id(job) not in decisive_experiment_jobs or id(job) not in decisive_config_jobs)
+        ):
             continue
         merged.append(job)
     return merged
@@ -200,7 +208,7 @@ def _load_orchestrator_jobs(run_root: Path) -> list[OrchestratorJobRecord]:
     state = _load_json_mapping(run_root / "state.json")
     manifest_path = Path(_expect_str(state.get("manifest_path"), "state.json.manifest_path"))
     manifest = load_manifest(manifest_path)
-    expanded_jobs = {job.experiment_id: job for job in expand_manifest(manifest)}
+    expanded_jobs = _load_expanded_jobs(run_root=run_root, manifest=manifest)
 
     summary_jobs = summary.get("jobs")
     if not isinstance(summary_jobs, list):
@@ -263,6 +271,48 @@ def _load_orchestrator_jobs(run_root: Path) -> list[OrchestratorJobRecord]:
             )
         )
     return records
+
+
+def _load_expanded_jobs(*, run_root: Path, manifest: Any) -> dict[str, ExpandedExperimentJob]:
+    expanded_jobs = {job.experiment_id: job for job in expand_manifest(manifest)}
+    expanded_jobs.update(_load_planned_expanded_jobs(run_root=run_root))
+    return expanded_jobs
+
+
+def _load_planned_expanded_jobs(*, run_root: Path) -> dict[str, ExpandedExperimentJob]:
+    plan_path = run_root / "plan.json"
+    if not plan_path.is_file():
+        return {}
+    plan_payload = _load_json_mapping(plan_path)
+    groups = plan_payload.get("groups")
+    if not isinstance(groups, list):
+        return {}
+
+    planned_jobs: dict[str, ExpandedExperimentJob] = {}
+    for raw_group in groups:
+        if not isinstance(raw_group, Mapping):
+            continue
+        raw_plan_path = raw_group.get("plan_path")
+        if not isinstance(raw_plan_path, str) or not raw_plan_path:
+            continue
+        group_plan_path = Path(raw_plan_path)
+        if not group_plan_path.is_absolute():
+            group_plan_path = run_root / group_plan_path
+        if not group_plan_path.is_file():
+            continue
+        group_payload = _load_json_mapping(group_plan_path)
+        group_jobs = group_payload.get("jobs")
+        if not isinstance(group_jobs, list):
+            continue
+        for raw_task in group_jobs:
+            if not isinstance(raw_task, Mapping):
+                continue
+            raw_job = raw_task.get("job")
+            if not isinstance(raw_job, dict):
+                continue
+            job = deserialize_expanded_job(raw_job)
+            planned_jobs[job.experiment_id] = job
+    return planned_jobs
 
 
 def _select_source_jobs(

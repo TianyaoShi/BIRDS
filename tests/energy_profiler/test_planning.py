@@ -16,7 +16,13 @@ from local_orchestrator.manifest import load_manifest
 from local_orchestrator.matrix import expand_manifest
 
 
-def _write_manifest(tmp_path: Path, workload: Path, *, model: str = "Qwen/Qwen3-8B") -> Path:
+def _write_manifest(
+    tmp_path: Path,
+    workload: Path,
+    *,
+    model: str = "Qwen/Qwen3-8B",
+    experiment_id: str = "exp-a",
+) -> Path:
     manifest_path = tmp_path / "manifest.yaml"
     manifest_path.write_text(
         yaml.safe_dump(
@@ -44,7 +50,7 @@ def _write_manifest(tmp_path: Path, workload: Path, *, model: str = "Qwen/Qwen3-
                 },
                 "experiments": [
                     {
-                        "id": "exp-a",
+                        "id": experiment_id,
                         "model": model,
                         "workload": str(workload),
                         "endpoint": "/v1/chat/completions",
@@ -65,10 +71,12 @@ def _write_orchestrator_run(
     run_id: str = "run-a",
     model: str = "Qwen/Qwen3-8B",
     manifest_name: str = "manifest.yaml",
+    workload_name: str = "sharegpt.yaml",
+    experiment_id: str = "exp-a",
 ) -> tuple[Path, Path]:
-    workload = tmp_path / "sharegpt.yaml"
+    workload = tmp_path / workload_name
     workload.write_text("name: sharegpt\n", encoding="utf-8")
-    manifest_path = _write_manifest(tmp_path, workload, model=model)
+    manifest_path = _write_manifest(tmp_path, workload, model=model, experiment_id=experiment_id)
     if manifest_path.name != manifest_name:
         renamed = tmp_path / manifest_name
         manifest_path.rename(renamed)
@@ -205,6 +213,7 @@ def test_generate_plan_from_multiple_orchestrator_roots_uses_later_rerun_for_dup
         run_id="targeted-rerun",
         model="Qwen/Qwen3-4B-Instruct-2507",
         manifest_name="rerun.yaml",
+        workload_name="sharegpt_mst_anomaly_rerun.yaml",
     )
 
     plan = generate_plan_from_orchestrator_runs(
@@ -216,6 +225,7 @@ def test_generate_plan_from_multiple_orchestrator_roots_uses_later_rerun_for_dup
     assert plan.jobs[0].mst_rate == pytest.approx(5.12)
     assert plan.jobs[0].metadata["source_orchestrator_run_id"] == "targeted-rerun"
     assert plan.jobs[0].metadata["source_orchestrator_run_root"] == str(rerun)
+    assert plan.jobs[0].workload.name == "sharegpt_mst_anomaly_rerun.yaml"
 
 
 def test_generate_plan_from_multiple_orchestrator_roots_includes_followup_only_model(
@@ -236,6 +246,7 @@ def test_generate_plan_from_multiple_orchestrator_roots_includes_followup_only_m
         run_id="thinking-rerun",
         model="Qwen/Qwen3-4B-Thinking-2507",
         manifest_name="thinking.yaml",
+        experiment_id="exp-thinking",
     )
 
     plan = generate_plan_from_orchestrator_runs(
