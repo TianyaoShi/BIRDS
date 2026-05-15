@@ -142,6 +142,7 @@ def extract_runs(orchestrator_run_roots: tuple[str | Path, ...] | list[str | Pat
         raise RuntimeError("at least one orchestrator run root is required")
     extracted_runs = [extract_run(run_root) for run_root in run_roots]
 
+    selected_by_experiment_id: dict[str, MSTRow] = {}
     selected_by_key: dict[tuple[str, str, str, str], MSTRow] = {}
     all_rows: list[MSTRow] = []
     expanded_jobs: dict[str, ExpandedExperimentJob] = {}
@@ -149,10 +150,16 @@ def extract_runs(orchestrator_run_roots: tuple[str | Path, ...] | list[str | Pat
         expanded_jobs.update(extracted.expanded_jobs)
         all_rows.extend(extracted.rows)
         for row in extracted.rows:
+            selected_by_experiment_id[row.experiment_id] = row
             selected_by_key[_decisive_row_key(row)] = row
 
-    decisive_rows = set(id(row) for row in selected_by_key.values())
-    merged_rows = [row for row in all_rows if id(row) in decisive_rows]
+    decisive_experiment_rows = set(id(row) for row in selected_by_experiment_id.values())
+    decisive_config_rows = set(id(row) for row in selected_by_key.values())
+    merged_rows = [
+        row
+        for row in all_rows
+        if id(row) in decisive_experiment_rows and id(row) in decisive_config_rows
+    ]
     first = extracted_runs[0]
     return ExtractedRun(
         run_id="+".join(extracted.run_id for extracted in extracted_runs),
