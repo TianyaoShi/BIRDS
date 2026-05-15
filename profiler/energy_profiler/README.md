@@ -104,6 +104,12 @@ servers for matching server signatures, waits for readiness, runs fixed-rate
 open-loop trials, and releases resources at the end. This is the intended path
 for full energy profiling experiments.
 
+Managed trials first measure an idle baseline, then run an unmeasured traffic
+warmup at the target request rate, then start GPU power monitoring for the
+measured trial. If `defaults.repeats` is greater than one, repeat artifacts are
+stored under `repeat_001/`, `repeat_002/`, and so on, with aggregate repeat
+statistics written at the job root.
+
 Energy plans include an `execution` section with `allowed_gpu_ids`,
 `max_active_gpus`, base port range, and metrics port offset. These values are
 copied from the source orchestrator manifest during plan generation, making the
@@ -134,6 +140,7 @@ PYTHONPATH=profiler:. python -m energy_profiler.cli run-live-trial \
   --metrics-interval-s 1 \
   --window-s 10 \
   --idle-monitor-duration-s 10 \
+  --traffic-warmup-s 30 \
   --gpu-monitor-interval-s 1
 ```
 
@@ -149,6 +156,10 @@ For each managed job or live trial, the profiler writes:
 - `windows.csv`: fixed-window latency, throughput, queue, and server metrics.
 - `gpu_power.json`: idle and traffic GPU power traces.
 - `energy_summary.json`: aggregate energy and per-token/request energy metrics.
+
+For repeated jobs, the job root contains aggregate `summary.json`,
+`gpu_power.json`, and `energy_summary.json`; per-repeat trial artifacts live in
+`repeat_001/`, `repeat_002/`, etc.
 
 Managed plan runs also keep run state and summaries under:
 
@@ -213,7 +224,10 @@ Energy summaries include:
 
 - Managed plan trial duration: `180s`
 - Managed plan idle baseline duration: `warmup_s`, default `30s`
+- Managed plan traffic warmup duration: `traffic_warmup_s`, default `30s`
 - Managed plan cooldown: `15s`
+- Managed plan repeats: `repeats`, default `1`
+- Managed repeat cooldown: `repeat_cooldown_s`, default `15s`
 - Managed GPU monitor interval: `0.025s`
 - Live-trial duration: `90s`
 - Live-trial request rate: `1 req/s`

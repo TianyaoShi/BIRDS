@@ -110,6 +110,8 @@ defaults:
   traffic_warmup_s: 30
   cooldown_s: 15
   repeats: 1
+  repeat_cooldown_s: 15
+  warmup_each_repeat: false
   metrics_interval_s: 1.0
   window_s: 10.0
   gpu_monitor_interval_s: 0.025

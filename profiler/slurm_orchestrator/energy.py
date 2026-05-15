@@ -635,6 +635,12 @@ def _build_energy_live_trial_command(
         str(plan.defaults.window_s),
         "--idle-monitor-duration-s",
         str(plan.defaults.idle_monitor_duration_s),
+        "--traffic-warmup-s",
+        str(plan.defaults.traffic_warmup_s),
+        "--repeats",
+        str(plan.defaults.repeats),
+        "--repeat-cooldown-s",
+        str(plan.defaults.repeat_cooldown_s),
         "--gpu-monitor-interval-s",
         str(plan.defaults.gpu_monitor_interval_s),
         "--gpu-monitor-truncate-s",
@@ -643,6 +649,8 @@ def _build_energy_live_trial_command(
     ]
     if plan.defaults.monitor_clock:
         command.append("--monitor-clock")
+    if plan.defaults.warmup_each_repeat:
+        command.append("--warmup-each-repeat")
     if plan.defaults.safety_max_outstanding is not None:
         command.extend(["--safety-max-outstanding", str(plan.defaults.safety_max_outstanding)])
     return tuple(command)
@@ -743,6 +751,7 @@ def _energy_job_state(
             "windows_csv": None,
             "gpu_power_json": None,
             "energy_summary_json": None,
+            "repeats": [],
             "profile_stdout_log": str(profile_stdout_log),
             "profile_stderr_log": str(profile_stderr_log),
             "vllm_stdout_log": str(vllm_stdout_log),
@@ -814,6 +823,28 @@ def _fill_energy_artifacts(
     vllm_stdout_log: Path,
     vllm_stderr_log: Path,
 ) -> None:
+    repeat_artifacts = []
+    for repeat_dir in sorted(result_dir.glob("repeat_[0-9][0-9][0-9]")):
+        if not repeat_dir.is_dir():
+            continue
+        repeat_artifacts.append(
+            {
+                "repeat_index": _repeat_index_from_dir(repeat_dir),
+                "result_dir": str(repeat_dir),
+                "summary_json": str(repeat_dir / "summary.json") if (repeat_dir / "summary.json").is_file() else None,
+                "request_records_jsonl": str(repeat_dir / "request_records.jsonl")
+                if (repeat_dir / "request_records.jsonl").is_file()
+                else None,
+                "server_metrics_jsonl": str(repeat_dir / "server_metrics.jsonl")
+                if (repeat_dir / "server_metrics.jsonl").is_file()
+                else None,
+                "windows_csv": str(repeat_dir / "windows.csv") if (repeat_dir / "windows.csv").is_file() else None,
+                "gpu_power_json": str(repeat_dir / "gpu_power.json") if (repeat_dir / "gpu_power.json").is_file() else None,
+                "energy_summary_json": str(repeat_dir / "energy_summary.json")
+                if (repeat_dir / "energy_summary.json").is_file()
+                else None,
+            }
+        )
     artifacts.update(
         {
             "summary_json": str(result_dir / "summary.json") if (result_dir / "summary.json").is_file() else None,
@@ -828,12 +859,20 @@ def _fill_energy_artifacts(
             "energy_summary_json": str(result_dir / "energy_summary.json")
             if (result_dir / "energy_summary.json").is_file()
             else None,
+            "repeats": repeat_artifacts,
             "profile_stdout_log": str(profile_stdout_log),
             "profile_stderr_log": str(profile_stderr_log),
             "vllm_stdout_log": str(vllm_stdout_log),
             "vllm_stderr_log": str(vllm_stderr_log),
         }
     )
+
+
+def _repeat_index_from_dir(path: Path) -> int | None:
+    try:
+        return int(path.name.rsplit("_", 1)[1])
+    except (IndexError, ValueError):
+        return None
 
 
 def _reconcile_energy_state_artifacts(state: dict[str, Any]) -> None:

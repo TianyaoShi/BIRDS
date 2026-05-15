@@ -63,6 +63,10 @@ def build_parser() -> argparse.ArgumentParser:
     live_trial.add_argument("--metrics-interval-s", type=float, default=1.0)
     live_trial.add_argument("--window-s", type=float, default=10.0)
     live_trial.add_argument("--idle-monitor-duration-s", type=float, default=10.0)
+    live_trial.add_argument("--traffic-warmup-s", type=float, default=0.0)
+    live_trial.add_argument("--repeats", type=int, default=1)
+    live_trial.add_argument("--repeat-cooldown-s", type=float, default=0.0)
+    live_trial.add_argument("--warmup-each-repeat", action="store_true")
     live_trial.add_argument("--gpu-monitor-interval-s", type=float, default=1.0)
     live_trial.add_argument("--gpu-monitor-truncate-s", type=float, default=0.0)
     live_trial.add_argument("--monitor-clock", action="store_true")
@@ -163,6 +167,10 @@ def _run_live_trial_command(args: argparse.Namespace) -> int:
         metrics_interval_s=args.metrics_interval_s,
         window_s=args.window_s,
         idle_monitor_duration_s=args.idle_monitor_duration_s,
+        traffic_warmup_s=args.traffic_warmup_s,
+        repeats=args.repeats,
+        repeat_cooldown_s=args.repeat_cooldown_s,
+        warmup_each_repeat=bool(args.warmup_each_repeat),
         gpu_monitor_interval_s=args.gpu_monitor_interval_s,
         gpu_monitor_truncate_s=args.gpu_monitor_truncate_s,
         monitor_clock=bool(args.monitor_clock),

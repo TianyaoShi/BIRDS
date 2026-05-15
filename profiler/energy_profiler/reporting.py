@@ -82,6 +82,7 @@ class EnergyRunStateStore:
                         "windows_csv": str(result_dir / "windows.csv"),
                         "gpu_power_json": str(gpu_power_path) if gpu_power_path.is_file() else None,
                         "energy_summary_json": str(energy_summary_path),
+                        "repeats": _repeat_artifacts(result_dir),
                     }
                 )
                 changed = True
@@ -273,6 +274,7 @@ class EnergyRunStateStore:
                 "windows_csv": None,
                 "gpu_power_json": None,
                 "energy_summary_json": None,
+                "repeats": [],
                 "profile_stdout_log": None,
                 "profile_stderr_log": None,
                 "vllm_stdout_log": None,
@@ -311,3 +313,36 @@ def _format_float(value: Any) -> str:
     if numeric is None:
         return "-"
     return f"{numeric:.4f}".rstrip("0").rstrip(".")
+
+
+def _repeat_artifacts(result_dir: Path) -> list[dict[str, Any]]:
+    repeats = []
+    for repeat_dir in sorted(result_dir.glob("repeat_[0-9][0-9][0-9]")):
+        if not repeat_dir.is_dir():
+            continue
+        repeats.append(
+            {
+                "repeat_index": _repeat_index_from_dir(repeat_dir),
+                "result_dir": str(repeat_dir),
+                "summary_json": str(repeat_dir / "summary.json") if (repeat_dir / "summary.json").is_file() else None,
+                "request_records_jsonl": str(repeat_dir / "request_records.jsonl")
+                if (repeat_dir / "request_records.jsonl").is_file()
+                else None,
+                "server_metrics_jsonl": str(repeat_dir / "server_metrics.jsonl")
+                if (repeat_dir / "server_metrics.jsonl").is_file()
+                else None,
+                "windows_csv": str(repeat_dir / "windows.csv") if (repeat_dir / "windows.csv").is_file() else None,
+                "gpu_power_json": str(repeat_dir / "gpu_power.json") if (repeat_dir / "gpu_power.json").is_file() else None,
+                "energy_summary_json": str(repeat_dir / "energy_summary.json")
+                if (repeat_dir / "energy_summary.json").is_file()
+                else None,
+            }
+        )
+    return repeats
+
+
+def _repeat_index_from_dir(path: Path) -> int | None:
+    try:
+        return int(path.name.rsplit("_", 1)[1])
+    except (IndexError, ValueError):
+        return None

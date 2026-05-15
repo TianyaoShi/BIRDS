@@ -150,6 +150,8 @@ def test_materialize_energy_run_plan_groups_jobs_and_renders_energy_script(tmp_p
     assert "finalize-energy-task" in script
     assert "energy_profiler.cli" in render_energy_task_shell(run_plan["groups"][0]["plan_path"], 0)
     assert "--idle-monitor-duration-s 3.0" in render_energy_task_shell(run_plan["groups"][0]["plan_path"], 0)
+    assert "--traffic-warmup-s 30.0" in render_energy_task_shell(run_plan["groups"][0]["plan_path"], 0)
+    assert "--repeats 1" in render_energy_task_shell(run_plan["groups"][0]["plan_path"], 0)
     assert "export PYTORCH_ALLOC_CONF=expandable_segments:True" in render_energy_task_shell(
         run_plan["groups"][0]["plan_path"],
         0,

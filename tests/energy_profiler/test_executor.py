@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -278,8 +279,13 @@ def test_executor_run_plan_reuses_server_and_writes_energy_artifacts(tmp_path: P
 
     assert summary["counts"]["succeeded"] == 2
     assert lifecycle.ensure_calls == 1
-    assert len(recorded_commands) == 2
+    assert len(recorded_commands) == 4
+    assert recorded_commands[0][recorded_commands[0].index("--trial-id") + 1] == "job-a-r1-warmup"
+    assert recorded_commands[0][recorded_commands[0].index("--duration-s") + 1] == "30.0"
+    assert recorded_commands[1][recorded_commands[1].index("--trial-id") + 1] == "job-a-r1"
+    assert recorded_commands[1][recorded_commands[1].index("--duration-s") + 1] == "15.0"
     run_root = plan.plan.output_root / plan.plan.plan_id
+    assert (run_root / "jobs" / "job-a-r1" / "warmup" / "summary.json").is_file()
     assert (run_root / "jobs" / "job-a-r1" / "gpu_power.json").is_file()
     assert (run_root / "jobs" / "job-a-r1" / "energy_summary.json").is_file()
     energy_payload = json.loads((run_root / "jobs" / "job-a-r1" / "energy_summary.json").read_text(encoding="utf-8"))
@@ -287,6 +293,110 @@ def test_executor_run_plan_reuses_server_and_writes_energy_artifacts(tmp_path: P
     assert energy_payload["energy_per_total_token_j"] is not None
     assert (run_root / "logs" / "job-a-r1.profile.stdout.log").is_file()
     assert (run_root / "logs" / "job-a-r1.vllm.stdout.log").is_file()
+
+
+def test_executor_run_plan_repeats_trial_and_aggregates_energy(tmp_path: Path) -> None:
+    clock = _FakeClock()
+    lifecycle = _FakeLifecycle()
+    recorded_commands: list[tuple[str, ...]] = []
+    base_plan = _make_plan(tmp_path)
+    plan = replace(
+        base_plan,
+        defaults=replace(
+            base_plan.defaults,
+            traffic_warmup_s=3.0,
+            repeats=2,
+            repeat_cooldown_s=2.0,
+            cooldown_s=0.0,
+        ),
+        jobs=(base_plan.jobs[0],),
+    )
+    plan_path = write_energy_plan(plan, tmp_path / "experiments" / "energy" / "energy-plan-repeats.yaml")
+
+    def run_command(command, *, env, cwd, stdout, stderr):
+        del env, cwd
+        recorded_commands.append(command)
+        output_dir = Path(command[command.index("--output-dir") + 1])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        summary_payload = {
+            "summary": {
+                "successful_requests": 2,
+                "started_requests": 2,
+                "benchmark_metrics": {
+                    "total_input_tokens": 40,
+                    "total_output_tokens": 20,
+                },
+            }
+        }
+        (output_dir / "summary.json").write_text(json.dumps(summary_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        (output_dir / "request_records.jsonl").write_text("", encoding="utf-8")
+        (output_dir / "server_metrics.jsonl").write_text("", encoding="utf-8")
+        (output_dir / "windows.csv").write_text("trial_id,window_idx\n", encoding="utf-8")
+        stdout.write("{}\n")
+        stderr.write("")
+        clock.advance(float(command[command.index("--duration-s") + 1]))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    executor = EnergyExecutor(
+        config=EnergyExecutorConfig(allowed_gpu_ids=(0,), max_active_gpus=1),
+        lifecycle_factory=lambda: lifecycle,
+        run_command=run_command,
+        monitor_factory=_FakeMonitor,
+        sleep_fn=clock.sleep,
+        time_fn=clock,
+    )
+    summary = executor.run_plan(plan_path)
+
+    assert summary["counts"]["succeeded"] == 1
+    assert [command[command.index("--trial-id") + 1] for command in recorded_commands] == [
+        "job-a-r1-repeat-001-warmup",
+        "job-a-r1-repeat-001",
+        "job-a-r1-repeat-002",
+    ]
+    run_root = plan.plan.output_root / plan.plan.plan_id
+    result_dir = run_root / "jobs" / "job-a-r1"
+    assert (result_dir / "repeat_001" / "warmup" / "summary.json").is_file()
+    assert (result_dir / "repeat_001" / "energy_summary.json").is_file()
+    assert (result_dir / "repeat_002" / "energy_summary.json").is_file()
+    aggregate = json.loads((result_dir / "energy_summary.json").read_text(encoding="utf-8"))
+    assert aggregate["repeat_count"] == 2
+    assert aggregate["successful_repeat_count"] == 2
+    assert aggregate["energy_joules"] == pytest.approx(4500.0)
+    assert aggregate["repeat_statistics"]["energy_joules"]["stdev"] == pytest.approx(0.0)
+    state_summary = json.loads((run_root / "summary.json").read_text(encoding="utf-8"))
+    assert state_summary["jobs"][0]["artifacts"]["repeats"][0]["repeat_index"] == 1
+
+
+def test_executor_warmup_failure_fails_before_measured_trial(tmp_path: Path) -> None:
+    clock = _FakeClock()
+    lifecycle = _FakeLifecycle()
+    recorded_commands: list[tuple[str, ...]] = []
+    base_plan = _make_plan(tmp_path)
+    plan = replace(base_plan, jobs=(base_plan.jobs[0],), defaults=replace(base_plan.defaults, cooldown_s=0.0))
+    plan_path = write_energy_plan(plan, tmp_path / "experiments" / "energy" / "energy-plan-warmup-fail.yaml")
+
+    def run_command(command, *, env, cwd, stdout, stderr):
+        del env, cwd, stdout
+        recorded_commands.append(command)
+        stderr.write("warmup failed\n")
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="warmup failed\n")
+
+    executor = EnergyExecutor(
+        config=EnergyExecutorConfig(allowed_gpu_ids=(0,), max_active_gpus=1),
+        lifecycle_factory=lambda: lifecycle,
+        run_command=run_command,
+        monitor_factory=_FakeMonitor,
+        sleep_fn=clock.sleep,
+        time_fn=clock,
+    )
+    summary = executor.run_plan(plan_path)
+
+    assert summary["counts"]["failed"] == 1
+    assert len(recorded_commands) == 1
+    assert recorded_commands[0][recorded_commands[0].index("--trial-id") + 1] == "job-a-r1-warmup"
+    run_root = plan.plan.output_root / plan.plan.plan_id
+    assert not (run_root / "jobs" / "job-a-r1" / "energy_summary.json").exists()
+    assert "warmup run-trial failed" in summary["jobs"][0]["last_error"]
 
 
 def test_executor_run_plan_uses_plan_execution_when_config_is_not_overridden(tmp_path: Path) -> None:

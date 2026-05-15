@@ -164,7 +164,11 @@ class EnergyPlanSelection:
 class EnergyPlanDefaults:
     duration_s: float = 180.0
     warmup_s: float = 30.0
+    traffic_warmup_s: float = 30.0
     cooldown_s: float = 15.0
+    repeats: int = 1
+    repeat_cooldown_s: float = 15.0
+    warmup_each_repeat: bool = False
     metrics_interval_s: float = 1.0
     window_s: float = 10.0
     gpu_monitor_interval_s: float = 0.025
@@ -176,7 +180,12 @@ class EnergyPlanDefaults:
     def __post_init__(self) -> None:
         _require_positive_float("defaults.duration_s", self.duration_s)
         _require_non_negative_float("defaults.warmup_s", self.warmup_s)
+        _require_non_negative_float("defaults.traffic_warmup_s", self.traffic_warmup_s)
         _require_non_negative_float("defaults.cooldown_s", self.cooldown_s)
+        _require_positive_int("defaults.repeats", self.repeats)
+        _require_non_negative_float("defaults.repeat_cooldown_s", self.repeat_cooldown_s)
+        if not isinstance(self.warmup_each_repeat, bool):
+            raise ValueError("defaults.warmup_each_repeat must be a boolean")
         _require_positive_float("defaults.metrics_interval_s", self.metrics_interval_s)
         _require_positive_float("defaults.window_s", self.window_s)
         _require_positive_float("defaults.gpu_monitor_interval_s", self.gpu_monitor_interval_s)
@@ -195,7 +204,12 @@ class EnergyPlanDefaults:
         return {
             "duration_s": self.duration_s,
             "warmup_s": self.warmup_s,
+            "idle_baseline_s": self.idle_monitor_duration_s,
+            "traffic_warmup_s": self.traffic_warmup_s,
             "cooldown_s": self.cooldown_s,
+            "repeats": self.repeats,
+            "repeat_cooldown_s": self.repeat_cooldown_s,
+            "warmup_each_repeat": self.warmup_each_repeat,
             "metrics_interval_s": self.metrics_interval_s,
             "window_s": self.window_s,
             "gpu_monitor_interval_s": self.gpu_monitor_interval_s,
@@ -207,10 +221,26 @@ class EnergyPlanDefaults:
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "EnergyPlanDefaults":
+        idle_baseline_s = payload.get("idle_baseline_s", payload.get("warmup_s", 30.0))
         return cls(
             duration_s=_expect_float(payload.get("duration_s", 180.0), "defaults.duration_s", minimum=0.0, strict_gt=True),
-            warmup_s=_expect_float(payload.get("warmup_s", 30.0), "defaults.warmup_s", minimum=0.0),
+            warmup_s=_expect_float(idle_baseline_s, "defaults.idle_baseline_s", minimum=0.0),
+            traffic_warmup_s=_expect_float(
+                payload.get("traffic_warmup_s", 30.0),
+                "defaults.traffic_warmup_s",
+                minimum=0.0,
+            ),
             cooldown_s=_expect_float(payload.get("cooldown_s", 15.0), "defaults.cooldown_s", minimum=0.0),
+            repeats=_expect_int(payload.get("repeats", 1), "defaults.repeats", minimum=1),
+            repeat_cooldown_s=_expect_float(
+                payload.get("repeat_cooldown_s", payload.get("cooldown_s", 15.0)),
+                "defaults.repeat_cooldown_s",
+                minimum=0.0,
+            ),
+            warmup_each_repeat=_expect_bool(
+                payload.get("warmup_each_repeat", False),
+                "defaults.warmup_each_repeat",
+            ),
             metrics_interval_s=_expect_float(payload.get("metrics_interval_s", 1.0), "defaults.metrics_interval_s", minimum=0.0, strict_gt=True),
             window_s=_expect_float(payload.get("window_s", 10.0), "defaults.window_s", minimum=0.0, strict_gt=True),
             gpu_monitor_interval_s=_expect_float(

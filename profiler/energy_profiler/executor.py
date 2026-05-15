@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 from math import isfinite
 from pathlib import Path
+from statistics import mean, median, stdev
 from types import SimpleNamespace
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
@@ -198,6 +199,10 @@ class EnergyExecutor:
         metrics_interval_s: float,
         window_s: float,
         idle_monitor_duration_s: float,
+        traffic_warmup_s: float,
+        repeats: int,
+        repeat_cooldown_s: float,
+        warmup_each_repeat: bool,
         gpu_monitor_interval_s: float,
         gpu_monitor_truncate_s: float,
         monitor_clock: bool,
@@ -216,6 +221,12 @@ class EnergyExecutor:
         resolved_gpu_ids = tuple(int(gpu_id) for gpu_id in gpu_ids)
         if not resolved_gpu_ids:
             raise ValueError("gpu_ids must be non-empty")
+        if repeats <= 0:
+            raise ValueError("repeats must be positive")
+        if traffic_warmup_s < 0.0:
+            raise ValueError("traffic_warmup_s must be non-negative")
+        if repeat_cooldown_s < 0.0:
+            raise ValueError("repeat_cooldown_s must be non-negative")
         resolved_metrics_url = metrics_url or f"{base_url.rstrip('/')}/metrics"
 
         idle_snapshot = self._collect_idle_baseline(
@@ -225,38 +236,88 @@ class EnergyExecutor:
             truncate_s=0.0,
             monitor_clock=monitor_clock,
         )
-        traffic_snapshot = self._run_live_monitored_trial(
-            trial_id=trial_id,
-            output_dir=resolved_output_dir,
-            workload=Path(workload),
-            model=model,
-            base_url=base_url,
-            endpoint=endpoint,
-            metrics_url=resolved_metrics_url,
-            gpu_ids=resolved_gpu_ids,
-            duration_s=duration_s,
-            request_rate=request_rate,
-            request_timeout_s=request_timeout_s,
-            metrics_interval_s=metrics_interval_s,
-            window_s=window_s,
-            gpu_monitor_interval_s=gpu_monitor_interval_s,
-            gpu_monitor_truncate_s=gpu_monitor_truncate_s,
-            monitor_clock=monitor_clock,
-            safety_max_outstanding=safety_max_outstanding,
-            logs_dir=logs_dir,
-        )
-        trial_summary_payload = _load_json_mapping(resolved_output_dir / "summary.json")
-        energy_summary = compute_energy_summary(
-            trial_summary_payload=trial_summary_payload,
-            idle_snapshot=idle_snapshot,
-            traffic_snapshot=traffic_snapshot,
-        )
-        gpu_power_payload = {
-            "idle": idle_snapshot.to_dict(),
-            "traffic": traffic_snapshot.to_dict(),
-        }
-        _write_json(resolved_output_dir / "gpu_power.json", gpu_power_payload)
-        _write_json(resolved_output_dir / "energy_summary.json", energy_summary)
+        repeat_results = []
+        for repeat_index in range(1, repeats + 1):
+            repeat_dir = _repeat_result_dir(resolved_output_dir, repeat_index, repeats)
+            repeat_trial_id = _repeat_trial_id(trial_id, repeat_index, repeats)
+            if traffic_warmup_s > 0.0 and (repeat_index == 1 or warmup_each_repeat):
+                self._run_live_unmonitored_trial(
+                    trial_id=f"{repeat_trial_id}-warmup",
+                    output_dir=repeat_dir / "warmup",
+                    workload=Path(workload),
+                    model=model,
+                    base_url=base_url,
+                    endpoint=endpoint,
+                    metrics_url=resolved_metrics_url,
+                    duration_s=traffic_warmup_s,
+                    request_rate=request_rate,
+                    request_timeout_s=request_timeout_s,
+                    metrics_interval_s=metrics_interval_s,
+                    window_s=window_s,
+                    safety_max_outstanding=safety_max_outstanding,
+                    logs_dir=logs_dir,
+                    log_stem=f"{repeat_trial_id}.warmup",
+                )
+            traffic_snapshot = self._run_live_monitored_trial(
+                trial_id=repeat_trial_id,
+                output_dir=repeat_dir,
+                workload=Path(workload),
+                model=model,
+                base_url=base_url,
+                endpoint=endpoint,
+                metrics_url=resolved_metrics_url,
+                gpu_ids=resolved_gpu_ids,
+                duration_s=duration_s,
+                request_rate=request_rate,
+                request_timeout_s=request_timeout_s,
+                metrics_interval_s=metrics_interval_s,
+                window_s=window_s,
+                gpu_monitor_interval_s=gpu_monitor_interval_s,
+                gpu_monitor_truncate_s=gpu_monitor_truncate_s,
+                monitor_clock=monitor_clock,
+                safety_max_outstanding=safety_max_outstanding,
+                logs_dir=logs_dir,
+                log_stem=f"{repeat_trial_id}.profile",
+            )
+            trial_summary_payload = _load_json_mapping(repeat_dir / "summary.json")
+            energy_summary = compute_energy_summary(
+                trial_summary_payload=trial_summary_payload,
+                idle_snapshot=idle_snapshot,
+                traffic_snapshot=traffic_snapshot,
+            )
+            energy_summary["repeat_index"] = repeat_index
+            energy_summary["repeat_count"] = repeats
+            energy_summary["warmup_applied"] = bool(
+                traffic_warmup_s > 0.0 and (repeat_index == 1 or warmup_each_repeat)
+            )
+            gpu_power_payload = {
+                "idle": idle_snapshot.to_dict(),
+                "traffic": traffic_snapshot.to_dict(),
+            }
+            _write_json(repeat_dir / "gpu_power.json", gpu_power_payload)
+            _write_json(repeat_dir / "energy_summary.json", energy_summary)
+            repeat_results.append(
+                {
+                    "repeat_index": repeat_index,
+                    "result_dir": str(repeat_dir),
+                    "summary_json": str(repeat_dir / "summary.json"),
+                    "request_records_jsonl": str(repeat_dir / "request_records.jsonl"),
+                    "server_metrics_jsonl": str(repeat_dir / "server_metrics.jsonl"),
+                    "windows_csv": str(repeat_dir / "windows.csv"),
+                    "gpu_power_json": str(repeat_dir / "gpu_power.json"),
+                    "energy_summary_json": str(repeat_dir / "energy_summary.json"),
+                    "energy_summary": energy_summary,
+                }
+            )
+            if repeat_index < repeats and repeat_cooldown_s > 0.0:
+                self._sleep_fn(repeat_cooldown_s)
+        if repeats > 1:
+            _write_repeat_aggregate_artifacts(
+                result_dir=resolved_output_dir,
+                idle_snapshot=idle_snapshot,
+                repeat_results=repeat_results,
+            )
+        energy_summary = _load_json_mapping(resolved_output_dir / "energy_summary.json")
         _write_json(
             resolved_output_dir / "live_trial.json",
             {
@@ -269,18 +330,32 @@ class EnergyExecutor:
                 "gpu_ids": list(resolved_gpu_ids),
                 "duration_s": duration_s,
                 "request_rate": request_rate,
+                "traffic_warmup_s": traffic_warmup_s,
+                "repeats": repeats,
+                "repeat_cooldown_s": repeat_cooldown_s,
+                "warmup_each_repeat": warmup_each_repeat,
             },
         )
         return {
             "trial_id": trial_id,
             "output_dir": str(resolved_output_dir),
             "summary_json": str(resolved_output_dir / "summary.json"),
-            "request_records_jsonl": str(resolved_output_dir / "request_records.jsonl"),
-            "server_metrics_jsonl": str(resolved_output_dir / "server_metrics.jsonl"),
-            "windows_csv": str(resolved_output_dir / "windows.csv"),
+            "request_records_jsonl": str(resolved_output_dir / "request_records.jsonl")
+            if (resolved_output_dir / "request_records.jsonl").is_file()
+            else None,
+            "server_metrics_jsonl": str(resolved_output_dir / "server_metrics.jsonl")
+            if (resolved_output_dir / "server_metrics.jsonl").is_file()
+            else None,
+            "windows_csv": str(resolved_output_dir / "windows.csv")
+            if (resolved_output_dir / "windows.csv").is_file()
+            else None,
             "gpu_power_json": str(resolved_output_dir / "gpu_power.json"),
             "energy_summary_json": str(resolved_output_dir / "energy_summary.json"),
             "energy_summary": energy_summary,
+            "repeats": [
+                {key: value for key, value in repeat.items() if key != "energy_summary"}
+                for repeat in repeat_results
+            ],
         }
 
     def _execute(
@@ -367,27 +442,73 @@ class EnergyExecutor:
             idle_snapshot = self._idle_snapshot
             if idle_snapshot is None:
                 raise RuntimeError("idle baseline snapshot is unavailable after server startup")
-            traffic_snapshot = self._run_monitored_trial(
-                plan=plan,
-                plan_job=plan_job,
-                server=server,
-                result_dir=result_dir,
-                logs_dir=state_store.logs_dir,
-            )
+            repeat_results = []
+            for repeat_index in range(1, plan.defaults.repeats + 1):
+                repeat_dir = _repeat_result_dir(result_dir, repeat_index, plan.defaults.repeats)
+                repeat_trial_id = _repeat_trial_id(plan_job.id, repeat_index, plan.defaults.repeats)
+                if plan.defaults.traffic_warmup_s > 0.0 and (
+                    repeat_index == 1 or plan.defaults.warmup_each_repeat
+                ):
+                    self._run_unmonitored_trial(
+                        plan=plan,
+                        plan_job=plan_job,
+                        server=server,
+                        result_dir=repeat_dir / "warmup",
+                        logs_dir=state_store.logs_dir,
+                        trial_id=f"{repeat_trial_id}-warmup",
+                        duration_s=plan.defaults.traffic_warmup_s,
+                        log_stem=f"{repeat_trial_id}.warmup",
+                    )
+                traffic_snapshot = self._run_monitored_trial(
+                    plan=plan,
+                    plan_job=plan_job,
+                    server=server,
+                    result_dir=repeat_dir,
+                    logs_dir=state_store.logs_dir,
+                    trial_id=repeat_trial_id,
+                    log_stem=f"{repeat_trial_id}.profile",
+                )
+                trial_summary_payload = _load_json_mapping(repeat_dir / "summary.json")
+                energy_summary = compute_energy_summary(
+                    trial_summary_payload=trial_summary_payload,
+                    idle_snapshot=idle_snapshot,
+                    traffic_snapshot=traffic_snapshot,
+                )
+                energy_summary["repeat_index"] = repeat_index
+                energy_summary["repeat_count"] = plan.defaults.repeats
+                energy_summary["warmup_applied"] = bool(
+                    plan.defaults.traffic_warmup_s > 0.0
+                    and (repeat_index == 1 or plan.defaults.warmup_each_repeat)
+                )
+                gpu_power_payload = {
+                    "idle": idle_snapshot.to_dict(),
+                    "traffic": traffic_snapshot.to_dict(),
+                }
+                _write_json(repeat_dir / "gpu_power.json", gpu_power_payload)
+                _write_json(repeat_dir / "energy_summary.json", energy_summary)
+                repeat_results.append(
+                    {
+                        "repeat_index": repeat_index,
+                        "result_dir": str(repeat_dir),
+                        "summary_json": str(repeat_dir / "summary.json"),
+                        "request_records_jsonl": str(repeat_dir / "request_records.jsonl"),
+                        "server_metrics_jsonl": str(repeat_dir / "server_metrics.jsonl"),
+                        "windows_csv": str(repeat_dir / "windows.csv"),
+                        "gpu_power_json": str(repeat_dir / "gpu_power.json"),
+                        "energy_summary_json": str(repeat_dir / "energy_summary.json"),
+                        "energy_summary": energy_summary,
+                    }
+                )
+                if repeat_index < plan.defaults.repeats and plan.defaults.repeat_cooldown_s > 0.0:
+                    self._sleep_fn(plan.defaults.repeat_cooldown_s)
             if plan.defaults.cooldown_s > 0.0:
                 self._sleep_fn(plan.defaults.cooldown_s)
-            trial_summary_payload = _load_json_mapping(result_dir / "summary.json")
-            energy_summary = compute_energy_summary(
-                trial_summary_payload=trial_summary_payload,
-                idle_snapshot=idle_snapshot,
-                traffic_snapshot=traffic_snapshot,
-            )
-            gpu_power_payload = {
-                "idle": idle_snapshot.to_dict(),
-                "traffic": traffic_snapshot.to_dict(),
-            }
-            _write_json(result_dir / "gpu_power.json", gpu_power_payload)
-            _write_json(result_dir / "energy_summary.json", energy_summary)
+            if plan.defaults.repeats > 1:
+                _write_repeat_aggregate_artifacts(
+                    result_dir=result_dir,
+                    idle_snapshot=idle_snapshot,
+                    repeat_results=repeat_results,
+                )
 
             vllm_stdout_log = state_store.logs_dir / f"{plan_job.id}.vllm.stdout.log"
             vllm_stderr_log = state_store.logs_dir / f"{plan_job.id}.vllm.stderr.log"
@@ -401,13 +522,25 @@ class EnergyExecutor:
                 base_url=str(server.base_url),
                 artifacts={
                     "summary_json": str(result_dir / "summary.json"),
-                    "request_records_jsonl": str(result_dir / "request_records.jsonl"),
-                    "server_metrics_jsonl": str(result_dir / "server_metrics.jsonl"),
-                    "windows_csv": str(result_dir / "windows.csv"),
+                    "request_records_jsonl": str(result_dir / "request_records.jsonl")
+                    if (result_dir / "request_records.jsonl").is_file()
+                    else None,
+                    "server_metrics_jsonl": str(result_dir / "server_metrics.jsonl")
+                    if (result_dir / "server_metrics.jsonl").is_file()
+                    else None,
+                    "windows_csv": str(result_dir / "windows.csv") if (result_dir / "windows.csv").is_file() else None,
                     "gpu_power_json": str(result_dir / "gpu_power.json"),
                     "energy_summary_json": str(result_dir / "energy_summary.json"),
-                    "profile_stdout_log": str(state_store.logs_dir / f"{plan_job.id}.profile.stdout.log"),
-                    "profile_stderr_log": str(state_store.logs_dir / f"{plan_job.id}.profile.stderr.log"),
+                    "repeats": [
+                        {key: value for key, value in repeat.items() if key != "energy_summary"}
+                        for repeat in repeat_results
+                    ],
+                    "profile_stdout_log": str(state_store.logs_dir / f"{plan_job.id}.profile.stdout.log")
+                    if (state_store.logs_dir / f"{plan_job.id}.profile.stdout.log").is_file()
+                    else None,
+                    "profile_stderr_log": str(state_store.logs_dir / f"{plan_job.id}.profile.stderr.log")
+                    if (state_store.logs_dir / f"{plan_job.id}.profile.stderr.log").is_file()
+                    else None,
                     "vllm_stdout_log": str(vllm_stdout_log),
                     "vllm_stderr_log": str(vllm_stderr_log),
                 },
@@ -423,16 +556,19 @@ class EnergyExecutor:
         server,
         result_dir: Path,
         logs_dir: Path,
+        trial_id: str,
+        log_stem: str,
     ) -> MonitorRunResult:
         logs_dir.mkdir(parents=True, exist_ok=True)
-        stdout_log = logs_dir / f"{plan_job.id}.profile.stdout.log"
-        stderr_log = logs_dir / f"{plan_job.id}.profile.stderr.log"
+        stdout_log = logs_dir / f"{log_stem}.stdout.log"
+        stderr_log = logs_dir / f"{log_stem}.stderr.log"
         command = build_run_trial_command(
             plan=plan,
             job=plan_job,
             base_url=str(server.base_url),
             metrics_url=f"{server.base_url}/metrics",
             output_dir=result_dir,
+            trial_id=trial_id,
         )
 
         env = os.environ.copy()
@@ -469,6 +605,50 @@ class EnergyExecutor:
             raise RuntimeError(f"run-trial failed with exit code {result.returncode}")
         return _collect_monitor_result(monitors=monitors, duration_s=end_ts - start_ts)
 
+    def _run_unmonitored_trial(
+        self,
+        *,
+        plan: EnergyPlan,
+        plan_job: EnergyPlanJob,
+        server,
+        result_dir: Path,
+        logs_dir: Path,
+        trial_id: str,
+        duration_s: float,
+        log_stem: str,
+    ) -> None:
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        stdout_log = logs_dir / f"{log_stem}.stdout.log"
+        stderr_log = logs_dir / f"{log_stem}.stderr.log"
+        command = build_run_trial_command(
+            plan=plan,
+            job=plan_job,
+            base_url=str(server.base_url),
+            metrics_url=f"{server.base_url}/metrics",
+            output_dir=result_dir,
+            trial_id=trial_id,
+            duration_s=duration_s,
+        )
+
+        env = os.environ.copy()
+        profiler_root = str(Path(__file__).resolve().parents[1])
+        existing_pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = profiler_root if not existing_pythonpath else f"{profiler_root}{os.pathsep}{existing_pythonpath}"
+
+        with stdout_log.open("w", encoding="utf-8") as stdout_handle, stderr_log.open(
+            "w",
+            encoding="utf-8",
+        ) as stderr_handle:
+            result = self._run_command(
+                command,
+                env=env,
+                cwd=str(Path(__file__).resolve().parents[2]),
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+            )
+        if result.returncode != 0:
+            raise RuntimeError(f"warmup run-trial failed with exit code {result.returncode}")
+
     def _run_live_monitored_trial(
         self,
         *,
@@ -490,9 +670,10 @@ class EnergyExecutor:
         monitor_clock: bool,
         safety_max_outstanding: int | None,
         logs_dir: Path,
+        log_stem: str,
     ) -> MonitorRunResult:
-        stdout_log = logs_dir / f"{trial_id}.profile.stdout.log"
-        stderr_log = logs_dir / f"{trial_id}.profile.stderr.log"
+        stdout_log = logs_dir / f"{log_stem}.stdout.log"
+        stderr_log = logs_dir / f"{log_stem}.stderr.log"
         command = build_live_run_trial_command(
             trial_id=trial_id,
             output_dir=output_dir,
@@ -539,6 +720,59 @@ class EnergyExecutor:
         if result.returncode != 0:
             raise RuntimeError(f"run-trial failed with exit code {result.returncode}")
         return _collect_monitor_result(monitors=monitors, duration_s=end_ts - start_ts)
+
+    def _run_live_unmonitored_trial(
+        self,
+        *,
+        trial_id: str,
+        output_dir: Path,
+        workload: Path,
+        model: str,
+        base_url: str,
+        endpoint: str,
+        metrics_url: str,
+        duration_s: float,
+        request_rate: float,
+        request_timeout_s: float,
+        metrics_interval_s: float,
+        window_s: float,
+        safety_max_outstanding: int | None,
+        logs_dir: Path,
+        log_stem: str,
+    ) -> None:
+        stdout_log = logs_dir / f"{log_stem}.stdout.log"
+        stderr_log = logs_dir / f"{log_stem}.stderr.log"
+        command = build_live_run_trial_command(
+            trial_id=trial_id,
+            output_dir=output_dir,
+            workload=workload,
+            model=model,
+            base_url=base_url,
+            endpoint=endpoint,
+            metrics_url=metrics_url,
+            duration_s=duration_s,
+            request_rate=request_rate,
+            request_timeout_s=request_timeout_s,
+            metrics_interval_s=metrics_interval_s,
+            window_s=window_s,
+            safety_max_outstanding=safety_max_outstanding,
+        )
+
+        env = os.environ.copy()
+        profiler_root = str(Path(__file__).resolve().parents[1])
+        existing_pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = profiler_root if not existing_pythonpath else f"{profiler_root}{os.pathsep}{existing_pythonpath}"
+
+        with stdout_log.open("w", encoding="utf-8") as stdout_handle, stderr_log.open("w", encoding="utf-8") as stderr_handle:
+            result = self._run_command(
+                command,
+                env=env,
+                cwd=str(Path(__file__).resolve().parents[2]),
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+            )
+        if result.returncode != 0:
+            raise RuntimeError(f"warmup run-trial failed with exit code {result.returncode}")
 
     def _ensure_server(
         self,
@@ -662,11 +896,121 @@ class EnergyExecutor:
             "windows_csv": None,
             "gpu_power_json": None,
             "energy_summary_json": None,
+            "repeats": [],
             "profile_stdout_log": None,
             "profile_stderr_log": None,
             "vllm_stdout_log": None,
             "vllm_stderr_log": None,
         }
+
+
+def _repeat_result_dir(result_dir: Path, repeat_index: int, repeat_count: int) -> Path:
+    if repeat_count == 1:
+        return result_dir
+    return result_dir / f"repeat_{repeat_index:03d}"
+
+
+def _repeat_trial_id(job_id: str, repeat_index: int, repeat_count: int) -> str:
+    if repeat_count == 1:
+        return job_id
+    return f"{job_id}-repeat-{repeat_index:03d}"
+
+
+def _write_repeat_aggregate_artifacts(
+    *,
+    result_dir: Path,
+    idle_snapshot: MonitorRunResult,
+    repeat_results: Sequence[Mapping[str, Any]],
+) -> None:
+    energy_summaries = [
+        dict(repeat["energy_summary"])
+        for repeat in repeat_results
+        if isinstance(repeat.get("energy_summary"), Mapping)
+    ]
+    aggregate_energy = _aggregate_energy_summaries(energy_summaries)
+    aggregate_energy["repeat_count"] = len(repeat_results)
+    aggregate_energy["successful_repeat_count"] = len(energy_summaries)
+    aggregate_energy["repeats"] = [
+        {
+            "repeat_index": repeat.get("repeat_index"),
+            "result_dir": repeat.get("result_dir"),
+            "energy_summary_json": repeat.get("energy_summary_json"),
+        }
+        for repeat in repeat_results
+    ]
+    gpu_power_payload = {
+        "idle": idle_snapshot.to_dict(),
+        "repeats": [
+            {
+                "repeat_index": repeat.get("repeat_index"),
+                "gpu_power_json": repeat.get("gpu_power_json"),
+            }
+            for repeat in repeat_results
+        ],
+    }
+    summary_payload = {
+        "summary": {
+            "repeat_count": len(repeat_results),
+            "successful_repeat_count": len(energy_summaries),
+            "repeats": [
+                {
+                    "repeat_index": repeat.get("repeat_index"),
+                    "summary_json": repeat.get("summary_json"),
+                    "request_records_jsonl": repeat.get("request_records_jsonl"),
+                    "server_metrics_jsonl": repeat.get("server_metrics_jsonl"),
+                    "windows_csv": repeat.get("windows_csv"),
+                }
+                for repeat in repeat_results
+            ],
+        }
+    }
+    _write_json(result_dir / "summary.json", summary_payload)
+    _write_json(result_dir / "gpu_power.json", gpu_power_payload)
+    _write_json(result_dir / "energy_summary.json", aggregate_energy)
+
+
+def _aggregate_energy_summaries(energy_summaries: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    metrics = (
+        "energy_joules",
+        "incremental_energy_joules",
+        "energy_kwh",
+        "avg_power_w",
+        "idle_avg_power_w",
+        "incremental_avg_power_w",
+        "energy_per_successful_request_j",
+        "incremental_energy_per_successful_request_j",
+        "energy_per_total_request_j",
+        "incremental_energy_per_total_request_j",
+        "energy_per_total_token_j",
+        "incremental_energy_per_total_token_j",
+        "successful_requests",
+        "started_requests",
+        "total_input_tokens",
+        "total_output_tokens",
+        "total_tokens",
+    )
+    payload: dict[str, Any] = {"repeat_statistics": {}}
+    for metric in metrics:
+        values = [
+            float(summary[metric])
+            for summary in energy_summaries
+            if isinstance(summary.get(metric), (int, float)) and not isinstance(summary.get(metric), bool)
+        ]
+        if not values:
+            payload[metric] = None
+            continue
+        stats = {
+            "mean": mean(values),
+            "median": median(values),
+            "min": min(values),
+            "max": max(values),
+            "stdev": stdev(values) if len(values) > 1 else 0.0,
+        }
+        payload["repeat_statistics"][metric] = stats
+        payload[metric] = stats["mean"]
+    first_gpu_ids = energy_summaries[0].get("gpu_ids") if energy_summaries else []
+    payload["gpu_ids"] = list(first_gpu_ids) if isinstance(first_gpu_ids, list) else []
+    return payload
 
 
 def build_run_trial_command(
@@ -676,6 +1020,8 @@ def build_run_trial_command(
     base_url: str,
     metrics_url: str,
     output_dir: Path,
+    trial_id: str | None = None,
+    duration_s: float | None = None,
 ) -> tuple[str, ...]:
     python_executable = plan.plan.python_executable or sys.executable
     command: list[str] = [
@@ -684,7 +1030,7 @@ def build_run_trial_command(
         "llm_mst_finder.cli",
         "run-trial",
         "--trial-id",
-        job.id,
+        trial_id or job.id,
         "--output-dir",
         str(output_dir),
         "--workload",
@@ -692,7 +1038,7 @@ def build_run_trial_command(
         "--mode",
         "open-loop",
         "--duration-s",
-        str(plan.defaults.duration_s),
+        str(plan.defaults.duration_s if duration_s is None else duration_s),
         "--base-url",
         base_url,
         "--endpoint",
