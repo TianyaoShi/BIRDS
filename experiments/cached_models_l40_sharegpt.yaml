@@ -237,8 +237,9 @@ experiments:
     launch:
       gpu_count: 2
       tensor_parallel_size: 2
-      gpu_memory_utilization: 0.85
-      max_num_seqs: 64
+      gpu_memory_utilization: 0.9
+      max_model_len: 16384
+      max_num_seqs: 128
       max_num_batched_tokens: 1024
 
   - id: sharegpt-gpt-oss-120b-tp4
