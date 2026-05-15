@@ -111,12 +111,6 @@ overrides:
       max_bracket_trials: 12
 
   - match:
-      model: openai/gpt-oss-120b
-    reason: gpt-oss-120B uses quantized checkpoint metadata; L40 TP2/TP4 runs keep the 8192-token cap and conservative batching.
-    launch:
-      dtype: auto
-
-  - match:
       models:
         - Qwen/Qwen3-0.6B
         - Qwen/Qwen3-1.7B
@@ -283,27 +277,3 @@ experiments:
     launch:
       gpu_count: 4
       tensor_parallel_size: 4
-
-  - id: code-workloads-gpt-oss-120b-tp2
-    model: openai/gpt-oss-120b
-    workloads:
-      - ./code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
-      - ./code_workloads/repobench_python_java_aggregate_cache_realistic_8k_drop/workload_yamls/shard_000.yaml
-    launch:
-      gpu_count: 2
-      tensor_parallel_size: 2
-      gpu_memory_utilization: 0.85
-      max_num_seqs: 64
-      max_num_batched_tokens: 1024
-
-  - id: code-workloads-gpt-oss-120b-tp4
-    model: openai/gpt-oss-120b
-    workloads:
-      - ./code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
-      - ./code_workloads/repobench_python_java_aggregate_cache_realistic_8k_drop/workload_yamls/shard_000.yaml
-    launch:
-      gpu_count: 4
-      tensor_parallel_size: 4
-      gpu_memory_utilization: 0.90
-      max_num_seqs: 128
-      max_num_batched_tokens: 2048
