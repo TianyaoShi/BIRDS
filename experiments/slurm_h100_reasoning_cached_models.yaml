@@ -1,7 +1,7 @@
 run:
-  run_id: h100-reasoning-cached-models-000
+  run_id: h100-reasoning-cached-models-001
   output_root: ../results/orchestrator
-  mst_output_root: ../results/mst/h100-reasoning-cached-models-000
+  mst_output_root: ../results/mst/h100-reasoning-cached-models-001
   default_endpoint: /v1/completions
   python_executable: /scratch/gautschi/shi676/BioLLM/.venv-h100/bin/python
 
@@ -9,7 +9,7 @@ slurm:
   partition: ai
   account: yiding
   qos: normal
-  time: 04:00:00
+  time: 08:00:00
   modules:
     - modtree/gpu
     - cuda/12.9.0
@@ -157,22 +157,19 @@ overrides:
     reason: 70B reasoning at TP4 is decode-heavy; probe a moderate H100 ceiling.
     search:
       initial_request_rate: 0.1
-      max_request_rate: 4
+      max_request_rate: 5
       max_binary_steps: 8
       max_bracket_trials: 12
       max_closed_loop_concurrency: 24
 
   - match:
       model: openai/gpt-oss-120b
-    reason: gpt-oss-120B uses quantized checkpoint metadata; keep allocator fragmentation mitigation for H100 launch stability.
+    reason: gpt-oss-120B uses quantized checkpoint metadata; per-TP launch entries own allocator workarounds.
     launch:
       dtype: auto
-      env:
-        PYTORCH_ALLOC_CONF: expandable_segments:True
-        PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
     search:
       initial_request_rate: 0.1
-      max_request_rate: 4
+      max_request_rate: 20
       max_binary_steps: 8
       max_bracket_trials: 12
       max_closed_loop_concurrency: 24
@@ -181,7 +178,7 @@ overrides:
       models:
         - Qwen/Qwen3-235B-A22B-Instruct-2507
         - Qwen/Qwen3-235B-A22B-Thinking-2507
-    reason: Qwen3-235B-A22B is MoE and fast, but reasoning traces can be very long; use a broad full-node search with a long startup budget.
+    reason: Qwen3-235B-A22B is MoE and fast, but reasoning traces can be very long; keep the full-node search broad enough without burning many long unstable trials.
     launch:
       env:
         VLLM_ENGINE_READY_TIMEOUT_S: "4800"
@@ -190,15 +187,17 @@ overrides:
       max_num_batched_tokens: 2048
     search:
       initial_request_rate: 0.25
-      max_request_rate: 8
+      max_request_rate: 5
       max_binary_steps: 8
-      max_bracket_trials: 12
+      max_bracket_trials: 10
       max_closed_loop_concurrency: 24
 
 experiments:
   # Excluded from helper_scripts/hf_cached_models.txt:
+  # - <3B models, which are not part of H100 reasoning sweeps.
   # - Llama-2 models, matching the no-Llama2 H100 experiment set.
   # - DeepSeek-V4 models, unsupported in the current vLLM environment.
+  # - gpt-oss-120B TP1, which OOMs on long reasoning completions.
 
   - id: reasoning-single-gpu
     models:
@@ -208,7 +207,6 @@ experiments:
       - Qwen/Qwen3-8B
       - google/gemma-4-E4B-it
       - meta-llama/Llama-3.1-8B-Instruct
-      - meta-llama/Llama-3.2-1B-Instruct
       - meta-llama/Llama-3.2-3B-Instruct
       - openai/gpt-oss-20b
     workloads:
@@ -254,17 +252,6 @@ experiments:
       gpu_count: 4
       tensor_parallel_size: 4
 
-  - id: reasoning-gpt-oss-120b-tp1
-    model: openai/gpt-oss-120b
-    workloads:
-      - ./reasoning_workloads/mmlu_pro_reasoning/workload_yamls/shard_000.yaml
-      - ./reasoning_workloads/supergpqa_hard_reasoning/workload_yamls/shard_000.yaml
-    launch:
-      gpu_memory_utilization: 0.95
-      max_model_len: 8192
-      max_num_seqs: 64
-      max_num_batched_tokens: 1024
-
   - id: reasoning-gpt-oss-120b-tp2
     model: openai/gpt-oss-120b
     workloads:
@@ -277,6 +264,9 @@ experiments:
       max_model_len: 8192
       max_num_seqs: 64
       max_num_batched_tokens: 1024
+      env:
+        PYTORCH_ALLOC_CONF: expandable_segments:True
+        PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
 
   - id: reasoning-gpt-oss-120b-tp4
     model: openai/gpt-oss-120b
