@@ -120,6 +120,28 @@ defaults:
   request_timeout_s: 21600
   safety_max_outstanding: null
 
+local_execution:
+  allowed_gpu_ids: [0, 1, 2, 3]
+  max_active_gpus: 3
+  base_port_start: 8000
+  base_port_end: 8099
+  metrics_port_offset: 1000
+
+slurm:
+  partition: ai
+  account: yiding
+  qos: normal
+  time: 04:00:00
+  mem: null
+  cpus_per_task: null
+  cpus_per_gpu: 32
+  modules: []
+  setup_commands: []
+  python_executable: /path/to/venv/bin/python
+  sbatch_extra_args: []
+  array_concurrency_limit: 4
+  base_port: 9800
+
 rounding:
   mst_mode: floor_decimal
   mst_decimal_places: 2
@@ -552,7 +574,10 @@ Slurm execution later can reuse:
 - Slurm-owned GPU allocation
 - fixed localhost port inside each allocation
 
-Do not bake local GPU IDs into the generated plan unless the user explicitly supplies them. Prefer resolving GPU assignment at execution time.
+Keep local GPU lease settings under `local_execution` so they are not mistaken
+for Slurm allocation controls. Slurm execution should use the plan's `slurm`
+section, especially `array_concurrency_limit`, and resolve concrete GPU IDs from
+the Slurm allocation at task runtime.
 
 ## CLI Proposal
 

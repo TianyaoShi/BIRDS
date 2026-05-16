@@ -46,6 +46,11 @@ def _write_manifest(
                     "base_port_end": 8199,
                     "metrics_port_offset": 2000,
                 },
+                "slurm": {
+                    "partition": "ai",
+                    "array_concurrency_limit": 4,
+                    "base_port": 8700,
+                },
                 "launch": launch_payload,
                 "search": {
                     "search_mode": "open-loop",
@@ -163,6 +168,9 @@ def test_generate_plan_from_orchestrator_rounds_mst_and_preserves_launch(tmp_pat
     assert plan.execution.base_port_start == 8100
     assert plan.execution.base_port_end == 8199
     assert plan.execution.metrics_port_offset == 2000
+    assert plan.slurm.partition == "ai"
+    assert plan.slurm.array_concurrency_limit == 4
+    assert plan.slurm.base_port == 8700
     assert len(plan.jobs) == 1
     job = plan.jobs[0]
     assert job.request_rate == pytest.approx(4.37)
@@ -174,6 +182,10 @@ def test_generate_plan_from_orchestrator_rounds_mst_and_preserves_launch(tmp_pat
     assert job.metadata["rounding_step"] == pytest.approx(0.01)
     assert job.metadata["rounding_decimal_places"] == 2
     assert job.metadata["search_id"] == "search-a"
+    written = plan.to_dict()
+    assert "execution" not in written
+    assert "local_execution" in written
+    assert written["slurm"]["array_concurrency_limit"] == 4
 
 
 def test_generate_plan_can_use_legacy_preferred_step_rounding(tmp_path: Path, monkeypatch) -> None:

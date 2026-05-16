@@ -25,6 +25,7 @@ from .models import (
     EnergyPlanRounding,
     EnergyPlanSelection,
     EnergyPlanSelectionSweep,
+    EnergyPlanSlurm,
     EnergyRateSource,
     OrchestratorJobRecord,
 )
@@ -95,7 +96,7 @@ def generate_plan_from_orchestrator_runs(
     resolved_selection = selection or EnergyPlanSelection()
     resolved_rounding = rounding or EnergyPlanRounding()
     resolved_defaults = defaults or EnergyPlanDefaults()
-    execution = _load_execution_from_orchestrator_run(run_roots[-1])
+    execution, slurm = _load_runtime_config_from_orchestrator_run(run_roots[-1])
 
     source_jobs = _load_orchestrator_jobs_from_roots(run_roots)
     succeeded_jobs = [job for job in source_jobs if job.status == "succeeded"]
@@ -133,6 +134,7 @@ def generate_plan_from_orchestrator_runs(
         selection=resolved_selection,
         defaults=resolved_defaults,
         execution=execution,
+        slurm=slurm,
         rounding=resolved_rounding,
         jobs=tuple(jobs),
     )
@@ -154,7 +156,8 @@ def render_dry_run(plan: EnergyPlan) -> dict[str, Any]:
         "plan_id": plan.plan.plan_id,
         "mode": plan.plan.mode,
         "job_count": len(plan.jobs),
-        "execution": plan.execution.to_dict(),
+        "local_execution": plan.execution.to_dict(),
+        "slurm": plan.slurm.to_dict(),
         "source_orchestrator_run_ids": sorted(
             {
                 str(job.metadata.get("source_orchestrator_run_id"))
@@ -194,11 +197,11 @@ def _load_orchestrator_jobs_from_roots(run_roots: tuple[Path, ...]) -> list[Orch
     return merged
 
 
-def _load_execution_from_orchestrator_run(run_root: Path) -> EnergyPlanExecution:
+def _load_runtime_config_from_orchestrator_run(run_root: Path) -> tuple[EnergyPlanExecution, EnergyPlanSlurm]:
     state = _load_json_mapping(run_root / "state.json")
     manifest_path = Path(_expect_str(state.get("manifest_path"), "state.json.manifest_path"))
     manifest = load_manifest(manifest_path)
-    return EnergyPlanExecution.from_run_config(manifest.run)
+    return EnergyPlanExecution.from_run_config(manifest.run), EnergyPlanSlurm.from_slurm_config(manifest.slurm)
 
 
 def _decisive_job_key(job: OrchestratorJobRecord) -> tuple[str, str, str, str]:

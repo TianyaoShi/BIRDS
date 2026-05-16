@@ -235,8 +235,9 @@ This adapter assumes one vLLM server per Slurm task and does not implement cross
 
 ## Slurm Energy Profiling Notes
 
-- `energy-submit` loads the source MST run recorded in the energy plan and
-  inherits the source manifest's `slurm` fields when available.
+- `energy-submit` uses the energy plan's top-level `slurm` section when present,
+  including `array_concurrency_limit`. Older plans without that section fall
+  back to the source MST run's manifest `slurm` fields.
 - Energy jobs are grouped by `EnergyPlanJob.launch.gpu_count`.
 - Slurm owns GPU allocation. The task passes numeric IDs from `SLURM_JOB_GPUS`
   when present, then numeric IDs from `CUDA_VISIBLE_DEVICES`, and finally

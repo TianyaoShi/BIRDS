@@ -7,6 +7,7 @@ from typing import Any, Literal, Mapping
 
 from local_orchestrator.models import LaunchConfig
 from local_orchestrator.models import RunConfig
+from local_orchestrator.models import SlurmConfig
 
 
 EnergyPlanMode = Literal["mst-rounded", "sweep", "explicit"]
@@ -347,6 +348,112 @@ class EnergyPlanExecution:
 
 
 @dataclass(frozen=True, slots=True)
+class EnergyPlanSlurm:
+    partition: str | None = None
+    account: str | None = None
+    qos: str | None = None
+    time: str | None = None
+    mem: str | None = None
+    cpus_per_task: int | None = None
+    cpus_per_gpu: int = 14
+    modules: tuple[str, ...] = ()
+    setup_commands: tuple[str, ...] = ()
+    python_executable: str | None = None
+    sbatch_extra_args: tuple[str, ...] = ()
+    array_concurrency_limit: int | None = None
+    base_port: int = 8000
+
+    def __post_init__(self) -> None:
+        for field_name in ("partition", "account", "qos", "time", "mem", "python_executable"):
+            value = getattr(self, field_name)
+            if value is not None:
+                _require_non_empty(f"slurm.{field_name}", value)
+        if self.cpus_per_task is not None:
+            _require_positive_int("slurm.cpus_per_task", self.cpus_per_task)
+        _require_positive_int("slurm.cpus_per_gpu", self.cpus_per_gpu)
+        if self.array_concurrency_limit is not None:
+            _require_positive_int("slurm.array_concurrency_limit", self.array_concurrency_limit)
+        _require_positive_int("slurm.base_port", self.base_port)
+        for field_name in ("modules", "setup_commands", "sbatch_extra_args"):
+            for value in getattr(self, field_name):
+                _require_non_empty(f"slurm.{field_name}[]", value)
+
+    @classmethod
+    def from_slurm_config(cls, slurm: SlurmConfig) -> "EnergyPlanSlurm":
+        return cls(
+            partition=slurm.partition,
+            account=slurm.account,
+            qos=slurm.qos,
+            time=slurm.time,
+            mem=slurm.mem,
+            cpus_per_task=slurm.cpus_per_task,
+            cpus_per_gpu=slurm.cpus_per_gpu,
+            modules=tuple(slurm.modules),
+            setup_commands=tuple(slurm.setup_commands),
+            python_executable=slurm.python_executable,
+            sbatch_extra_args=tuple(slurm.sbatch_extra_args),
+            array_concurrency_limit=slurm.array_concurrency_limit,
+            base_port=slurm.base_port,
+        )
+
+    def to_slurm_config(self) -> SlurmConfig:
+        return SlurmConfig(
+            partition=self.partition,
+            account=self.account,
+            qos=self.qos,
+            time=self.time,
+            mem=self.mem,
+            cpus_per_task=self.cpus_per_task,
+            cpus_per_gpu=self.cpus_per_gpu,
+            modules=self.modules,
+            setup_commands=self.setup_commands,
+            python_executable=self.python_executable,
+            sbatch_extra_args=self.sbatch_extra_args,
+            array_concurrency_limit=self.array_concurrency_limit,
+            base_port=self.base_port,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "partition": self.partition,
+            "account": self.account,
+            "qos": self.qos,
+            "time": self.time,
+            "mem": self.mem,
+            "cpus_per_task": self.cpus_per_task,
+            "cpus_per_gpu": self.cpus_per_gpu,
+            "modules": list(self.modules),
+            "setup_commands": list(self.setup_commands),
+            "python_executable": self.python_executable,
+            "sbatch_extra_args": list(self.sbatch_extra_args),
+            "array_concurrency_limit": self.array_concurrency_limit,
+            "base_port": self.base_port,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "EnergyPlanSlurm":
+        return cls(
+            partition=_optional_str(payload.get("partition"), "slurm.partition"),
+            account=_optional_str(payload.get("account"), "slurm.account"),
+            qos=_optional_str(payload.get("qos"), "slurm.qos"),
+            time=_optional_str(payload.get("time"), "slurm.time"),
+            mem=_optional_str(payload.get("mem"), "slurm.mem"),
+            cpus_per_task=_expect_optional_int(payload.get("cpus_per_task"), "slurm.cpus_per_task", minimum=1),
+            cpus_per_gpu=_expect_int(payload.get("cpus_per_gpu", 14), "slurm.cpus_per_gpu", minimum=1),
+            modules=_expect_string_tuple(payload.get("modules", []), "slurm.modules"),
+            setup_commands=_expect_string_tuple(payload.get("setup_commands", []), "slurm.setup_commands"),
+            python_executable=_optional_str(payload.get("python_executable"), "slurm.python_executable"),
+            sbatch_extra_args=_expect_string_tuple(payload.get("sbatch_extra_args", []), "slurm.sbatch_extra_args"),
+            array_concurrency_limit=_expect_optional_int(
+                payload.get("array_concurrency_limit"),
+                "slurm.array_concurrency_limit",
+                minimum=1,
+            ),
+            base_port=_expect_int(payload.get("base_port", 8000), "slurm.base_port", minimum=1),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class EnergyPlanRounding:
     mode: str = "floor_preferred"
     mst_mode: str = "floor_decimal"
@@ -648,6 +755,7 @@ class EnergyPlan:
     selection: EnergyPlanSelection = field(default_factory=EnergyPlanSelection)
     defaults: EnergyPlanDefaults = field(default_factory=EnergyPlanDefaults)
     execution: EnergyPlanExecution = field(default_factory=EnergyPlanExecution)
+    slurm: EnergyPlanSlurm = field(default_factory=EnergyPlanSlurm)
     rounding: EnergyPlanRounding = field(default_factory=EnergyPlanRounding)
     jobs: tuple[EnergyPlanJob, ...] = ()
 
@@ -656,18 +764,21 @@ class EnergyPlan:
             "plan": self.plan.to_dict(),
             "selection": self.selection.to_dict(),
             "defaults": self.defaults.to_dict(),
-            "execution": self.execution.to_dict(),
+            "local_execution": self.execution.to_dict(),
+            "slurm": self.slurm.to_dict(),
             "rounding": self.rounding.to_dict(),
             "jobs": [job.to_dict() for job in self.jobs],
         }
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "EnergyPlan":
+        execution_payload = payload.get("local_execution", payload.get("execution", {}))
         return cls(
             plan=EnergyPlanHeader.from_dict(_expect_mapping(payload.get("plan"), "plan")),
             selection=EnergyPlanSelection.from_dict(_expect_mapping(payload.get("selection", {}), "selection")),
             defaults=EnergyPlanDefaults.from_dict(_expect_mapping(payload.get("defaults", {}), "defaults")),
-            execution=EnergyPlanExecution.from_dict(_expect_mapping(payload.get("execution", {}), "execution")),
+            execution=EnergyPlanExecution.from_dict(_expect_mapping(execution_payload, "local_execution")),
+            slurm=EnergyPlanSlurm.from_dict(_expect_mapping(payload.get("slurm", {}), "slurm")),
             rounding=EnergyPlanRounding.from_dict(_expect_mapping(payload.get("rounding", {}), "rounding")),
             jobs=tuple(
                 EnergyPlanJob.from_dict(_expect_mapping(item, "jobs[]"))

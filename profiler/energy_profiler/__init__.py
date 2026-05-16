@@ -16,6 +16,7 @@ from .models import (
     EnergyPlanRounding,
     EnergyPlanSelection,
     EnergyPlanSelectionSweep,
+    EnergyPlanSlurm,
     EnergyRateSource,
 )
 from .planning import (
@@ -40,6 +41,7 @@ __all__ = [
     "EnergyPlanRounding",
     "EnergyPlanSelection",
     "EnergyPlanSelectionSweep",
+    "EnergyPlanSlurm",
     "EnergyRateSource",
     "PlanningError",
     "build_live_run_trial_command",

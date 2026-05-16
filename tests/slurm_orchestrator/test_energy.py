@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from energy_profiler.models import (
     EnergyPlanExecution,
     EnergyPlanHeader,
     EnergyPlanJob,
+    EnergyPlanSlurm,
 )
 from energy_profiler.planning import write_energy_plan
 from local_orchestrator.models import SlurmConfig
@@ -175,6 +177,32 @@ def test_energy_sbatch_honors_slurm_cpu_overrides(tmp_path: Path) -> None:
     gpu2_script = Path(run_plan["groups"][1]["script_path"]).read_text(encoding="utf-8")
     assert "#SBATCH --gres=gpu:2" in gpu2_script
     assert "#SBATCH --cpus-per-task=64" in gpu2_script
+
+
+def test_materialize_energy_run_plan_uses_plan_slurm_config(tmp_path: Path) -> None:
+    plan = replace(
+        _make_energy_plan(tmp_path),
+        slurm=EnergyPlanSlurm(
+            partition="plan-ai",
+            python_executable="/plan/slurm-python",
+            array_concurrency_limit=1,
+            base_port=8900,
+        ),
+    )
+    plan_path = write_energy_plan(plan, tmp_path / "plans" / "energy-plan-a.yaml")
+
+    run_plan = materialize_energy_run_plan(
+        plan=plan,
+        plan_path=plan_path,
+        run_id="energy-slurm-run",
+    )
+
+    assert run_plan["jobs"][0]["base_port"] == 8900
+    assert run_plan["groups"][0]["array_spec"] == "0-0%1"
+    script = Path(run_plan["groups"][0]["script_path"]).read_text(encoding="utf-8")
+    assert "#SBATCH -p plan-ai" in script
+    task_shell = render_energy_task_shell(run_plan["groups"][0]["plan_path"], 0)
+    assert "declare -a ENERGY_TRIAL_CMD=(/plan/slurm-python" in task_shell
 
 
 def test_finalize_and_collect_energy_run_write_profiler_compatible_summary(

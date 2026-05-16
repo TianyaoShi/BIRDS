@@ -110,11 +110,18 @@ measured trial. If `defaults.repeats` is greater than one, repeat artifacts are
 stored under `repeat_001/`, `repeat_002/`, and so on, with aggregate repeat
 statistics written at the job root.
 
-Energy plans include an `execution` section with `allowed_gpu_ids`,
-`max_active_gpus`, base port range, and metrics port offset. These values are
-copied from the source orchestrator manifest during plan generation, making the
-plan reviewable and replayable. Runtime `run` and `resume` CLI flags may still
-override these fields explicitly.
+Energy plans include separate runtime sections:
+
+- `local_execution`: local-only GPU lease and port settings, including
+  `allowed_gpu_ids` and `max_active_gpus`. Slurm execution ignores these fields.
+- `slurm`: Slurm submission settings copied from the source orchestrator
+  manifest, including `array_concurrency_limit`, `base_port`, partition/account,
+  modules, and setup commands.
+
+Runtime `run` and `resume` CLI flags may still override `local_execution`
+explicitly. `slurm_orchestrator energy-submit` uses the plan's `slurm` section
+when it is present, falling back to the source orchestrator manifest only for
+older plans.
 
 ## Live-Server Trial
 

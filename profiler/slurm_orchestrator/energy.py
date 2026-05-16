@@ -686,6 +686,8 @@ def _resolve_energy_plan(plan: EnergyPlan) -> EnergyPlan:
 
 
 def _load_source_slurm_config(plan: EnergyPlan) -> SlurmConfig:
+    if plan.slurm != type(plan.slurm)():
+        return plan.slurm.to_slurm_config()
     source_root = plan.plan.source_orchestrator_run_root
     manifest_path: Path | None = None
     state = _read_json_mapping(source_root / "state.json")
