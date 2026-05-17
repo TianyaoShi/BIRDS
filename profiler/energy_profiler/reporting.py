@@ -185,6 +185,7 @@ class EnergyRunStateStore:
                     tensor_parallel_size = tensor_parallel_size or _optional_positive_int(
                         launch.get("tensor_parallel_size")
                     )
+            energy_metric = _energy_metric_getter(job=job, energy_summary=energy_summary)
 
             job_summary = {
                 "job_id": job.get("job_id"),
@@ -203,56 +204,30 @@ class EnergyRunStateStore:
                 "last_error": job.get("last_error"),
                 "energy_joules": total_energy,
                 "incremental_energy_joules": total_incremental,
-                "energy_kwh": None if energy_summary is None else _optional_finite_float(energy_summary.get("energy_kwh")),
-                "avg_power_w": None if energy_summary is None else _optional_finite_float(energy_summary.get("avg_power_w")),
-                "idle_avg_power_w": None
-                if energy_summary is None
-                else _optional_finite_float(energy_summary.get("idle_avg_power_w")),
-                "incremental_avg_power_w": None
-                if energy_summary is None
-                else _optional_finite_float(energy_summary.get("incremental_avg_power_w")),
-                "min_power_w": None if energy_summary is None else _optional_finite_float(energy_summary.get("min_power_w")),
-                "p50_power_w": None if energy_summary is None else _optional_finite_float(energy_summary.get("p50_power_w")),
-                "p90_power_w": None if energy_summary is None else _optional_finite_float(energy_summary.get("p90_power_w")),
-                "p95_power_w": None if energy_summary is None else _optional_finite_float(energy_summary.get("p95_power_w")),
-                "p99_power_w": None if energy_summary is None else _optional_finite_float(energy_summary.get("p99_power_w")),
-                "max_power_w": None if energy_summary is None else _optional_finite_float(energy_summary.get("max_power_w")),
-                "energy_per_successful_request_j": None
-                if energy_summary is None
-                else _optional_finite_float(energy_summary.get("energy_per_successful_request_j")),
-                "incremental_energy_per_successful_request_j": None
-                if energy_summary is None
-                else _optional_finite_float(energy_summary.get("incremental_energy_per_successful_request_j")),
-                "energy_per_total_request_j": None
-                if energy_summary is None
-                else _optional_finite_float(energy_summary.get("energy_per_total_request_j")),
-                "incremental_energy_per_total_request_j": None
-                if energy_summary is None
-                else _optional_finite_float(energy_summary.get("incremental_energy_per_total_request_j")),
-                "energy_per_total_token_j": None
-                if energy_summary is None
-                else _optional_finite_float(energy_summary.get("energy_per_total_token_j")),
-                "incremental_energy_per_total_token_j": None
-                if energy_summary is None
-                else _optional_finite_float(energy_summary.get("incremental_energy_per_total_token_j")),
-                "successful_requests": None
-                if energy_summary is None
-                else _optional_positive_int(energy_summary.get("successful_requests"), allow_zero=True),
-                "started_requests": None
-                if energy_summary is None
-                else _optional_positive_int(energy_summary.get("started_requests"), allow_zero=True),
-                "total_input_tokens": None
-                if energy_summary is None
-                else _optional_positive_int(energy_summary.get("total_input_tokens"), allow_zero=True),
-                "total_output_tokens": None
-                if energy_summary is None
-                else _optional_positive_int(energy_summary.get("total_output_tokens"), allow_zero=True),
-                "total_tokens": None
-                if energy_summary is None
-                else _optional_positive_int(energy_summary.get("total_tokens"), allow_zero=True),
-                "monitor_duration_s": None
-                if energy_summary is None
-                else _optional_finite_float(energy_summary.get("monitor_duration_s")),
+                "energy_kwh": energy_metric("energy_kwh"),
+                "avg_power_w": energy_metric("avg_power_w"),
+                "idle_avg_power_w": energy_metric("idle_avg_power_w"),
+                "incremental_avg_power_w": energy_metric("incremental_avg_power_w"),
+                "min_power_w": energy_metric("min_power_w"),
+                "p50_power_w": energy_metric("p50_power_w"),
+                "p90_power_w": energy_metric("p90_power_w"),
+                "p95_power_w": energy_metric("p95_power_w"),
+                "p99_power_w": energy_metric("p99_power_w"),
+                "max_power_w": energy_metric("max_power_w"),
+                "energy_per_successful_request_j": energy_metric("energy_per_successful_request_j"),
+                "incremental_energy_per_successful_request_j": energy_metric(
+                    "incremental_energy_per_successful_request_j"
+                ),
+                "energy_per_total_request_j": energy_metric("energy_per_total_request_j"),
+                "incremental_energy_per_total_request_j": energy_metric("incremental_energy_per_total_request_j"),
+                "energy_per_total_token_j": energy_metric("energy_per_total_token_j"),
+                "incremental_energy_per_total_token_j": energy_metric("incremental_energy_per_total_token_j"),
+                "successful_requests": energy_metric("successful_requests"),
+                "started_requests": energy_metric("started_requests"),
+                "total_input_tokens": energy_metric("total_input_tokens"),
+                "total_output_tokens": energy_metric("total_output_tokens"),
+                "total_tokens": energy_metric("total_tokens"),
+                "monitor_duration_s": energy_metric("monitor_duration_s"),
                 "repeat_count": None
                 if energy_summary is None
                 else _optional_positive_int(energy_summary.get("repeat_count"), allow_zero=True),
@@ -456,6 +431,66 @@ def _optional_finite_float(value: Any) -> float | None:
     if not isfinite(numeric):
         return None
     return numeric
+
+
+def _energy_metric_getter(*, job: Mapping[str, Any], energy_summary: Mapping[str, Any] | None):
+    repeat_summaries: list[Mapping[str, Any]] | None = None
+
+    def get_metric(metric: str) -> float | None:
+        top_level = None if energy_summary is None else _optional_finite_float(energy_summary.get(metric))
+        if top_level is not None:
+            return top_level
+        repeat_stat = _repeat_statistics_mean(energy_summary, metric)
+        if repeat_stat is not None:
+            return repeat_stat
+        nonlocal repeat_summaries
+        if repeat_summaries is None:
+            repeat_summaries = _load_repeat_energy_summaries(job)
+        values = [
+            value
+            for summary in repeat_summaries
+            if (value := _optional_finite_float(summary.get(metric))) is not None
+        ]
+        if not values:
+            return None
+        return sum(values) / len(values)
+
+    return get_metric
+
+
+def _repeat_statistics_mean(energy_summary: Mapping[str, Any] | None, metric: str) -> float | None:
+    if energy_summary is None:
+        return None
+    repeat_statistics = energy_summary.get("repeat_statistics")
+    if not isinstance(repeat_statistics, Mapping):
+        return None
+    metric_stats = repeat_statistics.get(metric)
+    if not isinstance(metric_stats, Mapping):
+        return None
+    return _optional_finite_float(metric_stats.get("mean"))
+
+
+def _load_repeat_energy_summaries(job: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    artifacts = job.get("artifacts")
+    if not isinstance(artifacts, Mapping):
+        return []
+    repeats = artifacts.get("repeats")
+    if not isinstance(repeats, list):
+        return []
+    summaries: list[Mapping[str, Any]] = []
+    for repeat in repeats:
+        if not isinstance(repeat, Mapping):
+            continue
+        raw_path = repeat.get("energy_summary_json")
+        if not isinstance(raw_path, str) or not raw_path:
+            continue
+        try:
+            payload = json.loads(Path(raw_path).read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            continue
+        if isinstance(payload, Mapping):
+            summaries.append(payload)
+    return summaries
 
 
 def _optional_positive_int(value: Any, *, allow_zero: bool = False) -> int | None:

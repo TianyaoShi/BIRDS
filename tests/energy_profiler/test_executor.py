@@ -390,6 +390,14 @@ def test_executor_run_plan_repeats_trial_and_aggregates_energy(tmp_path: Path) -
     assert state_summary["jobs"][0]["artifacts"]["repeats"][0]["repeat_index"] == 1
     assert state_summary["jobs"][0]["energy_per_successful_request_j"] == pytest.approx(2250.0)
     assert state_summary["jobs"][0]["incremental_energy_per_successful_request_j"] == pytest.approx(750.0)
+    assert state_summary["jobs"][0]["successful_requests"] == pytest.approx(2.0)
+    assert state_summary["jobs"][0]["started_requests"] == pytest.approx(2.0)
+    assert state_summary["jobs"][0]["total_input_tokens"] == pytest.approx(40.0)
+    assert state_summary["jobs"][0]["total_output_tokens"] == pytest.approx(20.0)
+    assert state_summary["jobs"][0]["total_tokens"] == pytest.approx(60.0)
+    assert state_summary["jobs"][0]["min_power_w"] is not None
+    assert state_summary["jobs"][0]["p50_power_w"] is not None
+    assert state_summary["jobs"][0]["max_power_w"] is not None
     assert state_summary["jobs"][0]["gpu_count"] == 1
     assert state_summary["jobs"][0]["tensor_parallel_size"] == 1
     state_payload = json.loads((run_root / "state.json").read_text(encoding="utf-8"))
@@ -404,6 +412,9 @@ def test_executor_run_plan_repeats_trial_and_aggregates_energy(tmp_path: Path) -
     assert compact_rows[0]["workload"] == "sharegpt"
     assert compact_rows[0]["gpu_count"] == "1"
     assert compact_rows[0]["tensor_parallel_size"] == "1"
+    assert float(compact_rows[0]["successful_requests"]) == pytest.approx(2.0)
+    assert float(compact_rows[0]["total_tokens"]) == pytest.approx(60.0)
+    assert compact_rows[0]["p50_power_w"]
     assert float(compact_rows[0]["energy_per_successful_request_j"]) == pytest.approx(2250.0)
     assert float(compact_rows[0]["incremental_energy_per_total_request_j"]) == pytest.approx(750.0)
 
