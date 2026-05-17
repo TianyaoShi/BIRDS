@@ -369,7 +369,7 @@ def _search_rate_cap_hit(row: MSTRow, *, settings: AnalyzerSettings) -> _Finding
         reasons.append(f"reported MST equals the configured search cap: {row.mst_rps:.2f} rps")
     return _FindingHit(
         family="search_rate_cap_reached",
-        weight=settings.severity_weight_trace_instability_suspect,
+        weight=settings.severity_weight_search_rate_cap_reached,
         summary=f"{row.model} hit the configured max_request_rate cap before the MST was bounded.",
         reasons=reasons,
         comparators=[],
@@ -383,7 +383,7 @@ def _missing_confirmed_mst_hit(row: MSTRow, *, settings: AnalyzerSettings) -> _F
         return None
     return _FindingHit(
         family="missing_confirmed_mst_rate",
-        weight=settings.severity_weight_trace_instability_suspect,
+        weight=settings.severity_weight_missing_confirmed_mst_rate,
         summary=f"{row.model} did not produce a confirmed stable open-loop MST rate.",
         reasons=["search terminated without a confirmed stable open-loop rate for downstream planning"],
         comparators=[],

@@ -1664,6 +1664,7 @@ def test_report_promotes_max_request_rate_limited_rows_to_rerun_candidates(
     assert payload["summary"]["anomaly_count"] == 1
     assert payload["summary"]["trace_diagnostic_count"] == 0
     assert payload["anomalies"][0]["families"] == ["search_rate_cap_reached"]
+    assert payload["anomalies"][0]["severity"] == "high"
     assert "higher max_request_rate cap" in payload["anomalies"][0]["suggested_action"]
     assert artifacts.rerun_manifest_path is not None
     rerun_manifest = yaml.safe_load(artifacts.rerun_manifest_path.read_text(encoding="utf-8"))
@@ -1886,6 +1887,7 @@ def test_report_promotes_missing_confirmed_stable_rate_to_rerun_candidate(
     assert payload["summary"]["anomaly_count"] == 1
     assert payload["summary"]["trace_diagnostic_count"] == 0
     assert payload["anomalies"][0]["families"] == ["missing_confirmed_mst_rate"]
+    assert payload["anomalies"][0]["severity"] == "high"
     assert payload["anomalies"][0]["mst_rps"] == pytest.approx(0.0)
     assert "no stable open-loop MST rate was confirmed" in payload["anomalies"][0]["suggested_action"]
     assert artifacts.rerun_manifest_path is not None

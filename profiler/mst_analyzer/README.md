@@ -25,6 +25,7 @@ Both analyzer and plot commands accept repeated orchestrator run roots. When mul
 - `reporting.py` - JSON/Markdown report generation and rerun manifest output
 - `plotting.py` - reusable model-size scatter plotting helpers
 - `cli.py` - command-line entrypoint
+- `skills/rerun_manifest_review/SKILL.md` - checklist for reviewing generated rerun manifests before launch
 
 ## CLI
 
@@ -138,6 +139,11 @@ SLO mismatches are still allowed for contextual comparisons, but they are penali
 Quantized and MoE models are suppressed from bucket summaries by default unless you relax those suppressions in settings. They are not globally removed from all comparison rules; if a comparison is otherwise compatible, the report can still use it with quantization/MoE metadata visible in the extracted rows.
 
 Trace-only instability is reported under `trace_diagnostics` and in the Markdown diagnostics section by default. Set `include_trace_only_findings: true` only when you intentionally want noisy or low-confidence searches to count as anomaly candidates.
+
+Terminal search outcomes are scored as blocking anomalies by default:
+`search_rate_cap_reached` means the configured upper cap was too low to bound the
+MST, and `missing_confirmed_mst_rate` means no final stable MST exists for
+downstream energy profiling.
 
 MST rates and bottleneck labels come from the saved MST finder artifacts. In
 particular, `slo_limited` can be driven by an active-window SLO crossing in

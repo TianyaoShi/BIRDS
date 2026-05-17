@@ -30,6 +30,11 @@ trace_instability_min_uncertain_retries: 2
 trace_instability_require_low_confidence_uncertain_retries: 1
 include_trace_only_findings: false
 
+# Terminal search outcomes are blocking for downstream energy profiling because no
+# final bounded MST was established.
+severity_weight_search_rate_cap_reached: 60
+severity_weight_missing_confirmed_mst_rate: 60
+
 suppressions:
   disable_families: []
   suppress_trace_instability_below_rps: null

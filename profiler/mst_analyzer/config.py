@@ -115,6 +115,8 @@ class AnalyzerSettings:
     severity_weight_larger_model_inversion: int = 25
     severity_weight_same_family_non_monotonicity: int = 20
     severity_weight_trace_instability_suspect: int = 15
+    severity_weight_search_rate_cap_reached: int = 60
+    severity_weight_missing_confirmed_mst_rate: int = 60
     severity_weight_low_confidence_result: int = 10
     severity_penalty_all_below_one_rps: int = 20
     severity_penalty_slo_mismatch: int = 10
@@ -228,6 +230,20 @@ class AnalyzerSettings:
                     cls().severity_weight_trace_instability_suspect,
                 ),
                 "severity_weight_trace_instability_suspect",
+            ),
+            severity_weight_search_rate_cap_reached=_expect_int(
+                payload.get(
+                    "severity_weight_search_rate_cap_reached",
+                    cls().severity_weight_search_rate_cap_reached,
+                ),
+                "severity_weight_search_rate_cap_reached",
+            ),
+            severity_weight_missing_confirmed_mst_rate=_expect_int(
+                payload.get(
+                    "severity_weight_missing_confirmed_mst_rate",
+                    cls().severity_weight_missing_confirmed_mst_rate,
+                ),
+                "severity_weight_missing_confirmed_mst_rate",
             ),
             severity_weight_low_confidence_result=_expect_int(
                 payload.get(
