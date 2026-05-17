@@ -78,38 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     collect = subparsers.add_parser("collect")
     collect.add_argument("--run-root", type=Path, required=True)
-    collect.add_argument(
-        "--sync-results-to",
-        type=Path,
-        default=None,
-        help=(
-            "publish selected result files to this shared results directory after collect; "
-            f"defaults to ${RESULTS_SYNC_DEST_ENV} or {DEFAULT_RESULTS_SYNC_DEST} when available"
-        ),
-    )
-    collect.add_argument(
-        "--sync-results-existing",
-        choices=("update", "missing"),
-        default=None,
-        help=(
-            "update changed destination files or copy only files missing from the destination; "
-            f"defaults to ${RESULTS_SYNC_EXISTING_ENV} or 'update'"
-        ),
-    )
-    collect.add_argument(
-        "--sync-results-root",
-        type=Path,
-        default=None,
-        help=(
-            "source results tree to publish from; defaults to "
-            f"${RESULTS_SYNC_ROOT_ENV} or the nearest parent directory named 'results'"
-        ),
-    )
-    collect.add_argument(
-        "--no-sync-results",
-        action="store_true",
-        help=f"skip result publishing after collect, also set by ${RESULTS_SYNC_DISABLE_ENV}=1",
-    )
+    _add_sync_results_args(collect, collect_name="collect")
     collect.set_defaults(handler=_collect_command)
 
     energy_submit = subparsers.add_parser("energy-submit")
@@ -119,6 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     energy_collect = subparsers.add_parser("energy-collect")
     energy_collect.add_argument("--run-root", type=Path, required=True)
+    _add_sync_results_args(energy_collect, collect_name="energy-collect")
     energy_collect.set_defaults(handler=_energy_collect_command)
 
     emit_task_shell = subparsers.add_parser("emit-task-shell", help=argparse.SUPPRESS)
@@ -164,6 +134,41 @@ def build_parser() -> argparse.ArgumentParser:
     finalize_energy.set_defaults(handler=_finalize_energy_task_command)
 
     return parser
+
+
+def _add_sync_results_args(command: argparse.ArgumentParser, *, collect_name: str) -> None:
+    command.add_argument(
+        "--sync-results-to",
+        type=Path,
+        default=None,
+        help=(
+            "publish selected result files to this shared results directory after "
+            f"{collect_name}; defaults to ${RESULTS_SYNC_DEST_ENV} or {DEFAULT_RESULTS_SYNC_DEST} when available"
+        ),
+    )
+    command.add_argument(
+        "--sync-results-existing",
+        choices=("update", "missing"),
+        default=None,
+        help=(
+            "update changed destination files or copy only files missing from the destination; "
+            f"defaults to ${RESULTS_SYNC_EXISTING_ENV} or 'update'"
+        ),
+    )
+    command.add_argument(
+        "--sync-results-root",
+        type=Path,
+        default=None,
+        help=(
+            "source results tree to publish from; defaults to "
+            f"${RESULTS_SYNC_ROOT_ENV} or the nearest parent directory named 'results'"
+        ),
+    )
+    command.add_argument(
+        "--no-sync-results",
+        action="store_true",
+        help=f"skip result publishing after {collect_name}, also set by ${RESULTS_SYNC_DISABLE_ENV}=1",
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -227,8 +232,10 @@ def _energy_submit_command(args: argparse.Namespace) -> int:
 
 def _energy_collect_command(args: argparse.Namespace) -> int:
     payload = collect_energy_run(args.run_root)
+    sync_result = _sync_results_after_collect(args)
+    payload["result_sync"] = sync_result
     print(json.dumps(payload, indent=2, sort_keys=True))
-    return 0
+    return 1 if sync_result["status"] == "failed" else 0
 
 
 def _emit_task_shell_command(args: argparse.Namespace) -> int:
@@ -464,6 +471,7 @@ def _collect_publish_files(*, results_root: Path, run_root: Path) -> list[str]:
                     path = Path(artifact_path)
                     _add_relative_file(candidates, results_root=results_root, path=path)
                     _add_mst_publish_files(candidates, results_root=results_root, result_dir=path.parent)
+            _add_energy_publish_files(candidates, results_root=results_root, artifacts=artifacts)
 
     analysis_dir = results_root / "analysis" / run_root.name
     if analysis_dir.is_dir():
@@ -486,6 +494,24 @@ def _add_mst_publish_files(candidates: set[Path], *, results_root: Path, result_
             _add_relative_file(candidates, results_root=results_root, path=path)
         elif "plots" in path.parts and path.suffix.lower() in plot_suffixes:
             _add_relative_file(candidates, results_root=results_root, path=path)
+
+
+def _add_energy_publish_files(candidates: set[Path], *, results_root: Path, artifacts: dict[str, object]) -> None:
+    for key in ("summary_json", "energy_summary_json", "gpu_power_json"):
+        artifact_path = artifacts.get(key)
+        if isinstance(artifact_path, str) and artifact_path:
+            _add_relative_file(candidates, results_root=results_root, path=Path(artifact_path))
+
+    repeats = artifacts.get("repeats")
+    if not isinstance(repeats, list):
+        return
+    for repeat in repeats:
+        if not isinstance(repeat, dict):
+            continue
+        for key in ("summary_json", "energy_summary_json", "gpu_power_json"):
+            artifact_path = repeat.get(key)
+            if isinstance(artifact_path, str) and artifact_path:
+                _add_relative_file(candidates, results_root=results_root, path=Path(artifact_path))
 
 
 def _add_relative_file(candidates: set[Path], *, results_root: Path, path: Path) -> None:

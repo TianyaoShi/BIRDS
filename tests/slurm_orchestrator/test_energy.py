@@ -259,6 +259,91 @@ def test_finalize_and_collect_energy_run_write_profiler_compatible_summary(
     assert (Path(run_plan["run_root"]) / "summary.md").is_file()
 
 
+def test_energy_collect_cli_syncs_energy_summaries_without_raw_traces(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    plan = _make_energy_plan(tmp_path)
+    plan_path = write_energy_plan(plan, tmp_path / "plans" / "energy-plan-a.yaml")
+    run_plan = materialize_energy_run_plan(
+        plan=plan,
+        plan_path=plan_path,
+        run_id="energy-slurm-run",
+        slurm=SlurmConfig(base_port=8600),
+    )
+    group_plan_path = Path(run_plan["groups"][0]["plan_path"])
+    group_payload = json.loads(group_plan_path.read_text(encoding="utf-8"))
+    result_dir = Path(group_payload["jobs"][0]["result_dir"])
+    repeat_dir = result_dir / "repeat_001"
+    repeat_dir.mkdir(parents=True, exist_ok=True)
+    (result_dir / "summary.json").write_text(
+        json.dumps(
+            {
+                "summary": {
+                    "successful_requests": 1,
+                    "started_requests": 1,
+                    "benchmark_metrics": {"total_input_tokens": 10, "total_output_tokens": 5},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (result_dir / "energy_summary.json").write_text(
+        json.dumps({"energy_joules": 100.0, "incremental_energy_joules": 25.0, "avg_power_w": 20.0}),
+        encoding="utf-8",
+    )
+    (result_dir / "gpu_power.json").write_text("{}", encoding="utf-8")
+    (result_dir / "request_records.jsonl").write_text("", encoding="utf-8")
+    (result_dir / "server_metrics.jsonl").write_text("", encoding="utf-8")
+    (result_dir / "windows.csv").write_text("trial_id,window_idx\n", encoding="utf-8")
+    (repeat_dir / "summary.json").write_text("{}", encoding="utf-8")
+    (repeat_dir / "energy_summary.json").write_text("{}", encoding="utf-8")
+    (repeat_dir / "gpu_power.json").write_text("{}", encoding="utf-8")
+
+    finalize_energy_task(group_plan_path, 0, exit_code=0, trial_started=True)
+    synced_files = []
+
+    def fake_run(command, **kwargs):
+        del kwargs
+        files_from = command[command.index("--files-from") + 1]
+        synced_files.extend(Path(files_from).read_text(encoding="utf-8").splitlines())
+        return subprocess.CompletedProcess(command, 0, stdout="Number of files: 7\n", stderr="")
+
+    monkeypatch.setattr("slurm_orchestrator.cli.subprocess.run", fake_run)
+
+    rc = slurm_main(
+        [
+            "energy-collect",
+            "--run-root",
+            run_plan["run_root"],
+            "--sync-results-root",
+            str(tmp_path),
+            "--sync-results-to",
+            str(tmp_path / "shared-results"),
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    result_rel = result_dir.relative_to(tmp_path).as_posix()
+    repeat_rel = repeat_dir.relative_to(tmp_path).as_posix()
+    run_rel = Path(run_plan["run_root"]).relative_to(tmp_path).as_posix()
+    assert rc == 0
+    assert payload["result_sync"]["status"] == "succeeded"
+    assert payload["result_sync"]["scope"] == "run"
+    assert f"{run_rel}/summary.json" in synced_files
+    assert f"{run_rel}/summary.md" in synced_files
+    assert f"{result_rel}/summary.json" in synced_files
+    assert f"{result_rel}/energy_summary.json" in synced_files
+    assert f"{result_rel}/gpu_power.json" in synced_files
+    assert f"{repeat_rel}/summary.json" in synced_files
+    assert f"{repeat_rel}/energy_summary.json" in synced_files
+    assert f"{repeat_rel}/gpu_power.json" in synced_files
+    assert not any(path.endswith("request_records.jsonl") for path in synced_files)
+    assert not any(path.endswith("server_metrics.jsonl") for path in synced_files)
+    assert not any(path.endswith("windows.csv") for path in synced_files)
+
+
 def test_energy_submit_cli_materializes_from_source_slurm_config_and_submits(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

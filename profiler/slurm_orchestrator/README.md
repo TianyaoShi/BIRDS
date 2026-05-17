@@ -129,6 +129,12 @@ PYTHONPATH=/path/to/BioLLM/profiler \
   --run-root /path/to/results/energy/<plan_id>/my-energy-slurm-run
 ```
 
+`energy-collect` uses the same result publishing controls as `collect`, including
+`--sync-results-to`, `--sync-results-existing`, `--sync-results-root`, and
+`--no-sync-results`. The energy sync publishes run summaries plus compact per-job
+`summary.json`, `energy_summary.json`, and `gpu_power.json` artifacts, including
+repeat-level copies when present.
+
 ## Separation From The Local Scheduler
 
 - `local_orchestrator` still owns strict manifest parsing, experiment expansion, selector overrides, resource probing, vLLM command rendering, and MST search/report command construction.
