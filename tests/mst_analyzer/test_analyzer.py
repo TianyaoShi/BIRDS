@@ -611,6 +611,53 @@ def test_extract_runs_matches_mst_anomaly_rerun_workload_aliases(
     assert extracted.rows[0].mst_rps == pytest.approx(13.0)
 
 
+def test_extract_runs_ignores_later_roots_for_unrelated_workloads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    main_run = _write_orchestrator_run(
+        tmp_path / "main",
+        run_id="main-run",
+        models=["Qwen/Qwen3-8B"],
+        workload_name="wildchat-hf",
+        workload_filename="wildchat-hf.yaml",
+        bundle_specs={
+            "Qwen/Qwen3-8B": {
+                "mst_rps": 8.0,
+                "high_bound_rate": 8.5,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+            },
+        },
+    )
+    combined_rerun = _write_orchestrator_run(
+        tmp_path / "combined-rerun",
+        run_id="combined-rerun",
+        models=["Qwen/Qwen3-14B"],
+        workload_name="live_sharegpt_workload_context",
+        workload_filename="live_sharegpt_workload_context.yaml",
+        experiment_id="sharegpt-only-rerun",
+        bundle_specs={
+            "Qwen/Qwen3-14B": {
+                "mst_rps": 14.0,
+                "high_bound_rate": 14.5,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+            },
+        },
+    )
+
+    extracted = extract_runs((main_run, combined_rerun))
+
+    assert [row.model for row in extracted.rows] == ["Qwen/Qwen3-8B"]
+    assert extracted.rows[0].workload_name == "wildchat-hf"
+
+
 def test_multi_root_rerun_manifest_uses_first_root_as_base_manifest(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

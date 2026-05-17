@@ -146,10 +146,15 @@ def extract_runs(orchestrator_run_roots: tuple[str | Path, ...] | list[str | Pat
     selected_by_key: dict[tuple[str, str, str, str | None], MSTRow] = {}
     all_rows: list[MSTRow] = []
     expanded_jobs: dict[str, ExpandedExperimentJob] = {}
+    base_workload_keys: set[str] | None = None
     for extracted in extracted_runs:
         expanded_jobs.update(extracted.expanded_jobs)
-        all_rows.extend(extracted.rows)
-        for row in extracted.rows:
+        rows = tuple(extracted.rows)
+        if base_workload_keys is None:
+            base_workload_keys = {_logical_workload_key(row) for row in rows}
+        rows = tuple(row for row in rows if _logical_workload_key(row) in base_workload_keys)
+        all_rows.extend(rows)
+        for row in rows:
             selected_by_experiment_id[row.experiment_id] = row
             selected_by_key[_decisive_row_key(row)] = row
 
