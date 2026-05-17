@@ -269,6 +269,7 @@ class RequestConfig:
 class DatasetConfig:
     type: str
     path: str | None = None
+    paths: tuple[str, ...] = ()
     subset: str | None = None
     configs: tuple[str, ...] = ()
     split: str | None = None
@@ -283,7 +284,14 @@ class DatasetConfig:
         allowed = {"synthetic-fixed", "synthetic-distribution", "jsonl", "sharegpt", "hf", "longbench"}
         if self.type not in allowed:
             raise ValueError(f"unsupported dataset type {self.type!r}")
-        if self.type in {"jsonl", "sharegpt", "hf", "longbench"} and not self.path:
+        if self.type == "jsonl":
+            if self.path is None and not self.paths:
+                raise ValueError("dataset.path or dataset.paths is required for dataset type 'jsonl'")
+            if self.path is not None and self.paths:
+                raise ValueError("dataset.path and dataset.paths are mutually exclusive for dataset type 'jsonl'")
+        elif self.paths:
+            raise ValueError("dataset.paths is only supported for dataset type 'jsonl'")
+        elif self.type in {"sharegpt", "hf", "longbench"} and not self.path:
             raise ValueError(f"dataset.path is required for dataset type {self.type!r}")
         if self.type == "hf" and not self.split:
             raise ValueError("dataset.split is required for dataset type 'hf'")
@@ -292,11 +300,15 @@ class DatasetConfig:
         if self.type == "synthetic-fixed":
             if self.path is not None:
                 raise ValueError("synthetic-fixed must not define dataset.path")
+            if self.paths:
+                raise ValueError("synthetic-fixed must not define dataset.paths")
             if self.prompts:
                 raise ValueError("synthetic-fixed must not define dataset.prompts")
         if self.type == "synthetic-distribution":
             if self.path is not None:
                 raise ValueError("synthetic-distribution must not define dataset.path")
+            if self.paths:
+                raise ValueError("synthetic-distribution must not define dataset.paths")
             if not self.prompts:
                 raise ValueError("synthetic-distribution requires dataset.prompts")
 
@@ -455,6 +467,7 @@ def _parse_dataset(payload: Any, base_dir: Path) -> DatasetConfig:
         {
             "type",
             "path",
+            "paths",
             "subset",
             "configs",
             "split",
@@ -484,6 +497,18 @@ def _parse_dataset(payload: Any, base_dir: Path) -> DatasetConfig:
                 path_value = path_str
         else:
             path_value = str((base_dir / path_str).resolve())
+    raw_paths = dataset_payload.get("paths", [])
+    path_values: tuple[str, ...] = ()
+    if raw_paths:
+        if dataset_type != "jsonl":
+            raise ValueError("dataset.paths is only supported for dataset type 'jsonl'")
+        if not isinstance(raw_paths, list):
+            raise ValueError("dataset.paths must be a list when provided")
+        resolved_paths: list[str] = []
+        for index, raw_item in enumerate(raw_paths):
+            item = _expect_string(raw_item, f"dataset.paths[{index}]")
+            resolved_paths.append(str((base_dir / item).resolve()))
+        path_values = tuple(resolved_paths)
     configs_payload = dataset_payload.get("configs", [])
     configs: tuple[str, ...] = ()
     if configs_payload:
@@ -505,6 +530,7 @@ def _parse_dataset(payload: Any, base_dir: Path) -> DatasetConfig:
     return DatasetConfig(
         type=dataset_type,
         path=path_value,
+        paths=path_values,
         subset=_optional_string(dataset_payload.get("subset"), "dataset.subset"),
         configs=configs,
         split=_optional_string(dataset_payload.get("split"), "dataset.split"),
@@ -717,6 +743,7 @@ def _manifest_cache_path(
     key_payload = {
         "cache_version": 4,
         "dataset_path": config.dataset.path,
+        "dataset_paths": list(config.dataset.paths),
         "dataset_source_fingerprint": source_fingerprint,
         "dataset_subset": config.dataset.subset,
         "dataset_configs": list(config.dataset.configs),
@@ -801,9 +828,22 @@ def _load_entries_from_manifest(path: Path) -> list[DatasetEntry]:
 
 
 def _dataset_source_fingerprint(dataset: DatasetConfig) -> dict[str, Any] | None:
-    if dataset.path is None or dataset.type == "hf":
+    if dataset.type == "hf":
         return None
-    path = Path(dataset.path).expanduser()
+    if dataset.paths:
+        entries: list[dict[str, Any] | None] = []
+        for raw_path in dataset.paths:
+            entries.append(_path_source_fingerprint(Path(raw_path).expanduser()))
+        return {
+            "entries": entries,
+            "kind": "multi_file",
+        }
+    if dataset.path is None:
+        return None
+    return _path_source_fingerprint(Path(dataset.path).expanduser())
+
+
+def _path_source_fingerprint(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
     if path.is_file():
@@ -843,6 +883,7 @@ def _write_entries_to_manifest(
     payload = {
         "cache_version": 4,
         "dataset_path": config.dataset.path,
+        "dataset_paths": list(config.dataset.paths),
         "dataset_source_fingerprint": _dataset_source_fingerprint(config.dataset),
         "dataset_subset": config.dataset.subset,
         "dataset_configs": list(config.dataset.configs),
@@ -929,6 +970,38 @@ def _load_jsonl_entries_from_source(
             )
     if not entries:
         raise ValueError(f"jsonl dataset is empty: {path}")
+    return entries
+
+
+def _load_jsonl_entries_from_sources(
+    paths: tuple[str, ...],
+    *,
+    tokenizer: PromptTokenizer | None = None,
+    include_prompt_len: bool,
+) -> list[DatasetEntry]:
+    entries: list[DatasetEntry] = []
+    for raw_path in paths:
+        path = Path(raw_path)
+        source_entries = _load_jsonl_entries_from_source(
+            path,
+            tokenizer=tokenizer,
+            include_prompt_len=include_prompt_len,
+        )
+        for entry in source_entries:
+            metadata = dict(entry.metadata)
+            metadata.setdefault("jsonl_source_path", str(path))
+            metadata.setdefault("jsonl_source_index", entry.source_index)
+            entries.append(
+                DatasetEntry(
+                    prompt=entry.prompt,
+                    source_index=len(entries),
+                    prompt_len=entry.prompt_len,
+                    expected_output_len=entry.expected_output_len,
+                    metadata=metadata,
+                )
+            )
+    if not entries:
+        raise ValueError("jsonl dataset paths are empty")
     return entries
 
 
@@ -1573,15 +1646,22 @@ def _sample_dataset_entries(
             for index, prompt in enumerate(dataset.prompts)
         ]
     if dataset.type == "jsonl":
-        assert dataset.path is not None
         manifest_path = _manifest_cache_path(config, tokenizer_key=tokenizer_key)
         if manifest_path.exists():
             return _load_entries_from_manifest(manifest_path)
-        entries = _load_jsonl_entries_from_source(
-            Path(dataset.path),
-            tokenizer=tokenizer,
-            include_prompt_len=config.sampling.prompt_len.mode == "from_dataset",
-        )
+        if dataset.paths:
+            entries = _load_jsonl_entries_from_sources(
+                dataset.paths,
+                tokenizer=tokenizer,
+                include_prompt_len=config.sampling.prompt_len.mode == "from_dataset",
+            )
+        else:
+            assert dataset.path is not None
+            entries = _load_jsonl_entries_from_source(
+                Path(dataset.path),
+                tokenizer=tokenizer,
+                include_prompt_len=config.sampling.prompt_len.mode == "from_dataset",
+            )
         _write_entries_to_manifest(manifest_path, config=config, tokenizer_key=tokenizer_key, entries=entries)
         return entries
     if dataset.type == "sharegpt":
@@ -1909,6 +1989,7 @@ def inspect_workload_dataset(
             "source_path": str(config.source_path),
             "dataset_type": config.dataset.type,
             "dataset_path": config.dataset.path,
+            "dataset_paths": list(config.dataset.paths),
             "dataset_subset": config.dataset.subset,
             "dataset_configs": list(config.dataset.configs),
             "dataset_split": config.dataset.split,

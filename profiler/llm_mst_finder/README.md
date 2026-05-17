@@ -73,6 +73,22 @@ Supported dataset types include:
 - `sharegpt`
 - `hf`
 
+For `jsonl` workloads, `dataset.path` loads one JSONL file. Use
+`dataset.paths` to concatenate multiple JSONL files in the listed order before
+sampling:
+
+```yaml
+dataset:
+  type: jsonl
+  paths:
+  - /path/to/shard_000.runner.jsonl
+  - /path/to/shard_001.runner.jsonl
+```
+
+The loader materializes JSONL rows into memory and caches the parsed manifest
+before request sampling. Multi-file JSONL keeps a global source index and records
+each row's original `jsonl_source_path` and `jsonl_source_index` in metadata.
+
 Real datasets require context validation. Minimal ShareGPT-style example:
 
 ```yaml

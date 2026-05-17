@@ -100,6 +100,56 @@ def test_jsonl_sequential_entry_selection_replays_rows_in_order(tmp_path: Path) 
     assert all(sample.metadata["sampling_entry_selection"] == "sequential" for sample in samples)
 
 
+def test_jsonl_paths_load_multiple_files_sequentially(tmp_path: Path) -> None:
+    first_path = tmp_path / "requests_a.jsonl"
+    second_path = tmp_path / "requests_b.jsonl"
+    first_path.write_text(
+        "\n".join(
+            [
+                json.dumps({"prompt": "a zero", "expected_output_len": 1}),
+                json.dumps({"prompt": "a one", "expected_output_len": 2}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    second_path.write_text(
+        json.dumps({"prompt": "b zero", "expected_output_len": 3}) + "\n",
+        encoding="utf-8",
+    )
+    workload_path = tmp_path / "jsonl_paths.yaml"
+    workload_path.write_text(
+        "\n".join(
+            [
+                "name: jsonl-paths",
+                "dataset:",
+                "  type: jsonl",
+                "  paths:",
+                f"  - {first_path}",
+                f"  - {second_path}",
+                "tokenizer: character",
+                "sampling:",
+                "  seed: 99",
+                "  num_requests: 4",
+                "  entry_selection: sequential",
+                "  prompt_len:",
+                "    mode: from_dataset",
+                "  output_len:",
+                "    mode: from_dataset",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    samples = load_workload_samples_for_sampling_only(workload_path)
+
+    assert [sample.prompt for sample in samples] == ["a zero", "a one", "b zero", "a zero"]
+    assert [sample.expected_output_len for sample in samples] == [1, 2, 3, 1]
+    assert [sample.metadata["jsonl_source_index"] for sample in samples[:3]] == [0, 1, 0]
+    assert samples[0].metadata["jsonl_source_path"] == str(first_path)
+    assert samples[2].metadata["jsonl_source_path"] == str(second_path)
+
+
 def test_jsonl_from_dataset_honors_materialized_prompt_len(tmp_path: Path) -> None:
     dataset_path = tmp_path / "requests.jsonl"
     dataset_path.write_text(
