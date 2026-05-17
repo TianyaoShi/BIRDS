@@ -75,22 +75,6 @@ search:
 overrides:
   - match:
       models:
-        - Qwen/Qwen3-0.6B
-        - Qwen/Qwen3-1.7B
-        - google/gemma-4-E2B-it
-        - meta-llama/Llama-3.2-1B-Instruct
-    reason: Small H100 LongBench runs can probe a wider envelope, but expanded buckets still keep request reuse bounded.
-    launch:
-      max_num_seqs: 1024
-      max_num_batched_tokens: 8192
-    search:
-      initial_request_rate: 0.5
-      max_request_rate: 12
-      max_binary_steps: 10
-      max_bracket_trials: 18
-
-  - match:
-      models:
         - Qwen/Qwen3-4B-Instruct-2507
         - Qwen/Qwen3-4B-Thinking-2507
         - google/gemma-4-E4B-it
@@ -154,12 +138,9 @@ overrides:
 
   - match:
       model: openai/gpt-oss-120b
-    reason: gpt-oss-120B uses quantized checkpoint metadata; keep allocator fragmentation mitigation for H100 launch stability.
+    reason: gpt-oss-120B uses quantized checkpoint metadata; let vLLM pick dtype.
     launch:
       dtype: auto
-      env:
-        PYTORCH_ALLOC_CONF: expandable_segments:True
-        PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
     search:
       initial_request_rate: 0.1
       max_request_rate: 2
@@ -399,19 +380,6 @@ experiments:
       gpu_count: 4
       tensor_parallel_size: 4
 
-  - id: longbench-expanded-gpt-oss-120b-tp1
-    model: openai/gpt-oss-120b
-    workloads:
-      - ./workloads/longbench_long_output_summarization_8k.yaml
-      - ./workloads/longbench_medium_output_summarization_8k.yaml
-      - ./workloads/longbench_medium_answer_rag_qa_8k.yaml
-      - ./workloads/longbench_short_answer_document_qa_8k.yaml
-    launch:
-      gpu_memory_utilization: 0.95
-      max_model_len: 8192
-      max_num_seqs: 64
-      max_num_batched_tokens: 1024
-
   - id: longbench-expanded-gpt-oss-120b-tp2
     model: openai/gpt-oss-120b
     workloads:
@@ -422,6 +390,9 @@ experiments:
     launch:
       gpu_count: 2
       tensor_parallel_size: 2
+      env:
+        PYTORCH_ALLOC_CONF: expandable_segments:True
+        PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
       gpu_memory_utilization: 0.85
       max_model_len: 8192
       max_num_seqs: 64
