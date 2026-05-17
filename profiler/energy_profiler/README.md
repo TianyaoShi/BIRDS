@@ -174,6 +174,11 @@ Managed plan runs also keep run state and summaries under:
 results/energy/<plan_id>/
 ```
 
+The run root includes `summary.json`, `summary.md`, and `summary_compact.csv`.
+The compact CSV contains one row per energy job with model, workload, GPU count,
+tensor parallel size, request rate, power statistics, aggregate energy, energy
+per request, and energy per token.
+
 ## Running A Plan On Slurm
 
 Reviewed plans can also be submitted through `slurm_orchestrator`:

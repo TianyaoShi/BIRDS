@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import subprocess
 from dataclasses import replace
@@ -25,6 +26,7 @@ from energy_profiler.models import (
     EnergyPlanJob,
 )
 from energy_profiler.planning import write_energy_plan
+from energy_profiler.reporting import EnergyRunStateStore
 
 
 class _FakeClock:
@@ -386,6 +388,24 @@ def test_executor_run_plan_repeats_trial_and_aggregates_energy(tmp_path: Path) -
     assert aggregate["repeat_statistics"]["energy_joules"]["stdev"] == pytest.approx(0.0)
     state_summary = json.loads((run_root / "summary.json").read_text(encoding="utf-8"))
     assert state_summary["jobs"][0]["artifacts"]["repeats"][0]["repeat_index"] == 1
+    assert state_summary["jobs"][0]["energy_per_successful_request_j"] == pytest.approx(2250.0)
+    assert state_summary["jobs"][0]["incremental_energy_per_successful_request_j"] == pytest.approx(750.0)
+    assert state_summary["jobs"][0]["gpu_count"] == 1
+    assert state_summary["jobs"][0]["tensor_parallel_size"] == 1
+    state_payload = json.loads((run_root / "state.json").read_text(encoding="utf-8"))
+    for job in state_payload["jobs"]:
+        job.pop("gpu_count", None)
+        job.pop("tensor_parallel_size", None)
+    refreshed_summary = EnergyRunStateStore(run_root).write_summary_files(state_payload)
+    assert refreshed_summary["jobs"][0]["gpu_count"] == 1
+    assert refreshed_summary["jobs"][0]["tensor_parallel_size"] == 1
+    compact_rows = list(csv.DictReader((run_root / "summary_compact.csv").open(encoding="utf-8")))
+    assert compact_rows[0]["model"] == "Qwen/Qwen3-8B"
+    assert compact_rows[0]["workload"] == "sharegpt"
+    assert compact_rows[0]["gpu_count"] == "1"
+    assert compact_rows[0]["tensor_parallel_size"] == "1"
+    assert float(compact_rows[0]["energy_per_successful_request_j"]) == pytest.approx(2250.0)
+    assert float(compact_rows[0]["incremental_energy_per_total_request_j"]) == pytest.approx(750.0)
 
 
 def test_executor_warmup_failure_fails_before_measured_trial(tmp_path: Path) -> None:
