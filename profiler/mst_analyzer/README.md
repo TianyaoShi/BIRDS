@@ -3,7 +3,7 @@
 This package reads a completed local orchestrator MST run and flags suspicious model results for review or rerun planning.
 
 It is intended to sit after `local_orchestrator` / `llm_mst_finder` and before any follow-on workflows such as energy profiling.
-Both analyzer and plot commands accept repeated orchestrator run roots. When multiple roots are provided, later roots override earlier succeeded rows with the same `(model, workload, endpoint, serving signature)` identity. This is intended for aggregating a mostly complete main run with a smaller rerun root while keeping TP1/TP2/TP4 serving configurations separate.
+Both analyzer and plot commands accept repeated orchestrator run roots. When multiple roots are provided, later roots override earlier succeeded rows with the same `(model, logical workload, endpoint, serving signature)` identity. The logical workload key normalizes rerun aliases such as `_mst_anomaly_rerun` and common `4k`/`8k` spellings, so targeted reruns replace the original row while TP1/TP2/TP4 serving configurations stay separate.
 
 ## What it does
 

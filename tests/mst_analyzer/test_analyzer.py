@@ -22,8 +22,13 @@ from slurm_orchestrator.planning import deserialize_expanded_job, materialize_ru
 from slurm_orchestrator.state import collect_run, finalize_task
 
 
-def _write_workload(tmp_path: Path, *, name: str = "live_sharegpt_workload_context") -> Path:
-    workload = tmp_path / "workloads" / "live_sharegpt_workload_context.yaml"
+def _write_workload(
+    tmp_path: Path,
+    *,
+    name: str = "live_sharegpt_workload_context",
+    filename: str = "live_sharegpt_workload_context.yaml",
+) -> Path:
+    workload = tmp_path / "workloads" / filename
     workload.parent.mkdir(parents=True, exist_ok=True)
     workload.write_text(
         "\n".join(
@@ -52,7 +57,14 @@ def _write_workload(tmp_path: Path, *, name: str = "live_sharegpt_workload_conte
     return workload
 
 
-def _write_manifest(tmp_path: Path, workload: Path, *, models: list[str], run_id: str = "fixture-run") -> Path:
+def _write_manifest(
+    tmp_path: Path,
+    workload: Path,
+    *,
+    models: list[str],
+    run_id: str = "fixture-run",
+    experiment_id: str = "fixture-loop",
+) -> Path:
     manifest_path = tmp_path / "experiments" / "manifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
@@ -85,7 +97,7 @@ def _write_manifest(tmp_path: Path, workload: Path, *, models: list[str], run_id
                 },
                 "experiments": [
                     {
-                        "id": "fixture-loop",
+                        "id": experiment_id,
                         "models": models,
                         "workloads": [str(workload)],
                     }
@@ -323,9 +335,18 @@ def _write_orchestrator_run(
     models: list[str],
     bundle_specs: dict[str, dict[str, object]],
     run_id: str = "fixture-run",
+    workload_name: str = "live_sharegpt_workload_context",
+    workload_filename: str = "live_sharegpt_workload_context.yaml",
+    experiment_id: str = "fixture-loop",
 ) -> Path:
-    workload = _write_workload(tmp_path)
-    manifest_path = _write_manifest(tmp_path, workload, models=models, run_id=run_id)
+    workload = _write_workload(tmp_path, name=workload_name, filename=workload_filename)
+    manifest_path = _write_manifest(
+        tmp_path,
+        workload,
+        models=models,
+        run_id=run_id,
+        experiment_id=experiment_id,
+    )
     manifest = load_manifest(manifest_path)
     jobs = {
         job.model: job
@@ -535,6 +556,59 @@ def test_extract_runs_uses_later_roots_as_rerun_overrides(tmp_path: Path, monkey
     assert "rerun-run" in str(rows_by_model["Qwen/Qwen3-8B"].result_dir)
     assert rows_by_model["Qwen/Qwen3-14B"].mst_rps == pytest.approx(2.0)
     assert "main-run" in str(rows_by_model["Qwen/Qwen3-14B"].result_dir)
+
+
+def test_extract_runs_matches_mst_anomaly_rerun_workload_aliases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    model = "Qwen/Qwen3-30B-A3B-Instruct-2507"
+    main_run = _write_orchestrator_run(
+        tmp_path / "main",
+        run_id="main-run",
+        models=[model],
+        workload_name="wildchat-hf-8k",
+        workload_filename="wildchat_hf_8k.yaml",
+        experiment_id="wildchat-30b-8k-tp4",
+        bundle_specs={
+            model: {
+                "mst_rps": 12.0,
+                "high_bound_rate": 12.0,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+                "termination_reason": "max_request_rate_limited",
+            },
+        },
+    )
+    rerun = _write_orchestrator_run(
+        tmp_path / "rerun",
+        run_id="rerun-run",
+        models=[model],
+        workload_name="wildchat-hf-8k_mst_anomaly_rerun",
+        workload_filename="wildchat-hf-8k_mst_anomaly_rerun.yaml",
+        experiment_id="wildchat-30b-8k-tp4-rerun",
+        bundle_specs={
+            model: {
+                "mst_rps": 13.0,
+                "high_bound_rate": 13.5,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+            },
+        },
+    )
+
+    extracted = extract_runs((main_run, rerun))
+
+    assert len(extracted.rows) == 1
+    assert extracted.rows[0].experiment_id != "wildchat-30b-8k-tp4"
+    assert extracted.rows[0].workload_name == "wildchat-hf-8k_mst_anomaly_rerun"
+    assert extracted.rows[0].termination_reason == "confirmed_stable"
+    assert extracted.rows[0].mst_rps == pytest.approx(13.0)
 
 
 def test_multi_root_rerun_manifest_uses_first_root_as_base_manifest(

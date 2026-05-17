@@ -143,7 +143,7 @@ def extract_runs(orchestrator_run_roots: tuple[str | Path, ...] | list[str | Pat
     extracted_runs = [extract_run(run_root) for run_root in run_roots]
 
     selected_by_experiment_id: dict[str, MSTRow] = {}
-    selected_by_key: dict[tuple[str, str, str, str], MSTRow] = {}
+    selected_by_key: dict[tuple[str, str, str, str | None], MSTRow] = {}
     all_rows: list[MSTRow] = []
     expanded_jobs: dict[str, ExpandedExperimentJob] = {}
     for extracted in extracted_runs:
@@ -172,8 +172,22 @@ def extract_runs(orchestrator_run_roots: tuple[str | Path, ...] | list[str | Pat
     )
 
 
-def _decisive_row_key(row: MSTRow) -> tuple[str, str, str, str]:
-    return (row.model, str(row.workload_path), row.endpoint, row.server_signature_key)
+def _decisive_row_key(row: MSTRow) -> tuple[str, str, str, str | None]:
+    return (row.model, _logical_workload_key(row), row.endpoint, row.server_signature_key)
+
+
+def _logical_workload_key(row: MSTRow) -> str:
+    normalized = (row.workload_name or row.workload_path.stem).strip().lower().replace("_", "-")
+    changed = True
+    while changed:
+        changed = False
+        for suffix in ("-mst-anomaly-rerun", "-anomaly-rerun", "-rerun"):
+            if normalized.endswith(suffix):
+                normalized = normalized[: -len(suffix)]
+                changed = True
+    normalized = normalized.replace("-8k", "-8192")
+    normalized = normalized.replace("-4k", "-4096")
+    return normalized
 
 
 def _extract_row(
