@@ -4,7 +4,6 @@ dataset:
   paths:
   - ../code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/shards/shard_000.runner.jsonl
   - ../code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/shards/shard_001.runner.jsonl
-tokenizer: Qwen/Qwen3-8B
 sampling:
   seed: 42
   num_requests: 9927

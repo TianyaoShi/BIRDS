@@ -2,7 +2,6 @@ name: a100_supergpqa_hard_reasoning_8k
 dataset:
   type: jsonl
   path: ../reasoning_workloads/supergpqa_hard_reasoning/shards/shard_000.runner.jsonl
-tokenizer: Qwen/Qwen3-8B
 sampling:
   seed: 42
   num_requests: 4096

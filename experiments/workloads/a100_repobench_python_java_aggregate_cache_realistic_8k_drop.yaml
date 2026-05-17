@@ -2,7 +2,6 @@ name: a100_repobench_python_java_aggregate_cache_realistic_8k_drop
 dataset:
   type: jsonl
   path: ../code_workloads/repobench_python_java_aggregate_cache_realistic_8k_drop/shards/shard_000.runner.jsonl
-tokenizer: Qwen/Qwen3-8B
 sampling:
   seed: 42
   num_requests: 8000
