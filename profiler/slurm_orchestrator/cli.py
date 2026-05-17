@@ -453,7 +453,7 @@ def _option_or_env(args: argparse.Namespace, option: str, env_name: str, default
 
 def _collect_publish_files(*, results_root: Path, run_root: Path) -> list[str]:
     candidates: set[Path] = set()
-    for name in ("summary.json", "summary.md"):
+    for name in ("summary.json", "summary.md", "summary_compact.csv"):
         _add_relative_file(candidates, results_root=results_root, path=run_root / name)
 
     state_path = run_root / "state.json"

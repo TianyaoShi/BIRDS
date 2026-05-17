@@ -333,6 +333,7 @@ def test_energy_collect_cli_syncs_energy_summaries_without_raw_traces(
     assert payload["result_sync"]["scope"] == "run"
     assert f"{run_rel}/summary.json" in synced_files
     assert f"{run_rel}/summary.md" in synced_files
+    assert f"{run_rel}/summary_compact.csv" in synced_files
     assert f"{result_rel}/summary.json" in synced_files
     assert f"{result_rel}/energy_summary.json" in synced_files
     assert f"{result_rel}/gpu_power.json" in synced_files
