@@ -25,7 +25,7 @@ Both analyzer and plot commands accept repeated orchestrator run roots. When mul
 - `reporting.py` - JSON/Markdown report generation and rerun manifest output
 - `plotting.py` - reusable model-size scatter plotting helpers
 - `cli.py` - command-line entrypoint
-- `skills/rerun_manifest_review/SKILL.md` - checklist for reviewing generated rerun manifests before launch
+- `../../skills/rerun-manifest-review/SKILL.md` - repo-local checklist for reviewing generated rerun manifests before launch
 
 ## CLI
 

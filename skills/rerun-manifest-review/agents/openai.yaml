@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rerun Manifest Review"
+  short_description: "Review MST rerun manifests"
+  default_prompt: "Use $rerun-manifest-review to review this suggested MST rerun manifest before launch."

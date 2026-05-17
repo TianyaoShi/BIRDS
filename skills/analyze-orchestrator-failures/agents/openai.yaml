@@ -1,0 +1,4 @@
+interface:
+  display_name: "Analyze Orchestrator Failures"
+  short_description: "Diagnose failed orchestrator runs"
+  default_prompt: "Use $analyze-orchestrator-failures to analyze this orchestrator run root and summarize failed experiments by root cause."

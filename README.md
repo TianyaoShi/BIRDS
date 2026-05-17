@@ -71,6 +71,10 @@ tests/
   energy_profiler/
   mst_analyzer/
   slurm_orchestrator/
+
+skills/
+  analyze-orchestrator-failures/
+  rerun-manifest-review/
 ```
 
 ## Profiler Modules
@@ -85,3 +89,5 @@ tests/
 - `benchmark_serving.py` and `backend_request_func.py`: baseline serving benchmark utilities retained for direct benchmark compatibility.
 
 Package-specific usage details live in each module's own `README.md`.
+Repo-local Codex skills live under `skills/`; install or copy them into
+`${CODEX_HOME:-$HOME/.codex}/skills` when they should be auto-discovered.
