@@ -139,6 +139,13 @@ Quantized and MoE models are suppressed from bucket summaries by default unless 
 
 Trace-only instability is reported under `trace_diagnostics` and in the Markdown diagnostics section by default. Set `include_trace_only_findings: true` only when you intentionally want noisy or low-confidence searches to count as anomaly candidates.
 
+MST rates and bottleneck labels come from the saved MST finder artifacts. In
+particular, `slo_limited` can be driven by an active-window SLO crossing in
+`windows.csv`/`analysis.json` even when the aggregate trial percentiles in
+`summary.json` are below the SLO. This analyzer preserves those labels for
+completed experiments; review the high-bound and confirmation trial artifacts
+before treating a near-threshold SLO label as a hard capacity limit.
+
 ## Development notes
 
 - model-size inference reuses shared logic from `local_orchestrator.planning`

@@ -459,6 +459,15 @@ Decision mapping:
 
 SLO violations are top-priority evidence. A stationary server can still fail the configured TTFT/TPOT SLO.
 
+SLO checks are applied to active post-warmup windows, not only to the aggregate
+trial-level percentiles in `summary.json`. For example, with
+`--ttft-slo-field ttft_p90_ms`, the classifier compares the maximum active-window
+TTFT p90 (`ttft_p90_ms_max` in `analysis.json` key metrics, derived from
+`windows.csv`) with the configured TTFT SLO. This means a trial can have an
+aggregate TTFT p90 below the SLO and still be classified as `slo_violation` if
+one active window crosses the threshold. Treat boundary cases near the SLO as
+sensitive to `window_s`, workload sampling, and trial duration.
+
 Outstanding-request backlog pressure uses a robust trend gate. All conditions must hold:
 
 ```text
