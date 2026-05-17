@@ -1201,6 +1201,11 @@ def _collect_monitor_result(
     for monitor in monitors:
         snapshot = monitor.get_snapshot(wait=True, timeout=1.0)
         power_trace = list(getattr(snapshot, "power_trace_mw", []))
+        if duration_s > 0.0 and not power_trace:
+            raise RuntimeError(
+                "GPU power monitor produced no samples for "
+                f"gpu_id={int(getattr(monitor, 'gpu_id'))}; check NVML GPU ID mapping"
+            )
         traces.append(power_trace)
         raw_clocks = getattr(snapshot, "clock_trace_mhz", None)
         clock_trace = None

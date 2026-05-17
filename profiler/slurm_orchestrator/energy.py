@@ -412,7 +412,7 @@ def render_energy_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmCo
             "TRIAL_STARTED=0",
             "",
             "detect_gpu_ids() {",
-            '  local raw="${SLURM_JOB_GPUS:-${CUDA_VISIBLE_DEVICES:-}}"',
+            '  local raw="${CUDA_VISIBLE_DEVICES:-${SLURM_JOB_GPUS:-}}"',
             '  raw="${raw//,/ }"',
             "  local ids=()",
             "  local item",

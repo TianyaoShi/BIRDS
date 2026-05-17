@@ -113,6 +113,27 @@ class _FakeMonitor:
         )
 
 
+class _EmptyTraceMonitor:
+    def __init__(self, *, gpu_id: int, interval: float, truncate: float, monitor_clock: bool) -> None:
+        del interval, truncate, monitor_clock
+        self.gpu_id = gpu_id
+
+    def start(self) -> None:
+        return None
+
+    def stop(self) -> None:
+        return None
+
+    def get_snapshot(self, wait: bool = False, timeout: float | None = None):
+        del wait, timeout
+        return SimpleNamespace(
+            avg_power_mw=0.0,
+            power_stats={},
+            power_trace_mw=[],
+            clock_trace_mhz=None,
+        )
+
+
 def _make_plan(tmp_path: Path) -> EnergyPlan:
     launch = EnergyLaunchConfig(
         executable="vllm",
@@ -397,6 +418,54 @@ def test_executor_warmup_failure_fails_before_measured_trial(tmp_path: Path) -> 
     run_root = plan.plan.output_root / plan.plan.plan_id
     assert not (run_root / "jobs" / "job-a-r1" / "energy_summary.json").exists()
     assert "warmup run-trial failed" in summary["jobs"][0]["last_error"]
+
+
+def test_executor_fails_when_power_monitor_has_no_samples(tmp_path: Path) -> None:
+    clock = _FakeClock()
+    lifecycle = _FakeLifecycle()
+    base_plan = _make_plan(tmp_path)
+    plan = replace(
+        base_plan,
+        jobs=(base_plan.jobs[0],),
+        defaults=replace(base_plan.defaults, traffic_warmup_s=0.0, cooldown_s=0.0),
+    )
+    plan_path = write_energy_plan(plan, tmp_path / "experiments" / "energy" / "energy-plan-no-samples.yaml")
+
+    def run_command(command, *, env, cwd, stdout, stderr):
+        del env, cwd, stderr
+        output_dir = Path(command[command.index("--output-dir") + 1])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        summary_payload = {
+            "summary": {
+                "successful_requests": 1,
+                "started_requests": 1,
+                "benchmark_metrics": {
+                    "total_input_tokens": 10,
+                    "total_output_tokens": 5,
+                },
+            }
+        }
+        (output_dir / "summary.json").write_text(json.dumps(summary_payload), encoding="utf-8")
+        (output_dir / "request_records.jsonl").write_text("", encoding="utf-8")
+        (output_dir / "server_metrics.jsonl").write_text("", encoding="utf-8")
+        (output_dir / "windows.csv").write_text("trial_id,window_idx\n", encoding="utf-8")
+        stdout.write("{}\n")
+        clock.advance(float(command[command.index("--duration-s") + 1]))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    executor = EnergyExecutor(
+        config=EnergyExecutorConfig(allowed_gpu_ids=(0,), max_active_gpus=1),
+        lifecycle_factory=lambda: lifecycle,
+        run_command=run_command,
+        monitor_factory=_EmptyTraceMonitor,
+        sleep_fn=clock.sleep,
+        time_fn=clock,
+    )
+
+    summary = executor.run_plan(plan_path)
+
+    assert summary["counts"]["failed"] == 1
+    assert "GPU power monitor produced no samples" in summary["jobs"][0]["last_error"]
 
 
 def test_executor_run_plan_uses_plan_execution_when_config_is_not_overridden(tmp_path: Path) -> None:

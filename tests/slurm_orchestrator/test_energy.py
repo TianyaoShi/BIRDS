@@ -141,6 +141,7 @@ def test_materialize_energy_run_plan_groups_jobs_and_renders_energy_script(tmp_p
     assert "module load cuda/12.4" in script
     assert "source /venv/bin/activate" in script
     assert 'export VLLM_ENGINE_READY_TIMEOUT_S="${VLLM_ENGINE_READY_TIMEOUT_S:-$READINESS_TIMEOUT_S}"' in script
+    assert 'local raw="${CUDA_VISIBLE_DEVICES:-${SLURM_JOB_GPUS:-}}"' in script
     assert ': >"$VLLM_STDOUT"' in script
     assert ': >"$VLLM_STDERR"' in script
     assert ': >"$PROFILE_STDOUT"' in script
