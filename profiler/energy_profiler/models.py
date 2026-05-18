@@ -124,6 +124,10 @@ class EnergyPlanSelection:
     models: tuple[str, ...] = ()
     workloads: tuple[str, ...] = ()
     experiment_ids: tuple[str, ...] = ()
+    exclude_models: tuple[str, ...] = ()
+    exclude_workloads: tuple[str, ...] = ()
+    exclude_experiment_ids: tuple[str, ...] = ()
+    min_model_size_b: float | None = None
     explicit_request_rates: tuple[float, ...] = ()
     sweep: EnergyPlanSelectionSweep = field(default_factory=EnergyPlanSelectionSweep)
 
@@ -134,6 +138,14 @@ class EnergyPlanSelection:
             _require_non_empty("selection.workloads[]", value)
         for value in self.experiment_ids:
             _require_non_empty("selection.experiment_ids[]", value)
+        for value in self.exclude_models:
+            _require_non_empty("selection.exclude_models[]", value)
+        for value in self.exclude_workloads:
+            _require_non_empty("selection.exclude_workloads[]", value)
+        for value in self.exclude_experiment_ids:
+            _require_non_empty("selection.exclude_experiment_ids[]", value)
+        if self.min_model_size_b is not None and self.min_model_size_b < 0:
+            raise ValueError("selection.min_model_size_b must be non-negative")
         _require_optional_rate_list("selection.explicit_request_rates[]", self.explicit_request_rates)
 
     def to_dict(self) -> dict[str, Any]:
@@ -141,6 +153,10 @@ class EnergyPlanSelection:
             "models": list(self.models),
             "workloads": list(self.workloads),
             "experiment_ids": list(self.experiment_ids),
+            "exclude_models": list(self.exclude_models),
+            "exclude_workloads": list(self.exclude_workloads),
+            "exclude_experiment_ids": list(self.exclude_experiment_ids),
+            "min_model_size_b": self.min_model_size_b,
             "explicit_request_rates": list(self.explicit_request_rates),
             "sweep": self.sweep.to_dict(),
         }
@@ -151,6 +167,17 @@ class EnergyPlanSelection:
             models=_expect_string_tuple(payload.get("models", []), "selection.models"),
             workloads=_expect_string_tuple(payload.get("workloads", []), "selection.workloads"),
             experiment_ids=_expect_string_tuple(payload.get("experiment_ids", []), "selection.experiment_ids"),
+            exclude_models=_expect_string_tuple(payload.get("exclude_models", []), "selection.exclude_models"),
+            exclude_workloads=_expect_string_tuple(payload.get("exclude_workloads", []), "selection.exclude_workloads"),
+            exclude_experiment_ids=_expect_string_tuple(
+                payload.get("exclude_experiment_ids", []),
+                "selection.exclude_experiment_ids",
+            ),
+            min_model_size_b=_expect_optional_float(
+                payload.get("min_model_size_b"),
+                "selection.min_model_size_b",
+                minimum=0.0,
+            ),
             explicit_request_rates=_expect_float_tuple(
                 payload.get("explicit_request_rates", []),
                 "selection.explicit_request_rates",
@@ -799,6 +826,7 @@ class OrchestratorJobRecord:
     status: str
     max_no_drift_request_rate: float | None
     max_slo_satisfying_request_rate: float | None
+    model_size_b: float | None
     search_id: str | None
     search_mode: str | None
     confirmation_trial_id: str | None

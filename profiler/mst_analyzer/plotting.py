@@ -163,13 +163,26 @@ def plot_model_size_vs_mst_from_orchestrator_run(
     y_label: str = "MST (rps)",
     x_scale: str = "log",
     annotate: bool = True,
+    exclude_models: tuple[str, ...] = (),
+    exclude_experiment_ids: tuple[str, ...] = (),
+    min_model_size_b: float | None = None,
 ) -> Path:
-    from .extract import extract_run, extract_runs
+    from .extract import extract_runs
 
     if isinstance(orchestrator_run_root, (str, Path)):
-        extracted = extract_run(orchestrator_run_root)
+        extracted = extract_runs(
+            (orchestrator_run_root,),
+            exclude_models=exclude_models,
+            exclude_experiment_ids=exclude_experiment_ids,
+            min_model_size_b=min_model_size_b,
+        )
     else:
-        extracted = extract_runs(tuple(orchestrator_run_root))
+        extracted = extract_runs(
+            tuple(orchestrator_run_root),
+            exclude_models=exclude_models,
+            exclude_experiment_ids=exclude_experiment_ids,
+            min_model_size_b=min_model_size_b,
+        )
     return plot_model_size_vs_mst(
         rows=extracted.rows,
         output_path=output_path,

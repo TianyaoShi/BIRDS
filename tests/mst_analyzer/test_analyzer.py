@@ -658,6 +658,40 @@ def test_extract_runs_ignores_later_roots_for_unrelated_workloads(
     assert extracted.rows[0].workload_name == "wildchat-hf"
 
 
+def test_extract_runs_can_filter_by_min_model_size(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    run_root = _write_orchestrator_run(
+        tmp_path / "main",
+        run_id="main-run",
+        models=["Qwen/Qwen3-0.6B", "Qwen/Qwen3-8B"],
+        bundle_specs={
+            "Qwen/Qwen3-0.6B": {
+                "mst_rps": 40.0,
+                "high_bound_rate": 41.0,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+            },
+            "Qwen/Qwen3-8B": {
+                "mst_rps": 8.0,
+                "high_bound_rate": 8.5,
+                "ttft_slo_ms": 250,
+                "tpot_slo_ms": 50,
+                "max_num_seqs": 1024,
+                "max_num_batched_tokens": 8192,
+            },
+        },
+    )
+
+    extracted = extract_runs((run_root,), min_model_size_b=3.0)
+
+    assert [row.model for row in extracted.rows] == ["Qwen/Qwen3-8B"]
+
+
 def test_multi_root_rerun_manifest_uses_first_root_as_base_manifest(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

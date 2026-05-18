@@ -136,7 +136,13 @@ def _load_planned_expanded_jobs(*, run_root: Path, manifest_path: Path) -> dict[
     return planned_jobs
 
 
-def extract_runs(orchestrator_run_roots: tuple[str | Path, ...] | list[str | Path]) -> ExtractedRun:
+def extract_runs(
+    orchestrator_run_roots: tuple[str | Path, ...] | list[str | Path],
+    *,
+    exclude_models: tuple[str, ...] = (),
+    exclude_experiment_ids: tuple[str, ...] = (),
+    min_model_size_b: float | None = None,
+) -> ExtractedRun:
     run_roots = tuple(orchestrator_run_roots)
     if not run_roots:
         raise RuntimeError("at least one orchestrator run root is required")
@@ -152,7 +158,17 @@ def extract_runs(orchestrator_run_roots: tuple[str | Path, ...] | list[str | Pat
         rows = tuple(extracted.rows)
         if base_workload_keys is None:
             base_workload_keys = {_logical_workload_key(row) for row in rows}
-        rows = tuple(row for row in rows if _logical_workload_key(row) in base_workload_keys)
+        rows = tuple(
+            row
+            for row in rows
+            if _logical_workload_key(row) in base_workload_keys
+            and not _is_excluded_row(
+                row,
+                exclude_models=exclude_models,
+                exclude_experiment_ids=exclude_experiment_ids,
+                min_model_size_b=min_model_size_b,
+            )
+        )
         all_rows.extend(rows)
         for row in rows:
             selected_by_experiment_id[row.experiment_id] = row
@@ -179,6 +195,22 @@ def extract_runs(orchestrator_run_roots: tuple[str | Path, ...] | list[str | Pat
 
 def _decisive_row_key(row: MSTRow) -> tuple[str, str, str, str | None]:
     return (row.model, _logical_workload_key(row), row.endpoint, row.server_signature_key)
+
+
+def _is_excluded_row(
+    row: MSTRow,
+    *,
+    exclude_models: tuple[str, ...],
+    exclude_experiment_ids: tuple[str, ...],
+    min_model_size_b: float | None,
+) -> bool:
+    if exclude_models and row.model in exclude_models:
+        return True
+    if exclude_experiment_ids and row.experiment_id in exclude_experiment_ids:
+        return True
+    if min_model_size_b is not None and row.model_size_b is not None and row.model_size_b < min_model_size_b:
+        return True
+    return False
 
 
 def _logical_workload_key(row: MSTRow) -> str:

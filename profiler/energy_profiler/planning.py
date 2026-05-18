@@ -11,6 +11,7 @@ import yaml
 from local_orchestrator.manifest import load_manifest
 from local_orchestrator.matrix import expand_manifest
 from local_orchestrator.models import ExpandedExperimentJob
+from local_orchestrator.planning import infer_model_size_billions
 from local_orchestrator.utils import slugify, stable_hash
 from slurm_orchestrator.planning import deserialize_expanded_job
 
@@ -33,6 +34,13 @@ from .models import (
 
 class PlanningError(RuntimeError):
     pass
+
+
+MODEL_SIZE_OVERRIDES_B: dict[str, float] = {
+    "google/gemma-4-e2b-it": 2.0,
+    "google/gemma-4-e4b-it": 4.0,
+    "openai/gpt-oss-20b": 20.0,
+}
 
 
 def load_selection_overrides(path: str | Path) -> EnergyPlanSelection:
@@ -98,7 +106,10 @@ def generate_plan_from_orchestrator_runs(
     resolved_defaults = defaults or EnergyPlanDefaults()
     execution, slurm = _load_runtime_config_from_orchestrator_run(run_roots[-1])
 
-    source_jobs = _load_orchestrator_jobs_from_roots(run_roots)
+    source_jobs = _apply_source_job_exclusions(
+        _load_orchestrator_jobs_from_roots(run_roots),
+        selection=resolved_selection,
+    )
     succeeded_jobs = [job for job in source_jobs if job.status == "succeeded"]
     if not succeeded_jobs:
         raise PlanningError(
@@ -288,6 +299,10 @@ def _load_orchestrator_jobs(run_root: Path) -> list[OrchestratorJobRecord]:
                     search_result.get("max_slo_satisfying_request_rate"),
                     "search_trace.json.result.max_slo_satisfying_request_rate",
                 ),
+                model_size_b=infer_model_size_billions(
+                    expanded.model,
+                    model_size_overrides_b=MODEL_SIZE_OVERRIDES_B,
+                ),
                 search_id=_optional_string(search_config.get("search_id")),
                 search_mode=_optional_string(search_config.get("search_mode")),
                 confirmation_trial_id=_optional_string(search_result.get("confirmation_trial_id")),
@@ -339,6 +354,30 @@ def _load_planned_expanded_jobs(*, run_root: Path) -> dict[str, ExpandedExperime
             job = deserialize_expanded_job(raw_job)
             planned_jobs[job.experiment_id] = job
     return planned_jobs
+
+
+def _apply_source_job_exclusions(
+    jobs: list[OrchestratorJobRecord],
+    *,
+    selection: EnergyPlanSelection,
+) -> list[OrchestratorJobRecord]:
+    return [job for job in jobs if not _is_excluded_source_job(job, selection)]
+
+
+def _is_excluded_source_job(job: OrchestratorJobRecord, selection: EnergyPlanSelection) -> bool:
+    if selection.exclude_models and job.model in selection.exclude_models:
+        return True
+    if selection.exclude_experiment_ids and job.experiment_id in selection.exclude_experiment_ids:
+        return True
+    if selection.exclude_workloads and _workload_matches_any(job.workload, selection.exclude_workloads):
+        return True
+    if (
+        selection.min_model_size_b is not None
+        and job.model_size_b is not None
+        and job.model_size_b < selection.min_model_size_b
+    ):
+        return True
+    return False
 
 
 def _select_source_jobs(

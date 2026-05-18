@@ -20,6 +20,9 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--max-rerun-models", type=int, default=None)
     analyze.add_argument("--emit-rerun-manifest", action="store_true")
     analyze.add_argument("--settings-yaml", type=Path, default=None)
+    analyze.add_argument("--exclude-models", nargs="*", default=())
+    analyze.add_argument("--exclude-experiment-ids", nargs="*", default=())
+    analyze.add_argument("--min-model-size-b", type=float, default=None)
     analyze.set_defaults(handler=_analyze_command)
 
     plot = subparsers.add_parser("plot")
@@ -29,6 +32,9 @@ def build_parser() -> argparse.ArgumentParser:
     plot.add_argument("--title", type=str, default="Model Size vs MST")
     plot.add_argument("--x-scale", type=str, default="log")
     plot.add_argument("--no-annotations", action="store_true")
+    plot.add_argument("--exclude-models", nargs="*", default=())
+    plot.add_argument("--exclude-experiment-ids", nargs="*", default=())
+    plot.add_argument("--min-model-size-b", type=float, default=None)
     plot.set_defaults(handler=_plot_command)
     return parser
 
@@ -47,6 +53,9 @@ def _analyze_command(args: argparse.Namespace) -> int:
         max_rerun_models=args.max_rerun_models,
         emit_rerun_manifest=args.emit_rerun_manifest,
         settings=settings,
+        exclude_models=tuple(args.exclude_models),
+        exclude_experiment_ids=tuple(args.exclude_experiment_ids),
+        min_model_size_b=args.min_model_size_b,
     )
     print(json.dumps(artifacts.to_dict(), sort_keys=True))
     return 0
@@ -70,6 +79,9 @@ def _plot_command(args: argparse.Namespace) -> int:
             title=args.title,
             x_scale=args.x_scale,
             annotate=not args.no_annotations,
+            exclude_models=tuple(args.exclude_models),
+            exclude_experiment_ids=tuple(args.exclude_experiment_ids),
+            min_model_size_b=args.min_model_size_b,
         )
     print(json.dumps({"output_path": str(output_path)}, sort_keys=True))
     return 0

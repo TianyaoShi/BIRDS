@@ -26,8 +26,18 @@ def analyze_orchestrator_run(
     max_rerun_models: int | None = None,
     emit_rerun_manifest: bool = False,
     settings: AnalyzerSettings | None = None,
+    exclude_models: tuple[str, ...] = (),
+    exclude_experiment_ids: tuple[str, ...] = (),
+    min_model_size_b: float | None = None,
 ) -> AnalysisArtifacts:
     extracted = extract_run(orchestrator_run_root)
+    if exclude_models or exclude_experiment_ids or min_model_size_b is not None:
+        extracted = extract_runs(
+            (orchestrator_run_root,),
+            exclude_models=exclude_models,
+            exclude_experiment_ids=exclude_experiment_ids,
+            min_model_size_b=min_model_size_b,
+        )
     return _analyze_extracted_run(
         extracted=extracted,
         output_dir=output_dir,
@@ -44,8 +54,16 @@ def analyze_orchestrator_runs(
     max_rerun_models: int | None = None,
     emit_rerun_manifest: bool = False,
     settings: AnalyzerSettings | None = None,
+    exclude_models: tuple[str, ...] = (),
+    exclude_experiment_ids: tuple[str, ...] = (),
+    min_model_size_b: float | None = None,
 ) -> AnalysisArtifacts:
-    extracted = extract_runs(tuple(orchestrator_run_roots))
+    extracted = extract_runs(
+        tuple(orchestrator_run_roots),
+        exclude_models=exclude_models,
+        exclude_experiment_ids=exclude_experiment_ids,
+        min_model_size_b=min_model_size_b,
+    )
     return _analyze_extracted_run(
         extracted=extracted,
         output_dir=output_dir,

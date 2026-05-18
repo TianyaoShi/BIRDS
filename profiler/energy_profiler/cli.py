@@ -223,6 +223,10 @@ def _add_plan_generation_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--models", nargs="*", default=None)
     parser.add_argument("--workloads", nargs="*", default=None)
     parser.add_argument("--experiment-ids", nargs="*", default=None)
+    parser.add_argument("--exclude-models", nargs="*", default=None)
+    parser.add_argument("--exclude-workloads", nargs="*", default=None)
+    parser.add_argument("--exclude-experiment-ids", nargs="*", default=None)
+    parser.add_argument("--min-model-size-b", type=float, default=None)
     parser.add_argument("--request-rates", nargs="*", type=float, default=None)
     parser.add_argument("--sweep-models", nargs="*", default=None)
     parser.add_argument("--sweep-experiment-ids", nargs="*", default=None)
@@ -287,6 +291,14 @@ def _load_and_merge_selection(args: argparse.Namespace) -> EnergyPlanSelection:
         models=tuple(selection.models if args.models is None else args.models),
         workloads=tuple(selection.workloads if args.workloads is None else args.workloads),
         experiment_ids=tuple(selection.experiment_ids if args.experiment_ids is None else args.experiment_ids),
+        exclude_models=tuple(selection.exclude_models if args.exclude_models is None else args.exclude_models),
+        exclude_workloads=tuple(selection.exclude_workloads if args.exclude_workloads is None else args.exclude_workloads),
+        exclude_experiment_ids=tuple(
+            selection.exclude_experiment_ids
+            if args.exclude_experiment_ids is None
+            else args.exclude_experiment_ids
+        ),
+        min_model_size_b=selection.min_model_size_b if args.min_model_size_b is None else args.min_model_size_b,
         explicit_request_rates=tuple(
             selection.explicit_request_rates if args.request_rates is None else tuple(float(value) for value in args.request_rates)
         ),

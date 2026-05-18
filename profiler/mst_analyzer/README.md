@@ -109,6 +109,18 @@ Supported suppressions:
 - `suppress_quantized_bucket_verdicts`
 - `suppress_moe_bucket_verdicts`
 
+Merge-time filters:
+
+```bash
+--exclude-models <model> ...
+--exclude-experiment-ids <experiment-id> ...
+--min-model-size-b 3.0
+```
+
+These filters are applied while merging orchestrator roots, before anomaly rules
+run. Use `--min-model-size-b 3.0` to keep stale `<3B` experiments from old run
+state out of code, reasoning, and LongBench H100 analyses.
+
 Valid family names for `disable_families`:
 
 - `within_size_outlier`

@@ -306,6 +306,47 @@ def test_generate_plan_from_multiple_orchestrator_roots_includes_followup_only_m
     }
 
 
+def test_generate_plan_can_exclude_small_models_before_rate_validation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    small_run, _ = _write_orchestrator_run(
+        tmp_path / "small",
+        mst_rate=40.0,
+        run_id="small-loop",
+        model="Qwen/Qwen3-0.6B",
+        experiment_id="qwen06",
+        manifest_name="small.yaml",
+    )
+    large_run, _ = _write_orchestrator_run(
+        tmp_path / "large",
+        mst_rate=4.37,
+        run_id="large-loop",
+        model="Qwen/Qwen3-8B",
+        experiment_id="qwen8",
+        manifest_name="large.yaml",
+    )
+    small_summary = small_run / "summary.json"
+    small_payload = json.loads(small_summary.read_text(encoding="utf-8"))
+    small_payload["jobs"][0]["max_slo_satisfying_request_rate"] = None
+    small_payload["jobs"][0]["max_no_drift_request_rate"] = None
+    search_trace_path = Path(small_payload["jobs"][0]["artifacts"]["search_trace"])
+    small_trace = json.loads(search_trace_path.read_text(encoding="utf-8"))
+    small_trace["result"]["max_slo_satisfying_request_rate"] = None
+    small_trace["result"]["max_no_drift_request_rate"] = None
+    small_summary.write_text(json.dumps(small_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    search_trace_path.write_text(json.dumps(small_trace, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    plan = generate_plan_from_orchestrator_runs(
+        orchestrator_run_roots=(small_run, large_run),
+        output_plan=tmp_path / "experiments" / "energy" / "merged.yaml",
+        selection=EnergyPlanSelection(min_model_size_b=3.0),
+    )
+
+    assert [job.model for job in plan.jobs] == ["Qwen/Qwen3-8B"]
+
+
 def test_generate_plan_from_multiple_roots_preserves_tensor_parallel_variants(
     tmp_path: Path,
     monkeypatch,
