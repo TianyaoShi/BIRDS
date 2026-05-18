@@ -30,7 +30,7 @@ defaults:
   monitor_clock: false
   request_timeout_s: 21600
   safety_max_outstanding: null
-execution:
+local_execution:
   allowed_gpu_ids:
   - 0
   - 1
@@ -40,6 +40,23 @@ execution:
   base_port_start: 8000
   base_port_end: 8099
   metrics_port_offset: 1000
+slurm:
+  partition: ai
+  account: yiding
+  qos: normal
+  time: 06:00:00
+  mem: null
+  cpus_per_task: null
+  cpus_per_gpu: 14
+  modules:
+  - modtree/gpu
+  - cuda/12.9.0
+  setup_commands:
+  - source /scratch/gautschi/shi676/BioLLM/helper_scripts/activate_vllm_h100.sh
+  python_executable: /scratch/gautschi/shi676/BioLLM/.venv-h100/bin/python
+  sbatch_extra_args: []
+  array_concurrency_limit: 1
+  base_port: 9800
 rounding:
   mode: floor_preferred
   mst_mode: floor_decimal
@@ -485,6 +502,46 @@ jobs:
     rounding_step: 0.01
     rounded_from_rate: 31.667949324279896
     rounding_decimal_places: 2
+- id: qwen-qwen3-235b-a22b-thinking-2507-wildchat-hf-r13_09
+  source_experiment_id: qwen3-235b-a22b-thinking-h100-wildchat-tp8
+  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-wildchat-qwen3-235b-a22b-tp8-000/qwen-qwen3-235b-a22b-thinking-2507/wildchat-hf/server-5a52d7cd258a
+  model: Qwen/Qwen3-235B-A22B-Thinking-2507
+  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
+  endpoint: /v1/chat/completions
+  request_rate: 13.09
+  mst_rate: 13.097305626447916
+  mst_rate_source: max_slo_satisfying_request_rate
+  launch:
+    template: null
+    executable: vllm
+    extra_args: []
+    env:
+      VLLM_ENGINE_READY_TIMEOUT_S: '4800'
+    tensor_parallel_size: 8
+    gpu_count: 8
+    dtype: float16
+    quantization: null
+    tokenizer_mode: null
+    gpu_memory_utilization: 0.9
+    max_model_len: 32768
+    max_num_seqs: 1024.0
+    max_num_batched_tokens: 8192.0
+    host: 127.0.0.1
+    readiness_path: /v1/models
+    readiness_timeout_s: 5400.0
+    readiness_interval_s: 2.0
+  server_signature_key: 50e26ff7a23e5edeaa515be07d3088065a5f5d6325aa8cdb2b97f89756264146
+  server_config_slug: server-5a52d7cd258a
+  metadata:
+    source_orchestrator_run_id: run-wildchat-002-tp8
+    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-002-tp8
+    search_id: qwen3-235b-a22b-thinking-h100-wildchat-tp8
+    search_mode: hybrid
+    confirmation_trial_id: trial_020_openloop_r13_0973
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
+    rounded_from_rate: 13.097305626447916
+    rounding_decimal_places: 2
 - id: meta-llama-llama-3-2-3b-instruct-wildchat-hf-r56_44
   source_experiment_id: llama-3-2-3b-instruct-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/meta-llama-llama-3-2-3b-instruct/wildchat-hf/server-9cd50fa53e52
@@ -523,6 +580,46 @@ jobs:
     rounding_policy: floor_decimal
     rounding_step: 0.01
     rounded_from_rate: 56.445740630014114
+    rounding_decimal_places: 2
+- id: qwen-qwen3-235b-a22b-instruct-2507-wildchat-hf-r12_8
+  source_experiment_id: qwen3-235b-a22b-instruct-h100-wildchat-tp8
+  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-wildchat-qwen3-235b-a22b-tp8-000/qwen-qwen3-235b-a22b-instruct-2507/wildchat-hf/server-9b0c7aa0bfd3
+  model: Qwen/Qwen3-235B-A22B-Instruct-2507
+  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
+  endpoint: /v1/chat/completions
+  request_rate: 12.8
+  mst_rate: 12.807943708101252
+  mst_rate_source: max_slo_satisfying_request_rate
+  launch:
+    template: null
+    executable: vllm
+    extra_args: []
+    env:
+      VLLM_ENGINE_READY_TIMEOUT_S: '4800'
+    tensor_parallel_size: 8
+    gpu_count: 8
+    dtype: float16
+    quantization: null
+    tokenizer_mode: null
+    gpu_memory_utilization: 0.9
+    max_model_len: 32768
+    max_num_seqs: 1024.0
+    max_num_batched_tokens: 8192.0
+    host: 127.0.0.1
+    readiness_path: /v1/models
+    readiness_timeout_s: 5400.0
+    readiness_interval_s: 2.0
+  server_signature_key: 62a972d16f4e6eb9add88ff55238cad8adbfa452cffb223db46664cf137e9211
+  server_config_slug: server-9b0c7aa0bfd3
+  metadata:
+    source_orchestrator_run_id: run-wildchat-002-tp8
+    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-002-tp8
+    search_id: qwen3-235b-a22b-instruct-h100-wildchat-tp8
+    search_mode: hybrid
+    confirmation_trial_id: trial_021_openloop_r12_8079
+    rounding_policy: floor_decimal
+    rounding_step: 0.01
+    rounded_from_rate: 12.807943708101252
     rounding_decimal_places: 2
 - id: openai-gpt-oss-20b-wildchat-hf-r28_67
   source_experiment_id: gpt-oss-20b-h100-wildchat-tp1
