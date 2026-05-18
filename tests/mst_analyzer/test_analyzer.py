@@ -611,6 +611,60 @@ def test_extract_runs_matches_mst_anomaly_rerun_workload_aliases(
     assert extracted.rows[0].mst_rps == pytest.approx(13.0)
 
 
+def test_extract_runs_matches_multi_shard_rerun_to_original_shard_zero(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    model = "Qwen/Qwen3-0.6B"
+    main_run = _write_orchestrator_run(
+        tmp_path / "main",
+        run_id="main-run",
+        models=[model],
+        workload_name="crosscodeeval_rg1_unixcoder_cache_realistic-shard_000_mst_anomaly_rerun",
+        workload_filename="crosscodeeval-rg1-unixcoder-cache-realistic-shard-000_mst_anomaly_rerun.yaml",
+        experiment_id="code-qwen06-crosscodeeval",
+        bundle_specs={
+            model: {
+                "mst_rps": 60.0,
+                "high_bound_rate": 60.0,
+                "ttft_slo_ms": 500,
+                "tpot_slo_ms": 40,
+                "max_num_seqs": 256,
+                "max_num_batched_tokens": 4096,
+                "termination_reason": "max_request_rate_limited",
+            },
+        },
+    )
+    rerun = _write_orchestrator_run(
+        tmp_path / "rerun",
+        run_id="rerun-run",
+        models=[model],
+        workload_name="crosscodeeval_rg1_unixcoder_cache_realistic-shards_000_001",
+        workload_filename="a100_crosscodeeval_rg1_unixcoder_cache_realistic_shards_000_001.yaml",
+        experiment_id="code-targeted-qwen06-crosscodeeval",
+        bundle_specs={
+            model: {
+                "mst_rps": 39.375,
+                "high_bound_rate": 40.0,
+                "ttft_slo_ms": 500,
+                "tpot_slo_ms": 40,
+                "max_num_seqs": 256,
+                "max_num_batched_tokens": 4096,
+                "termination_reason": "confirmed_stable",
+            },
+        },
+    )
+
+    extracted = extract_runs((main_run, rerun))
+
+    assert len(extracted.rows) == 1
+    assert extracted.rows[0].experiment_id == "code-targeted-qwen06-crosscodeeval"
+    assert extracted.rows[0].workload_name == "crosscodeeval_rg1_unixcoder_cache_realistic-shards_000_001"
+    assert extracted.rows[0].termination_reason == "confirmed_stable"
+    assert extracted.rows[0].mst_rps == pytest.approx(39.375)
+
+
 def test_extract_runs_ignores_later_roots_for_unrelated_workloads(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

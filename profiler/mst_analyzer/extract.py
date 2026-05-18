@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -26,6 +27,7 @@ _SUSPECT_TERMINATION_REASONS = {
     "no_confirmed_stable_open_loop_rate",
     "confirmation_inconclusive",
 }
+_MULTI_SHARD_SUFFIX_RE = re.compile(r"^(?P<prefix>.+)-shards-(?P<first>\d+)(?:-\d+)+$")
 
 
 @dataclass(slots=True)
@@ -224,6 +226,9 @@ def _logical_workload_key(row: MSTRow) -> str:
                 changed = True
     normalized = normalized.replace("-8k", "-8192")
     normalized = normalized.replace("-4k", "-4096")
+    shard_match = _MULTI_SHARD_SUFFIX_RE.match(normalized)
+    if shard_match is not None:
+        normalized = f"{shard_match.group('prefix')}-shard-{shard_match.group('first')}"
     return normalized
 
 
