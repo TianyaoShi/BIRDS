@@ -426,3 +426,41 @@ def test_generate_plan_from_multiple_roots_matches_rerun_workload_aliases_and_ig
     assert plan.jobs[0].mst_rate == pytest.approx(8.0)
     assert plan.jobs[0].metadata["source_orchestrator_run_id"] == "rerun"
     assert plan.jobs[0].workload.name == "wildchat_hf_8k_mst_anomaly_rerun.yaml"
+
+
+def test_generate_plan_from_multiple_roots_matches_multi_shard_rerun_to_original_shard_zero(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    main_run, _ = _write_orchestrator_run(
+        tmp_path / "main",
+        mst_rate=60.0,
+        run_id="main",
+        model="Qwen/Qwen3-0.6B",
+        experiment_id="code-qwen06-crosscodeeval",
+        manifest_name="main.yaml",
+        workload_name="crosscodeeval-rg1-unixcoder-cache-realistic-shard-000_mst_anomaly_rerun.yaml",
+        workload_display_name="crosscodeeval_rg1_unixcoder_cache_realistic-shard_000_mst_anomaly_rerun",
+    )
+    rerun, _ = _write_orchestrator_run(
+        tmp_path / "rerun",
+        mst_rate=39.375,
+        run_id="rerun",
+        model="Qwen/Qwen3-0.6B",
+        experiment_id="code-targeted-qwen06-crosscodeeval",
+        manifest_name="rerun.yaml",
+        workload_name="a100_crosscodeeval_rg1_unixcoder_cache_realistic_shards_000_001.yaml",
+        workload_display_name="crosscodeeval_rg1_unixcoder_cache_realistic-shards_000_001",
+    )
+
+    plan = generate_plan_from_orchestrator_runs(
+        orchestrator_run_roots=(main_run, rerun),
+        output_plan=tmp_path / "experiments" / "energy" / "merged.yaml",
+    )
+
+    assert len(plan.jobs) == 1
+    assert plan.jobs[0].mst_rate == pytest.approx(39.375)
+    assert plan.jobs[0].metadata["source_orchestrator_run_id"] == "rerun"
+    assert plan.jobs[0].source_experiment_id == "code-targeted-qwen06-crosscodeeval"
+    assert plan.jobs[0].workload.name == "a100_crosscodeeval_rg1_unixcoder_cache_realistic_shards_000_001.yaml"

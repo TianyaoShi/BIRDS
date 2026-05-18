@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from decimal import Decimal, ROUND_FLOOR
 from pathlib import Path
@@ -41,6 +42,7 @@ MODEL_SIZE_OVERRIDES_B: dict[str, float] = {
     "google/gemma-4-e4b-it": 4.0,
     "openai/gpt-oss-20b": 20.0,
 }
+_MULTI_SHARD_SUFFIX_RE = re.compile(r"^(?P<prefix>.+)-shards-(?P<first>\d+)(?:-\d+)+$")
 
 
 def load_selection_overrides(path: str | Path) -> EnergyPlanSelection:
@@ -227,6 +229,9 @@ def _logical_workload_key(workload: Path) -> str:
             normalized = normalized[: -len(suffix)]
     normalized = normalized.replace("-8k", "-8192")
     normalized = normalized.replace("-4k", "-4096")
+    shard_match = _MULTI_SHARD_SUFFIX_RE.match(normalized)
+    if shard_match is not None:
+        normalized = f"{shard_match.group('prefix')}-shard-{shard_match.group('first')}"
     return normalized
 
 
