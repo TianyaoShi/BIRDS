@@ -364,31 +364,34 @@ def resolve_workload_group(benchmark: str, *, repo_root: str | Path | None = Non
     if target == "LongBench-v1-covered":
         directories = (
             Path(
-                "experiments/longbench_workloads/materialization/"
-                "longbench_long_output_summarization_qwen3_8b/workload_yamls"
+                "experiments/longbench_workloads/benchmark_original/"
+                "longbench_long_output_summarization_original_qwen3_8b/workload_yamls"
             ),
             Path(
-                "experiments/longbench_workloads/materialization/"
-                "longbench_medium_output_summarization_qwen3_8b/workload_yamls"
+                "experiments/longbench_workloads/benchmark_original/"
+                "longbench_medium_output_summarization_original_qwen3_8b/workload_yamls"
             ),
             Path(
-                "experiments/longbench_workloads/materialization/"
-                "longbench_medium_answer_rag_qa_qwen3_8b/workload_yamls"
+                "experiments/longbench_workloads/benchmark_original/"
+                "longbench_medium_answer_rag_qa_original_qwen3_8b/workload_yamls"
             ),
             Path(
-                "experiments/longbench_workloads/materialization/"
-                "longbench_short_answer_document_qa_qwen3_8b/workload_yamls"
+                "experiments/longbench_workloads/benchmark_original/"
+                "longbench_short_answer_document_qa_original_qwen3_8b/workload_yamls"
             ),
         )
-        paths = tuple(path for directory in directories for path in _workload_paths(repo / directory))
+        paths = tuple(path for directory in directories for path in _validated_longbench_paths(repo / directory))
         if not paths:
-            raise FileNotFoundError("no LongBench covered workload YAMLs found")
+            raise FileNotFoundError(
+                "no benchmark-original LongBench covered workload YAMLs found; "
+                "materialize experiments/longbench_workloads/benchmark_original/*.yaml first"
+            )
         return WorkloadGroup(
             name="longbench_v1_covered",
             benchmark=target,
             workload_paths=paths,
             is_full_benchmark=False,
-            notes="Covered LongBench v1 materialization subset only.",
+            notes="Covered LongBench v1 original-task subset only; no latency/energy repeats or external expansion.",
         )
     raise ValueError(f"unsupported benchmark target: {benchmark}")
 
@@ -503,6 +506,38 @@ def _single_directory_group(
         is_full_benchmark=is_full_benchmark,
         notes=notes,
     )
+
+
+def _validated_longbench_paths(workload_dir: Path) -> tuple[Path, ...]:
+    paths = _workload_paths(workload_dir)
+    if not paths:
+        raise FileNotFoundError(
+            f"missing LongBench benchmark-original workload directory: {workload_dir}"
+        )
+    report_path = workload_dir.parent / "materialization_report.json"
+    if not report_path.is_file():
+        raise FileNotFoundError(f"missing LongBench materialization report: {report_path}")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    sampling = report.get("sampling") if isinstance(report, dict) else None
+    rows = report.get("rows") if isinstance(report, dict) else None
+    if not isinstance(sampling, dict) or not isinstance(rows, dict):
+        raise ValueError(f"LongBench materialization report is missing rows/sampling: {report_path}")
+    repeat_policy = sampling.get("repeat_policy")
+    materialized = int(rows.get("materialized", -1))
+    expanded = int(sampling.get("expanded_sample_count", -2))
+    unique = int(sampling.get("unique_sample_ids", -3))
+    if repeat_policy is not None or expanded != unique or materialized != unique:
+        raise ValueError(
+            "LongBench benchmark target requires no-repeat original materialization; "
+            f"got repeat_policy={repeat_policy!r}, materialized={materialized}, "
+            f"expanded={expanded}, unique={unique} in {report_path}"
+        )
+    selected_tasks = report.get("selected_tasks")
+    if not isinstance(selected_tasks, list) or not selected_tasks:
+        raise ValueError(f"LongBench materialization report has no selected_tasks: {report_path}")
+    if any(str(task).endswith("_original") for task in selected_tasks):
+        raise ValueError(f"LongBench benchmark target must not use expanded external tasks: {report_path}")
+    return paths
 
 
 def _write_missing_scores_csv(path: Path, records: Iterable[MissingBenchmarkScore]) -> None:

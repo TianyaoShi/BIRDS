@@ -86,6 +86,14 @@ the original benchmark/evaluator contract. Code targets exclude `gpt-oss`
 models, and LongBench excludes Llama-2 models. LongBench is reported as a
 covered-task subset, not full LongBench v1.
 
+Do not use the latency/energy LongBench materializations under
+`experiments/longbench_workloads/materialization/*_qwen3_8b`: those shards use
+repeat expansion for profiling. Do not use the `*_expanded_qwen3_8b` variants
+either because they include external expansion rows without benchmark reference
+answers. The benchmark registry only accepts no-repeat original-task
+materializations under `experiments/longbench_workloads/benchmark_original/`
+and checks each materialization report before building response manifests.
+
 ```bash
 PYTHONPATH=profiler:. python -m output_quality_profiler.cli select-missing-benchmark-scores \
   --scorebook experiments/quality/benchmark-scores-1.xlsx \

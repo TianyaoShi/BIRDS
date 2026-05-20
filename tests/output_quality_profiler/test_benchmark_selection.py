@@ -109,6 +109,23 @@ def _write_workload_group(repo: Path, relative: str, count: int = 1) -> None:
         )
 
 
+def _write_materialization_report(directory: Path, *, materialized: int = 1, repeat_policy=None) -> None:
+    (directory / "materialization_report.json").write_text(
+        json.dumps(
+            {
+                "rows": {"materialized": materialized, "total": materialized},
+                "sampling": {
+                    "expanded_sample_count": materialized,
+                    "repeat_policy": repeat_policy,
+                    "unique_sample_ids": materialized,
+                },
+                "selected_tasks": ["task"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def _write_registry_dirs(repo: Path) -> None:
     _write_workload_group(repo, "experiments/reasoning_workloads/supergpqa_reasoning/workload_yamls")
     _write_workload_group(repo, "experiments/reasoning_workloads/supergpqa_hard_reasoning/workload_yamls")
@@ -121,15 +138,17 @@ def _write_registry_dirs(repo: Path) -> None:
         "experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls",
     )
     for profile in (
-        "longbench_long_output_summarization_qwen3_8b",
-        "longbench_medium_output_summarization_qwen3_8b",
-        "longbench_medium_answer_rag_qa_qwen3_8b",
-        "longbench_short_answer_document_qa_qwen3_8b",
+        "longbench_long_output_summarization_original_qwen3_8b",
+        "longbench_medium_output_summarization_original_qwen3_8b",
+        "longbench_medium_answer_rag_qa_original_qwen3_8b",
+        "longbench_short_answer_document_qa_original_qwen3_8b",
     ):
+        base = repo / f"experiments/longbench_workloads/benchmark_original/{profile}"
         _write_workload_group(
             repo,
-            f"experiments/longbench_workloads/materialization/{profile}/workload_yamls",
+            f"experiments/longbench_workloads/benchmark_original/{profile}/workload_yamls",
         )
+        _write_materialization_report(base)
 
 
 def _write_base_manifest(path: Path, workload: Path) -> None:
@@ -210,6 +229,22 @@ def test_resolve_longbench_group_is_marked_subset(tmp_path: Path) -> None:
 
     assert group.is_full_benchmark is False
     assert len(group.workload_paths) == 4
+
+
+def test_resolve_longbench_group_rejects_repeat_materialization(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _write_registry_dirs(repo)
+    report_dir = (
+        repo
+        / "experiments/longbench_workloads/benchmark_original/"
+        / "longbench_long_output_summarization_original_qwen3_8b"
+    )
+    _write_materialization_report(report_dir, materialized=2, repeat_policy="epoch_shuffle")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="no-repeat original materialization"):
+        resolve_workload_group("LongBench-v1-covered", repo_root=repo)
 
 
 def test_build_benchmark_generation_manifest_inherits_model_overrides(tmp_path: Path) -> None:
