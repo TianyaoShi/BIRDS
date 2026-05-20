@@ -56,6 +56,32 @@ def _write_scorebook(path: Path) -> None:
             "55",
         ]
     )
+    ws.append(
+        [
+            "openai/gpt-oss-20b",
+            None,
+            None,
+            "SuperGPQA",
+            "40",
+            "N/A",
+            "N/A",
+            None,
+            None,
+        ]
+    )
+    ws.append(
+        [
+            "meta-llama/Llama-2-7b-chat-hf",
+            None,
+            None,
+            "MMLU-Pro",
+            "20",
+            "N/A",
+            "N/A",
+            "N/A",
+            "N/A",
+        ]
+    )
     ws.append(["Workload Category", None, None, None, None, None, None, None, None])
     wb.save(path)
 
@@ -85,6 +111,7 @@ def _write_workload_group(repo: Path, relative: str, count: int = 1) -> None:
 
 def _write_registry_dirs(repo: Path) -> None:
     _write_workload_group(repo, "experiments/reasoning_workloads/supergpqa_reasoning/workload_yamls")
+    _write_workload_group(repo, "experiments/reasoning_workloads/supergpqa_hard_reasoning/workload_yamls")
     _write_workload_group(
         repo,
         "experiments/code_workloads/repobench_python_java_aggregate_cache_realistic/workload_yamls",
@@ -157,15 +184,22 @@ def test_select_missing_benchmark_scores_uses_alias_policy_and_registry(tmp_path
 
     missing = {(record.model, record.benchmark) for record in result.records}
     assert ("org/model-a", "SuperGPQA") in missing
+    assert ("org/model-a", "SuperGPQA-hard") in missing
     assert ("org/model-a", "RepoBench") in missing
     assert ("org/model-a", "CrossCodeEval") in missing
     assert ("org/model-a", "LongBench-v1-covered") in missing
     assert ("org/model-b", "SuperGPQA") not in missing
+    assert ("org/model-b", "SuperGPQA-hard") in missing
     assert ("org/model-b", "RepoBench") not in missing
     assert ("org/model-b", "CrossCodeEval") in missing
-    assert ("org/model-b", "LongBench-v1-covered") not in missing
+    assert ("org/model-b", "LongBench-v1-covered") in missing
+    assert ("openai/gpt-oss-20b", "RepoBench") not in missing
+    assert ("openai/gpt-oss-20b", "CrossCodeEval") not in missing
+    assert ("meta-llama/Llama-2-7b-chat-hf", "LongBench-v1-covered") not in missing
     assert (tmp_path / "out" / "missing_scores.json").is_file()
-    assert result.skipped_rows[0]["reason"] == "not a model id"
+    assert any(row["reason"] == "not a model id" for row in result.skipped_rows)
+    assert any("gpt-oss" in row["reason"] for row in result.skipped_rows)
+    assert any("llama-2" in row["reason"] for row in result.skipped_rows)
 
 
 def test_resolve_longbench_group_is_marked_subset(tmp_path: Path) -> None:
@@ -203,7 +237,7 @@ def test_build_benchmark_generation_manifest_inherits_model_overrides(tmp_path: 
     manifest = load_quality_manifest(output_manifest)
     raw = yaml.safe_load(output_manifest.read_text(encoding="utf-8"))
 
-    assert result["experiment_count"] == 1
+    assert result["experiment_count"] == 2
     assert manifest.run.run_id == "benchmark-run"
     assert manifest.experiments[0].generation.decoding.temperature == 0.0
     assert manifest.experiments[0].generation.decoding.max_tokens == 512

@@ -18,6 +18,18 @@ BENCHMARK_TARGETS: dict[str, dict[str, Any]] = {
         "score_header": "Problem Solving Score",
         "accepted_aliases": ("supergpqa", "super gpqa"),
         "workload_group": "supergpqa_reasoning",
+        "selection_policy": "workbook_missing",
+        "is_full_benchmark": True,
+        "decoding": {"temperature": 0.0, "top_p": 1.0, "top_k": 20, "min_p": 0.0, "max_tokens": 4096},
+    },
+    "SuperGPQA-hard": {
+        "category": "Problem Solving",
+        "benchmark_header": "Problem Solving Benchmark",
+        "score_header": "Problem Solving Score",
+        "accepted_aliases": ("supergpqa", "super gpqa"),
+        "workload_group": "supergpqa_hard_reasoning",
+        "selection_policy": "all_models",
+        "is_full_benchmark": False,
         "decoding": {"temperature": 0.0, "top_p": 1.0, "top_k": 20, "min_p": 0.0, "max_tokens": 4096},
     },
     "RepoBench": {
@@ -26,6 +38,9 @@ BENCHMARK_TARGETS: dict[str, dict[str, Any]] = {
         "score_header": "Code Completion Score",
         "accepted_aliases": ("repobench", "repo bench"),
         "workload_group": "repobench_python_java_aggregate_cache_realistic",
+        "selection_policy": "workbook_missing",
+        "exclude_model_substrings": ("gpt-oss",),
+        "is_full_benchmark": True,
         "decoding": {
             "temperature": 0.0,
             "top_p": 1.0,
@@ -41,6 +56,9 @@ BENCHMARK_TARGETS: dict[str, dict[str, Any]] = {
         "score_header": "Code Completion Score",
         "accepted_aliases": ("crosscodeeval", "cross code eval", "cceval", "crosscode"),
         "workload_group": "crosscodeeval_rg1_unixcoder_cache_realistic",
+        "selection_policy": "all_models",
+        "exclude_model_substrings": ("gpt-oss",),
+        "is_full_benchmark": True,
         "decoding": {
             "temperature": 0.0,
             "top_p": 1.0,
@@ -57,6 +75,9 @@ BENCHMARK_TARGETS: dict[str, dict[str, Any]] = {
         "accepted_aliases": ("longbench", "longbench v1", "longbench-v1"),
         "rejected_aliases": ("longbench v2", "longbench-v2", "ruler", "mrcr"),
         "workload_group": "longbench_v1_covered",
+        "selection_policy": "all_models",
+        "exclude_model_substrings": ("llama-2",),
+        "is_full_benchmark": False,
         "decoding": {"temperature": 0.0, "top_p": 1.0, "top_k": 20, "min_p": 0.0, "max_tokens": 4096},
     },
 }
@@ -166,9 +187,24 @@ def select_missing_benchmark_scores(
             continue
         for target in selected_targets:
             spec = BENCHMARK_TARGETS[target]
+            excluded_reason = _model_exclusion_reason(model, spec)
+            if excluded_reason is not None:
+                skipped_rows.append(
+                    {
+                        "row": row_number,
+                        "model": model,
+                        "benchmark": target,
+                        "reason": excluded_reason,
+                    }
+                )
+                continue
             benchmark_cell = _cell_text(_cell(row, header_index, str(spec["benchmark_header"])))
             score_cell = _cell_text(_cell(row, header_index, str(spec["score_header"])))
-            missing, reason = _target_is_missing(target, benchmark_cell=benchmark_cell, score_cell=score_cell)
+            missing, reason = _target_is_missing(
+                target,
+                benchmark_cell=benchmark_cell,
+                score_cell=score_cell,
+            )
             if not missing:
                 continue
             workload_group = resolve_workload_group(target, repo_root=repo)
@@ -294,6 +330,15 @@ def resolve_workload_group(benchmark: str, *, repo_root: str | Path | None = Non
             is_full_benchmark=True,
             notes="Existing SuperGPQA reasoning materialization.",
         )
+    if target == "SuperGPQA-hard":
+        return _single_directory_group(
+            repo,
+            benchmark=target,
+            name="supergpqa_hard_reasoning",
+            directory=Path("experiments/reasoning_workloads/supergpqa_hard_reasoning/workload_yamls"),
+            is_full_benchmark=False,
+            notes="Existing full hard-question subset materialization for MST/energy parity.",
+        )
     if target == "RepoBench":
         return _single_directory_group(
             repo,
@@ -353,7 +398,13 @@ def _normalize_targets(targets: Sequence[str] | None) -> tuple[str, ...]:
         return tuple(BENCHMARK_TARGETS)
     normalized: list[str] = []
     aliases = {_normalize_text(name): name for name in BENCHMARK_TARGETS}
-    aliases.update({"longbenchv1covered": "LongBench-v1-covered", "longbench": "LongBench-v1-covered"})
+    aliases.update(
+        {
+            "supergpqahard": "SuperGPQA-hard",
+            "longbenchv1covered": "LongBench-v1-covered",
+            "longbench": "LongBench-v1-covered",
+        }
+    )
     for target in targets:
         key = _normalize_text(target)
         resolved = aliases.get(key)
@@ -370,11 +421,13 @@ def _target_is_missing(
     benchmark_cell: str | None,
     score_cell: str | None,
 ) -> tuple[bool, str]:
+    spec = BENCHMARK_TARGETS[target]
+    if spec.get("selection_policy") == "all_models":
+        return True, "target selected for all eligible models"
     if _is_empty_or_na(score_cell):
         return True, "score cell empty or N/A"
     if _is_empty_or_na(benchmark_cell):
         return True, "benchmark cell empty or N/A"
-    spec = BENCHMARK_TARGETS[target]
     normalized = _normalize_text(benchmark_cell)
     accepted_aliases = tuple(_normalize_text(str(alias)) for alias in spec["accepted_aliases"])
     if target == "LongBench-v1-covered" and "longbenchv1" in normalized:
@@ -385,6 +438,14 @@ def _target_is_missing(
     if any(alias in normalized for alias in accepted_aliases):
         return False, "target benchmark present"
     return True, "target benchmark missing"
+
+
+def _model_exclusion_reason(model: str, spec: dict[str, Any]) -> str | None:
+    normalized = model.lower()
+    for fragment in spec.get("exclude_model_substrings", ()):
+        if str(fragment).lower() in normalized:
+            return f"model excluded for benchmark target: contains {fragment}"
+    return None
 
 
 def _is_empty_or_na(value: str | None) -> bool:

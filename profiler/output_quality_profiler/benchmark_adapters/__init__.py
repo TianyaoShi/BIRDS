@@ -16,7 +16,19 @@ def score_benchmark_responses(
 ) -> dict[str, Any]:
     normalized = _normalize_benchmark_name(benchmark)
     if normalized == "supergpqa":
-        return score_supergpqa_responses(responses_root=responses_root, output_dir=output_dir)
+        return score_supergpqa_responses(
+            responses_root=responses_root,
+            output_dir=output_dir,
+            benchmark_name="SuperGPQA",
+            is_full_benchmark=True,
+        )
+    if normalized == "supergpqahard":
+        return score_supergpqa_responses(
+            responses_root=responses_root,
+            output_dir=output_dir,
+            benchmark_name="SuperGPQA-hard",
+            is_full_benchmark=False,
+        )
     if normalized == "repobench":
         return score_code_completion_responses(
             responses_root=responses_root,

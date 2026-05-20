@@ -20,7 +20,13 @@ _ANSWER_PATTERNS = (
 )
 
 
-def score_supergpqa_responses(*, responses_root: str | Path, output_dir: str | Path) -> dict[str, Any]:
+def score_supergpqa_responses(
+    *,
+    responses_root: str | Path,
+    output_dir: str | Path,
+    benchmark_name: str = "SuperGPQA",
+    is_full_benchmark: bool = True,
+) -> dict[str, Any]:
     rows = load_response_rows(responses_root)
     per_item: list[dict[str, Any]] = []
     correct = scored = failed = invalid = 0
@@ -75,7 +81,7 @@ def score_supergpqa_responses(*, responses_root: str | Path, output_dir: str | P
             }
         )
     score = {
-        "benchmark": "SuperGPQA",
+        "benchmark": benchmark_name,
         "model": model_name_from_rows(rows),
         "adapter": "supergpqa_compat_v1",
         "metric": "accuracy",
@@ -87,7 +93,7 @@ def score_supergpqa_responses(*, responses_root: str | Path, output_dir: str | P
         "invalid_items": invalid,
         "by_subject": _accuracy_breakdown(by_subject),
         "by_difficulty": _accuracy_breakdown(by_difficulty),
-        "is_full_benchmark": True,
+        "is_full_benchmark": is_full_benchmark,
         "compatibility_note": (
             "Uses local answer-label extraction against materialized SuperGPQA ground truth. "
             "Run the official evaluator too if strict benchmark parity is required."
@@ -97,7 +103,7 @@ def score_supergpqa_responses(*, responses_root: str | Path, output_dir: str | P
         output_dir=output_dir,
         score=score,
         per_item=per_item,
-        markdown_title="SuperGPQA Score",
+        markdown_title=f"{benchmark_name} Score",
     )
 
 
