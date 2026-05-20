@@ -1,0 +1,58 @@
+run:
+  run_id: h100-quality-sharegpt-wildchat-000
+  output_root: ../results/quality
+  default_endpoint: /v1/chat/completions
+
+slurm:
+  partition: ai
+  account: yiding
+  qos: normal
+  time: 04:00:00
+  array_concurrency_limit: 4
+  base_port: 9600
+
+hardware:
+  name: h100-80gb
+  gpu_memory_gb: 80
+  gpu_memory_utilization: 0.90
+
+probe:
+  enabled: true
+  auto_gpu_count: false
+  default_context_tokens: 4096
+  activation_memory_gb: 2.0
+  memory_safety_factor: 1.20
+  kv_cache_request_count: 1
+
+launch:
+  executable: vllm
+  tensor_parallel_size: 1
+  gpu_count: 1
+  dtype: float16
+  gpu_memory_utilization: 0.90
+  max_model_len: 32768
+  readiness_timeout_s: 1200
+
+generation:
+  request_timeout_s: 21600
+  concurrency_source: mst_fraction
+  concurrency_mst_fraction: 0.40
+  preserve_request_order: true
+  response_text_max_chars: 65536
+  include_prompt_text: true
+  decoding:
+    temperature: 0.6
+    top_p: 0.95
+    top_k: 20
+    min_p: 0.0
+    n: 1
+    max_tokens: 32768
+    max_tokens_policy: model_context_minus_prompt_buffer
+    prompt_token_buffer: 128
+    extra_body: {}
+
+experiments:
+  - id: qwen3-8b-quality
+    model: Qwen/Qwen3-8B
+    workloads:
+      - ./sharegpt_wildchat_10k/workload_yamls/shard_000.yaml

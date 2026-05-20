@@ -49,6 +49,13 @@ profiler/
     reporting.py
     models.py
 
+  output_quality_profiler/
+    cli.py
+    manifest.py
+    materialization.py
+    models.py
+    scoring.py
+
   mst_analyzer/
     cli.py
     extract.py
@@ -82,6 +89,7 @@ skills/
 - `llm_mst_finder`: runs fixed-rate or closed-loop trials, searches for maximum sustainable throughput, classifies stability, and writes trial reports.
 - `local_orchestrator`: expands experiment manifests, manages local GPU/port resources, launches vLLM servers, and runs MST searches across model/workload matrices.
 - `energy_profiler`: consumes orchestrator MST outputs, creates reviewable energy profiling plans, runs fixed-rate energy trials, and summarizes GPU power and energy per request/token.
+- `output_quality_profiler`: enforces the ShareGPT/WildChat response-quality profiling contract, including fixed decoding defaults, stratified materialization config validation, quality run manifest validation, and judge-score primitives.
 - `mst_analyzer`: extracts and compares completed MST result directories using rule-based analysis and reporting.
 - `slurm_orchestrator`: prepares Slurm-oriented orchestration state and planning for cluster execution.
 - `gpu_monitor.py`: samples GPU power and optional clocks for energy accounting.

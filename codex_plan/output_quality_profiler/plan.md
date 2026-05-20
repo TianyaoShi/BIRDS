@@ -67,9 +67,21 @@ Protocol V1:
 8. Parse judge results and compute win, tie, loss, invalid, and
    `Q_chat(theta)`.
 
-The exact fixed decoding settings and judge prompt template are intentionally
-late-bound. The package contract should carry them as manifest fields and copied
-artifacts so later changes are auditable.
+The fixed decoding settings are part of the V1 contract. The judge prompt
+template remains late-bound until the provider contract is finalized. The
+package contract should carry decoding settings and judge-template paths as
+manifest fields and copied artifacts so later changes are auditable.
+
+V1 decoding contract:
+
+- `temperature: 0.6`
+- `top_p: 0.95`
+- `top_k: 20`
+- `min_p: 0.0`
+- `n: 1`
+- `max_tokens: 32768`, adjusted downward at runtime when the model context
+  cannot support `prompt_tokens + 32768 + prompt_token_buffer`
+- `prompt_token_buffer: 128`
 
 ## Recommended Package Layout
 
@@ -178,12 +190,16 @@ sampling:
     mode: from_dataset
   output_len:
     mode: natural_until_eos
-    max_tokens: 1024
+    max_tokens: 32768
 request:
   stream: true
-  temperature: 0.0
+  temperature: 0.6
+  top_p: 0.95
   ignore_eos: false
-  extra_body: {}
+  extra_body:
+    top_k: 20
+    min_p: 0.0
+    n: 1
 context_policy:
   max_model_len: 32768
   tokenizer_source: vllm_model_config
@@ -245,13 +261,20 @@ launch:
 
 generation:
   request_timeout_s: 21600
-  max_concurrency: 32
+  concurrency_source: mst_fraction
+  concurrency_mst_fraction: 0.40
   preserve_request_order: true
   response_text_max_chars: 65536
+  include_prompt_text: true
   decoding:
-    temperature: 0.0
-    top_p: 1.0
-    max_tokens: 1024
+    temperature: 0.6
+    top_p: 0.95
+    top_k: 20
+    min_p: 0.0
+    n: 1
+    max_tokens: 32768
+    max_tokens_policy: model_context_minus_prompt_buffer
+    prompt_token_buffer: 128
     extra_body: {}
 
 experiments:
@@ -321,6 +344,12 @@ results/quality/<run_id>/responses/<model_slug>/<shard_id>/
 `summary.json` should include counts by source, bucket, success/error class,
 truncation count, decoding settings digest, workload digest, model, launch
 fields, and timestamps. It should not report TTFT, TPOT, throughput, or energy.
+
+Client concurrency should be moderate and derived from existing MST results:
+`quality_concurrency = floor(0.40 * mst_request_rate)` after converting the
+MST rate to a practical concurrent request count for the selected model/shard
+runner. A manifest may use an explicit concurrency only when MST evidence is not
+available, and that override should be visible in run metadata.
 
 ### Phase C: Local and Slurm Integration
 
@@ -465,12 +494,12 @@ sampling:
         max_scan_rows: 50000
   prompt_length_buckets:
     short:
-      max_tokens: 256
+      lt_tokens: 100
     medium:
-      min_tokens: 257
-      max_tokens: 1024
+      min_tokens: 100
+      max_tokens: 512
     long:
-      min_tokens: 1025
+      gt_tokens: 512
   allocation:
     source: exact
     bucket: proportional_with_minimum
@@ -483,12 +512,16 @@ Implementation details:
   and assistant response for single-turn mode unless the config says otherwise.
 - Tokenize prompts once with the configured tokenizer and record token counts.
 - Assign buckets before sampling.
+- Use the V1 bucket boundaries exactly: `short <100`, `medium 100-512`, and
+  `long >512` prompt tokens.
 - Sample deterministically within each source/bucket stratum.
 - Preserve source proportions exactly at 5,000/5,000 for V1.
 - Make bucket allocation deterministic and report actual counts. If a stratum
   lacks enough rows, fail unless `allow_replacement: true` is explicitly set.
 - Distribute each stratum across all 10 shards to avoid shard-local source or
   length skew.
+- After the 10k shards are materialized, generation must not resample. Feed all
+  requests sequentially, shard by shard, for every selected model.
 
 ## Boundaries and Gaps
 
@@ -588,28 +621,19 @@ contract is fixed.
   - build one judge batch with a placeholder template;
   - score a hand-written normalized judge result file.
 
-## Open Decisions
+## Enforced Decisions
 
-- Exact decoding fields and defaults: `temperature`, `top_p`, `top_k`, penalties,
-  stop strings, and max token cap.
-  temperature = 0.6
-  top_p = 0.95
-  top_k = 20 
-  min_p = 0.0 
-  n = 1 response per prompt
-  max_tokens = 32768 if the model supports at least 32768 tokens, otherwise the model max context minus prompt length with some buffer.
-- Exact prompt-length bucket thresholds. The draft uses token cutoffs of
-  `<=256`, `257-1024`, and `>=1025`.
-  `<100` tokens: short
-  `100-512` tokens: medium
-  `>512` tokens: long
-- Whether WildChat should use a bounded scan prefix for practical runs or require
-  full-stream reservoir sampling for the final 10k protocol.
-  After the 10k shards are materialized, no more sampling. Just feed all requests sequentially at a moderate client concurrency and collect all responses from each model (if there is multiple TP variants, just select one that does not have special memory requirements) shard by shard. the concurrency can be set as 40% MST based on existing MST finder results.
-- Whether response JSONL should include full prompt text by default or only a
-  prompt digest plus a pointer to request shards.
-  Full prompt text is more convenient for judge batch construction.
-- Judge provider schema, upload mechanism, rate limit handling, and retry policy.
-  TBD, leave this open until the provider contract is finalized. 
+- Fixed decoding uses `temperature=0.6`, `top_p=0.95`, `top_k=20`,
+  `min_p=0.0`, `n=1`, and model-context-aware `max_tokens=32768`.
+- Prompt buckets are `short <100`, `medium 100-512`, and `long >512`.
+- After materialization, no runtime request resampling is allowed.
+- Full prompt text is included in response JSONL by default.
+- Client concurrency is derived from 40% of existing MST results unless an
+  explicit manifest override is required and recorded.
+
+## Still Open
+
+- Judge provider schema, upload mechanism, rate limit handling, retry policy,
+  and exact judge prompt template.
 - Whether overall `Q_chat` should be simple pooled valid comparisons or
   source/bucket reweighted when invalid judge results are nonuniform.
