@@ -62,6 +62,20 @@ def build_parser() -> argparse.ArgumentParser:
     summarize.add_argument("--run-id", default=None)
     summarize.set_defaults(handler=_summarize_live_generation)
 
+    judge_batch = subparsers.add_parser("build-judge-batch")
+    judge_batch.add_argument("--responses-root", type=Path, required=True)
+    judge_batch.add_argument("--reference-model-slug", required=True)
+    judge_batch.add_argument("--candidate-model-slug", action="append", required=True)
+    judge_batch.add_argument("--judge-template", type=Path, required=True)
+    judge_batch.add_argument("--output-dir", type=Path, required=True)
+    judge_batch.add_argument("--evaluator-model", default="gpt-4.1-nano")
+    judge_batch.add_argument("--max-comparisons", type=int, default=4)
+    judge_batch.add_argument("--seed", type=int, default=20260520)
+    judge_batch.add_argument("--endpoint", default="/v1/chat/completions")
+    judge_batch.add_argument("--max-tokens", type=int, default=256)
+    judge_batch.add_argument("--temperature", type=float, default=0.0)
+    judge_batch.set_defaults(handler=_build_judge_batch)
+
     return parser
 
 
@@ -167,6 +181,26 @@ def _summarize_live_generation(args: argparse.Namespace) -> int:
         run_id=args.run_id,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+def _build_judge_batch(args: argparse.Namespace) -> int:
+    from .judge_batches import build_openai_judge_batch
+
+    result = build_openai_judge_batch(
+        responses_root=args.responses_root,
+        reference_model_slug=args.reference_model_slug,
+        candidate_model_slugs=tuple(args.candidate_model_slug),
+        judge_template_path=args.judge_template,
+        output_dir=args.output_dir,
+        evaluator_model=args.evaluator_model,
+        max_comparisons=args.max_comparisons,
+        seed=args.seed,
+        endpoint=args.endpoint,
+        max_tokens=args.max_tokens,
+        temperature=args.temperature,
+    )
+    print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
     return 0
 
 
