@@ -76,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
     judge_batch.add_argument("--temperature", type=float, default=0.0)
     judge_batch.set_defaults(handler=_build_judge_batch)
 
+    aggregate_judge = subparsers.add_parser("aggregate-judge-results")
+    aggregate_judge.add_argument("--batch-manifest", type=Path, required=True)
+    aggregate_judge.add_argument("--judge-results", type=Path, required=True)
+    aggregate_judge.add_argument("--output-dir", type=Path, default=None)
+    aggregate_judge.set_defaults(handler=_aggregate_judge_results)
+
     return parser
 
 
@@ -201,6 +207,18 @@ def _build_judge_batch(args: argparse.Namespace) -> int:
         temperature=args.temperature,
     )
     print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    return 0
+
+
+def _aggregate_judge_results(args: argparse.Namespace) -> int:
+    from .scoring import aggregate_openai_batch_judge_results
+
+    payload = aggregate_openai_batch_judge_results(
+        batch_manifest=args.batch_manifest,
+        judge_results_jsonl=args.judge_results,
+        output_dir=args.output_dir,
+    )
+    print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
     return 0
 
 

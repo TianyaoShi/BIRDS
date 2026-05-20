@@ -40,3 +40,28 @@ PYTHONPATH=profiler:. python -m output_quality_profiler.cli run-live-generation 
   --response-text-max-chars 8192 \
   --force
 ```
+
+Judge batch construction writes OpenAI Batch JSONL plus a manifest that records
+the randomized A/B assignment:
+
+```bash
+PYTHONPATH=profiler:. python -m output_quality_profiler.cli build-judge-batch \
+  --responses-root results/quality/<run_id>/responses \
+  --reference-model-slug meta-llama-llama-3-1-8b-instruct \
+  --candidate-model-slug qwen-qwen3-8b \
+  --judge-template codex_plan/output_quality_profiler/llm_as_a_judge_template.md \
+  --output-dir results/quality/<run_id>/judge_batches/<batch_name> \
+  --evaluator-model gpt-4.1-nano \
+  --max-comparisons 100
+
+PYTHONPATH=profiler:. python -m output_quality_profiler.cli aggregate-judge-results \
+  --batch-manifest results/quality/<run_id>/judge_batches/<batch_name>/batch_manifest.json \
+  --judge-results results/quality/<run_id>/judge_batches/<batch_name>/<batch_output>.jsonl \
+  --output-dir results/quality/<run_id>/scores/<batch_name>
+```
+
+A/B order is randomized during judge JSONL composition and inverted during
+aggregation. Aggregation also reports scores by candidate position. If those
+position breakdowns or a larger audit confirm judge position bias, run
+position-swap judging for the affected comparison set and aggregate the paired
+judgments before reporting final scores.
