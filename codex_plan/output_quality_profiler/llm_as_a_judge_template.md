@@ -13,7 +13,7 @@ Judge which response better satisfies the user request.
 
 For objective or technical prompts, prioritize factual correctness, reasoning correctness, and functional correctness.
 For subjective or open-ended prompts, consider helpfulness, relevance, factual soundness, clarity, and conciseness.
-Do not prefer a response merely because it is longer.
+Do not prefer a response merely because it is longer or more structured in terms of formatting.
 If both responses are similarly good or similarly flawed, choose Tie.
 
 Return JSON only:
