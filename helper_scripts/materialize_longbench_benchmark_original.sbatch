@@ -2,13 +2,14 @@
 #SBATCH -J lb-bench-mat
 #SBATCH -N 1
 #SBATCH -n 1
-#SBATCH --cpus-per-task=4
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=64
 #SBATCH --mem=32G
 #SBATCH --array=0-3
 #SBATCH --output=/scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/slurm_logs/%x-%A_%a.out
 #SBATCH --error=/scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/slurm_logs/%x-%A_%a.err
 #SBATCH -A yiding
-#SBATCH -p ai
+#SBATCH -p smallgpu
 #SBATCH --qos=normal
 #SBATCH -t 00:30:00
 
