@@ -38,7 +38,7 @@ BENCHMARK_TARGETS: dict[str, dict[str, Any]] = {
         "score_header": "Code Completion Score",
         "accepted_aliases": ("repobench", "repo bench"),
         "workload_group": "repobench_python_java_aggregate_cache_realistic",
-        "selection_policy": "workbook_missing",
+        "selection_policy": "all_models",
         "exclude_model_substrings": ("gpt-oss",),
         "is_full_benchmark": True,
         "decoding": {

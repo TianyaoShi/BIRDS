@@ -79,11 +79,12 @@ Supported targets are `SuperGPQA`, `SuperGPQA-hard`, `RepoBench`,
 `CrossCodeEval`, and `LongBench-v1-covered`. `SuperGPQA` uses the full 26,528
 record materialization for models missing public SuperGPQA scores.
 `SuperGPQA-hard` uses the 7,049 hard-question subset for every model so it
-matches the MST/energy profiling boundary. `CrossCodeEval` and the detailed
-LongBench-v1-covered target are selected for every eligible model because those
-arranged score columns do not provide consistent substitutes. Code targets
-exclude `gpt-oss` models, and LongBench excludes Llama-2 models. LongBench is
-reported as a covered-task subset, not full LongBench v1.
+matches the MST/energy profiling boundary. `RepoBench`, `CrossCodeEval`, and
+the detailed LongBench-v1-covered target are selected for every eligible model
+because those arranged score columns do not provide consistent substitutes for
+the original benchmark/evaluator contract. Code targets exclude `gpt-oss`
+models, and LongBench excludes Llama-2 models. LongBench is reported as a
+covered-task subset, not full LongBench v1.
 
 ```bash
 PYTHONPATH=profiler:. python -m output_quality_profiler.cli select-missing-benchmark-scores \

@@ -190,7 +190,7 @@ def test_select_missing_benchmark_scores_uses_alias_policy_and_registry(tmp_path
     assert ("org/model-a", "LongBench-v1-covered") in missing
     assert ("org/model-b", "SuperGPQA") not in missing
     assert ("org/model-b", "SuperGPQA-hard") in missing
-    assert ("org/model-b", "RepoBench") not in missing
+    assert ("org/model-b", "RepoBench") in missing
     assert ("org/model-b", "CrossCodeEval") in missing
     assert ("org/model-b", "LongBench-v1-covered") in missing
     assert ("openai/gpt-oss-20b", "RepoBench") not in missing
@@ -237,7 +237,7 @@ def test_build_benchmark_generation_manifest_inherits_model_overrides(tmp_path: 
     manifest = load_quality_manifest(output_manifest)
     raw = yaml.safe_load(output_manifest.read_text(encoding="utf-8"))
 
-    assert result["experiment_count"] == 2
+    assert result["experiment_count"] == 3
     assert manifest.run.run_id == "benchmark-run"
     assert manifest.experiments[0].generation.decoding.temperature == 0.0
     assert manifest.experiments[0].generation.decoding.max_tokens == 512
