@@ -19,6 +19,11 @@ def build_parser() -> argparse.ArgumentParser:
     validate_materialization.add_argument("--config", type=Path, required=True)
     validate_materialization.set_defaults(handler=_validate_materialization)
 
+    materialize = subparsers.add_parser("materialize")
+    materialize.add_argument("--config", type=Path, required=True)
+    materialize.add_argument("--force", action="store_true")
+    materialize.set_defaults(handler=_materialize)
+
     dry_run = subparsers.add_parser("dry-run")
     dry_run.add_argument("--manifest", type=Path, required=True)
     dry_run.set_defaults(handler=_dry_run)
@@ -71,6 +76,14 @@ def _validate_materialization(args: argparse.Namespace) -> int:
         "allow_replacement": config.allow_replacement,
     }
     print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def _materialize(args: argparse.Namespace) -> int:
+    from .materialization import materialize_quality_requests
+
+    result = materialize_quality_requests(args.config, force=bool(args.force))
+    print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
     return 0
 
 

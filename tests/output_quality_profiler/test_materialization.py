@@ -16,6 +16,7 @@ from output_quality_profiler.materialization import (
 
 def _base_config() -> dict:
     return {
+        "tokenization": {"tokenizer": "character"},
         "sampling": {
             "seed": 20260520,
             "total_requests": 10000,
@@ -101,4 +102,3 @@ def test_distribute_stratum_indices_spreads_evenly_across_shards() -> None:
     assert [len(shard) for shard in shards] == [2, 1, 1, 1, 1, 1, 1, 1, 1, 1]
     assert shards[0] == [0, 10]
     assert shards[1] == [1]
-
