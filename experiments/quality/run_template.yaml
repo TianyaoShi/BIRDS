@@ -1,6 +1,6 @@
 run:
   run_id: h100-quality-sharegpt-wildchat-000
-  output_root: ../results/quality
+  output_root: ../../results/quality
   default_endpoint: /v1/chat/completions
 
 slurm:
@@ -35,7 +35,8 @@ launch:
 
 generation:
   request_timeout_s: 21600
-  concurrency_source: mst_fraction
+  concurrency_source: explicit
+  max_concurrency: 1
   concurrency_mst_fraction: 0.40
   preserve_request_order: true
   response_text_max_chars: 65536

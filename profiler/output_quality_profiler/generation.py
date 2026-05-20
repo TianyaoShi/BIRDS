@@ -1,0 +1,332 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+from collections import Counter
+from dataclasses import replace
+from pathlib import Path
+from typing import Any, Sequence
+
+from llm_mst_finder.records import RequestRecord, SampleRequest
+from llm_mst_finder.request_client import (
+    CAPTURE_RESPONSE_TEXT_ENV,
+    RESPONSE_TEXT_MAX_CHARS_ENV,
+    RequestClient,
+)
+from llm_mst_finder.workload import load_workload_config, load_workload_samples_for_sampling_only, prepare_workload_for_trial
+
+from .models import QualityDecodingConfig
+
+
+def run_live_generation(
+    *,
+    job_id: str,
+    output_dir: str | Path,
+    workload: str | Path,
+    model: str,
+    base_url: str,
+    endpoint: str,
+    request_timeout_s: float,
+    max_concurrency: int,
+    response_text_max_chars: int,
+    decoding: QualityDecodingConfig,
+    serving_max_model_len: int | None = None,
+    run_id: str | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    return asyncio.run(
+        run_live_generation_async(
+            job_id=job_id,
+            output_dir=output_dir,
+            workload=workload,
+            model=model,
+            base_url=base_url,
+            endpoint=endpoint,
+            request_timeout_s=request_timeout_s,
+            max_concurrency=max_concurrency,
+            response_text_max_chars=response_text_max_chars,
+            decoding=decoding,
+            serving_max_model_len=serving_max_model_len,
+            run_id=run_id,
+            force=force,
+        )
+    )
+
+
+async def run_live_generation_async(
+    *,
+    job_id: str,
+    output_dir: str | Path,
+    workload: str | Path,
+    model: str,
+    base_url: str,
+    endpoint: str,
+    request_timeout_s: float,
+    max_concurrency: int,
+    response_text_max_chars: int,
+    decoding: QualityDecodingConfig,
+    serving_max_model_len: int | None = None,
+    run_id: str | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    if max_concurrency <= 0:
+        raise ValueError("max_concurrency must be positive")
+    resolved_output_dir = Path(output_dir)
+    if resolved_output_dir.exists() and any(resolved_output_dir.iterdir()):
+        if not force:
+            raise RuntimeError(f"refusing to overwrite existing output directory: {resolved_output_dir}")
+        for child in resolved_output_dir.iterdir():
+            if child.is_dir():
+                import shutil
+
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+    resolved_output_dir.mkdir(parents=True, exist_ok=True)
+
+    samples, workload_metadata = _prepare_samples(
+        workload=Path(workload),
+        model=model,
+        endpoint=endpoint,
+        serving_max_model_len=serving_max_model_len,
+        decoding=decoding,
+    )
+    responses_path = resolved_output_dir / "responses.jsonl"
+    failed_path = resolved_output_dir / "failed_requests.jsonl"
+    summary_path = resolved_output_dir / "summary.json"
+
+    previous_capture = os.environ.get(CAPTURE_RESPONSE_TEXT_ENV)
+    previous_max_chars = os.environ.get(RESPONSE_TEXT_MAX_CHARS_ENV)
+    os.environ[CAPTURE_RESPONSE_TEXT_ENV] = "1"
+    os.environ[RESPONSE_TEXT_MAX_CHARS_ENV] = str(response_text_max_chars)
+    try:
+        client = RequestClient(
+            base_url=base_url,
+            endpoint=endpoint,
+            model=model,
+            timeout_s=request_timeout_s,
+            extra_body=decoding.to_request_extra_body(),
+        )
+        semaphore = asyncio.Semaphore(max_concurrency)
+        async with client:
+            tasks = [
+                _send_one(
+                    client=client,
+                    semaphore=semaphore,
+                    sample=sample,
+                    request_index=index,
+                    job_id=job_id,
+                )
+                for index, sample in enumerate(samples)
+            ]
+            records = await asyncio.gather(*tasks)
+    finally:
+        _restore_env(CAPTURE_RESPONSE_TEXT_ENV, previous_capture)
+        _restore_env(RESPONSE_TEXT_MAX_CHARS_ENV, previous_max_chars)
+
+    rows = [
+        _record_to_response_row(
+            record,
+            run_id=run_id,
+            job_id=job_id,
+            model=model,
+            workload=str(workload),
+            decoding=decoding,
+        )
+        for record in sorted(records, key=lambda item: _request_index(item))
+    ]
+    _write_jsonl(responses_path, rows)
+    _write_jsonl(failed_path, [row for row in rows if not row["success"]])
+    summary = _build_summary(
+        rows=rows,
+        run_id=run_id,
+        job_id=job_id,
+        model=model,
+        workload=str(workload),
+        base_url=base_url,
+        endpoint=endpoint,
+        max_concurrency=max_concurrency,
+        response_text_max_chars=response_text_max_chars,
+        decoding=decoding,
+        workload_metadata=workload_metadata,
+    )
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return summary
+
+
+async def _send_one(
+    *,
+    client: RequestClient,
+    semaphore: asyncio.Semaphore,
+    sample: SampleRequest,
+    request_index: int,
+    job_id: str,
+) -> RequestRecord:
+    async with semaphore:
+        return await client.send_request(
+            sample,
+            request_id=f"{job_id}-{request_index:06d}",
+            trial_id=job_id,
+            scheduled_send_ts=float(request_index),
+        )
+
+
+def _prepare_samples(
+    *,
+    workload: Path,
+    model: str,
+    endpoint: str,
+    serving_max_model_len: int | None,
+    decoding: QualityDecodingConfig,
+) -> tuple[list[SampleRequest], dict[str, Any]]:
+    config = load_workload_config(workload)
+    if config.context_policy is not None:
+        prepared = prepare_workload_for_trial(
+            workload,
+            model_name=model,
+            endpoint=endpoint,
+            serving_max_model_len=serving_max_model_len,
+        )
+        samples = prepared.samples
+        metadata = prepared.metadata
+    else:
+        samples = load_workload_samples_for_sampling_only(workload)
+        metadata = {
+            "workload": {
+                "name": config.name,
+                "source_path": str(config.source_path),
+                "dataset_type": config.dataset.type,
+                "num_requests": len(samples),
+            }
+        }
+    return [
+        _sample_with_quality_decoding(
+            sample,
+            decoding=decoding,
+            serving_max_model_len=serving_max_model_len,
+        )
+        for sample in samples
+    ], metadata
+
+
+def _sample_with_quality_decoding(
+    sample: SampleRequest,
+    *,
+    decoding: QualityDecodingConfig,
+    serving_max_model_len: int | None,
+) -> SampleRequest:
+    max_tokens = decoding.max_tokens
+    if serving_max_model_len is not None:
+        max_tokens = min(
+            max_tokens,
+            max(1, int(serving_max_model_len) - int(sample.prompt_len) - decoding.prompt_token_buffer),
+        )
+    extra_body = decoding.to_request_extra_body()
+    metadata = dict(sample.metadata)
+    metadata["prompt"] = sample.prompt
+    return replace(
+        sample,
+        expected_output_len=max_tokens,
+        extra_body=extra_body,
+        metadata=metadata,
+    )
+
+
+def _record_to_response_row(
+    record: RequestRecord,
+    *,
+    run_id: str | None,
+    job_id: str,
+    model: str,
+    workload: str,
+    decoding: QualityDecodingConfig,
+) -> dict[str, Any]:
+    metadata = dict(record.metadata or {})
+    response_text = metadata.pop("response_text", "")
+    response_text_truncated = bool(metadata.pop("response_text_truncated", False))
+    return {
+        "run_id": run_id,
+        "job_id": job_id,
+        "model": model,
+        "workload": workload,
+        "request_id": metadata.get("request_id") or metadata.get("sample_id") or record.request_id,
+        "source": metadata.get("source"),
+        "prompt_length_bucket": metadata.get("prompt_length_bucket"),
+        "prompt": _prompt_from_metadata_or_none(metadata),
+        "response_text": response_text,
+        "response_text_truncated": response_text_truncated,
+        "finish_reason": None,
+        "success": record.success,
+        "error": record.error,
+        "actual_output_len": record.actual_output_len,
+        "expected_output_len": record.expected_output_len,
+        "decoding": decoding.to_dict(),
+        "metadata": metadata,
+    }
+
+
+def _prompt_from_metadata_or_none(metadata: dict[str, Any]) -> str | None:
+    prompt = metadata.get("prompt")
+    return prompt if isinstance(prompt, str) else None
+
+
+def _build_summary(
+    *,
+    rows: Sequence[dict[str, Any]],
+    run_id: str | None,
+    job_id: str,
+    model: str,
+    workload: str,
+    base_url: str,
+    endpoint: str,
+    max_concurrency: int,
+    response_text_max_chars: int,
+    decoding: QualityDecodingConfig,
+    workload_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    source_counts = Counter(str(row.get("source")) for row in rows)
+    bucket_counts = Counter(str(row.get("prompt_length_bucket")) for row in rows)
+    success_count = sum(1 for row in rows if row["success"])
+    truncated_count = sum(1 for row in rows if row["response_text_truncated"])
+    return {
+        "run_id": run_id,
+        "job_id": job_id,
+        "model": model,
+        "workload": workload,
+        "base_url": base_url,
+        "endpoint": endpoint,
+        "max_concurrency": max_concurrency,
+        "response_text_max_chars": response_text_max_chars,
+        "decoding": decoding.to_dict(),
+        "total_requests": len(rows),
+        "successful_requests": success_count,
+        "failed_requests": len(rows) - success_count,
+        "response_text_truncated": truncated_count,
+        "source_counts": dict(source_counts),
+        "prompt_length_bucket_counts": dict(bucket_counts),
+        "workload_metadata": workload_metadata,
+        "artifacts": {
+            "responses_jsonl": "responses.jsonl",
+            "failed_requests_jsonl": "failed_requests.jsonl",
+            "summary_json": "summary.json",
+        },
+    }
+
+
+def _request_index(record: RequestRecord) -> int:
+    value = (record.metadata or {}).get("request_index")
+    return value if isinstance(value, int) else 0
+
+
+def _write_jsonl(path: Path, rows: Sequence[dict[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _restore_env(name: str, value: str | None) -> None:
+    if value is None:
+        os.environ.pop(name, None)
+    else:
+        os.environ[name] = value

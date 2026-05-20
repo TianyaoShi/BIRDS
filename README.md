@@ -51,8 +51,11 @@ profiler/
 
   output_quality_profiler/
     cli.py
+    generation.py
     manifest.py
     materialization.py
+    matrix.py
+    mock_openai_server.py
     models.py
     scoring.py
 

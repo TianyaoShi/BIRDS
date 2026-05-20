@@ -255,3 +255,30 @@ This adapter assumes one vLLM server per Slurm task and does not implement cross
   `state.json` and marks the run `failed` if any job failed.
 - `energy-resume` is not implemented yet. Rerun support should follow the MST
   `resume` pattern by selecting non-succeeded array indices.
+
+## Slurm Quality Profiling Notes
+
+Quality response-generation runs use the `output_quality_profiler` manifest
+shape and are submitted through separate Slurm commands:
+
+```bash
+PYTHONPATH=/path/to/BioLLM/profiler \
+  /path/to/venv/bin/python -m slurm_orchestrator.cli quality-submit \
+  --manifest experiments/quality/run.yaml \
+  --run-id my-quality-run
+
+PYTHONPATH=/path/to/BioLLM/profiler \
+  /path/to/venv/bin/python -m slurm_orchestrator.cli quality-collect \
+  --run-root results/quality/my-quality-run
+```
+
+Each quality task starts one server, waits for readiness, then invokes
+`python -m output_quality_profiler.cli run-live-generation`. Success requires
+`responses.jsonl` and `summary.json` in the per-job result directory. The task
+does not run MST search, latency reports, or energy monitoring.
+`generation.max_concurrency` must be resolved before submission, either as an
+explicit reviewed value or from the intended 40% MST policy.
+
+The tracked smoke manifest `experiments/quality/slurm_quality_smoke_mock.yaml`
+uses a tiny mock OpenAI-compatible server to verify Slurm wiring without a model
+download.

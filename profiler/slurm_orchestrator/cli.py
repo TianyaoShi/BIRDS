@@ -31,6 +31,14 @@ from .planning import (
     submit_run_plan,
     submit_run_plan_tasks,
 )
+from .quality import (
+    collect_quality_run,
+    ensure_quality_run_plan,
+    finalize_quality_task,
+    mark_quality_task_running,
+    render_quality_task_shell,
+    submit_quality_run_plan,
+)
 from .state import collect_run, finalize_task, mark_task_running
 
 
@@ -91,6 +99,21 @@ def build_parser() -> argparse.ArgumentParser:
     _add_sync_results_args(energy_collect, collect_name="energy-collect")
     energy_collect.set_defaults(handler=_energy_collect_command)
 
+    quality_plan = subparsers.add_parser("quality-plan")
+    quality_plan.add_argument("--manifest", type=Path, required=True)
+    quality_plan.add_argument("--run-id", default=None)
+    quality_plan.set_defaults(handler=_quality_plan_command)
+
+    quality_submit = subparsers.add_parser("quality-submit")
+    quality_submit.add_argument("--manifest", type=Path, required=True)
+    quality_submit.add_argument("--run-id", default=None)
+    quality_submit.set_defaults(handler=_quality_submit_command)
+
+    quality_collect = subparsers.add_parser("quality-collect")
+    quality_collect.add_argument("--run-root", type=Path, required=True)
+    _add_sync_results_args(quality_collect, collect_name="quality-collect")
+    quality_collect.set_defaults(handler=_quality_collect_command)
+
     emit_task_shell = subparsers.add_parser("emit-task-shell", help=argparse.SUPPRESS)
     emit_task_shell.add_argument("--group-plan", type=Path, required=True)
     emit_task_shell.add_argument("--task-index", type=int, required=True)
@@ -100,6 +123,11 @@ def build_parser() -> argparse.ArgumentParser:
     emit_energy_task_shell.add_argument("--group-plan", type=Path, required=True)
     emit_energy_task_shell.add_argument("--task-index", type=int, required=True)
     emit_energy_task_shell.set_defaults(handler=_emit_energy_task_shell_command)
+
+    emit_quality_task_shell = subparsers.add_parser("emit-quality-task-shell", help=argparse.SUPPRESS)
+    emit_quality_task_shell.add_argument("--group-plan", type=Path, required=True)
+    emit_quality_task_shell.add_argument("--task-index", type=int, required=True)
+    emit_quality_task_shell.set_defaults(handler=_emit_quality_task_shell_command)
 
     wait_ready = subparsers.add_parser("wait-ready", help=argparse.SUPPRESS)
     wait_ready.add_argument("--base-url", required=True)
@@ -119,6 +147,11 @@ def build_parser() -> argparse.ArgumentParser:
     mark_energy_running.add_argument("--task-index", type=int, required=True)
     mark_energy_running.set_defaults(handler=_mark_energy_task_running_command)
 
+    mark_quality_running = subparsers.add_parser("mark-quality-task-running", help=argparse.SUPPRESS)
+    mark_quality_running.add_argument("--group-plan", type=Path, required=True)
+    mark_quality_running.add_argument("--task-index", type=int, required=True)
+    mark_quality_running.set_defaults(handler=_mark_quality_task_running_command)
+
     finalize = subparsers.add_parser("finalize-task", help=argparse.SUPPRESS)
     finalize.add_argument("--group-plan", type=Path, required=True)
     finalize.add_argument("--task-index", type=int, required=True)
@@ -132,6 +165,13 @@ def build_parser() -> argparse.ArgumentParser:
     finalize_energy.add_argument("--exit-code", type=int, required=True)
     finalize_energy.add_argument("--trial-started", type=int, choices=(0, 1), required=True)
     finalize_energy.set_defaults(handler=_finalize_energy_task_command)
+
+    finalize_quality = subparsers.add_parser("finalize-quality-task", help=argparse.SUPPRESS)
+    finalize_quality.add_argument("--group-plan", type=Path, required=True)
+    finalize_quality.add_argument("--task-index", type=int, required=True)
+    finalize_quality.add_argument("--exit-code", type=int, required=True)
+    finalize_quality.add_argument("--generation-started", type=int, choices=(0, 1), required=True)
+    finalize_quality.set_defaults(handler=_finalize_quality_task_command)
 
     return parser
 
@@ -238,6 +278,27 @@ def _energy_collect_command(args: argparse.Namespace) -> int:
     return 1 if sync_result["status"] == "failed" else 0
 
 
+def _quality_plan_command(args: argparse.Namespace) -> int:
+    plan = ensure_quality_run_plan(args.manifest, run_id=args.run_id)
+    print(json.dumps(plan, indent=2, sort_keys=True))
+    return 0
+
+
+def _quality_submit_command(args: argparse.Namespace) -> int:
+    plan = ensure_quality_run_plan(args.manifest, run_id=args.run_id)
+    submission = submit_quality_run_plan(plan)
+    print(json.dumps(submission, indent=2, sort_keys=True))
+    return 0 if all(group.get("return_code", 1) == 0 for group in submission.get("groups", [])) else 1
+
+
+def _quality_collect_command(args: argparse.Namespace) -> int:
+    payload = collect_quality_run(args.run_root)
+    sync_result = _sync_results_after_collect(args)
+    payload["result_sync"] = sync_result
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 1 if sync_result["status"] == "failed" else 0
+
+
 def _emit_task_shell_command(args: argparse.Namespace) -> int:
     print(render_task_shell(args.group_plan, args.task_index))
     return 0
@@ -245,6 +306,11 @@ def _emit_task_shell_command(args: argparse.Namespace) -> int:
 
 def _emit_energy_task_shell_command(args: argparse.Namespace) -> int:
     print(render_energy_task_shell(args.group_plan, args.task_index))
+    return 0
+
+
+def _emit_quality_task_shell_command(args: argparse.Namespace) -> int:
+    print(render_quality_task_shell(args.group_plan, args.task_index))
     return 0
 
 
@@ -282,6 +348,12 @@ def _mark_energy_task_running_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _mark_quality_task_running_command(args: argparse.Namespace) -> int:
+    payload = mark_quality_task_running(args.group_plan, args.task_index)
+    print(json.dumps({"job_id": payload.get("job_id"), "status": payload.get("status")}))
+    return 0
+
+
 def _finalize_task_command(args: argparse.Namespace) -> int:
     payload = finalize_task(
         args.group_plan,
@@ -299,6 +371,17 @@ def _finalize_energy_task_command(args: argparse.Namespace) -> int:
         args.task_index,
         exit_code=args.exit_code,
         trial_started=bool(args.trial_started),
+    )
+    print(json.dumps({"job_id": payload.get("job_id"), "status": payload.get("status")}))
+    return 0
+
+
+def _finalize_quality_task_command(args: argparse.Namespace) -> int:
+    payload = finalize_quality_task(
+        args.group_plan,
+        args.task_index,
+        exit_code=args.exit_code,
+        generation_started=bool(args.generation_started),
     )
     print(json.dumps({"job_id": payload.get("job_id"), "status": payload.get("status")}))
     return 0

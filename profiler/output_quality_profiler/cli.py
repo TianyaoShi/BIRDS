@@ -5,8 +5,10 @@ import json
 from pathlib import Path
 from typing import Sequence
 
+from .generation import run_live_generation
 from .manifest import load_quality_manifest
 from .materialization import load_materialization_config, source_request_counts
+from .models import QualityDecodingConfig
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,6 +22,32 @@ def build_parser() -> argparse.ArgumentParser:
     dry_run = subparsers.add_parser("dry-run")
     dry_run.add_argument("--manifest", type=Path, required=True)
     dry_run.set_defaults(handler=_dry_run)
+
+    live_generation = subparsers.add_parser("run-live-generation")
+    live_generation.add_argument("--job-id", required=True)
+    live_generation.add_argument("--output-dir", type=Path, required=True)
+    live_generation.add_argument("--workload", type=Path, required=True)
+    live_generation.add_argument("--model", required=True)
+    live_generation.add_argument("--base-url", required=True)
+    live_generation.add_argument("--endpoint", required=True)
+    live_generation.add_argument("--request-timeout-s", type=float, required=True)
+    live_generation.add_argument("--max-concurrency", type=int, required=True)
+    live_generation.add_argument("--response-text-max-chars", type=int, required=True)
+    live_generation.add_argument("--serving-max-model-len", type=int, default=None)
+    live_generation.add_argument("--run-id", default=None)
+    live_generation.add_argument("--temperature", type=float, default=0.6)
+    live_generation.add_argument("--top-p", type=float, default=0.95)
+    live_generation.add_argument("--top-k", type=int, default=20)
+    live_generation.add_argument("--min-p", type=float, default=0.0)
+    live_generation.add_argument("--n", type=int, default=1)
+    live_generation.add_argument("--max-tokens", type=int, default=32768)
+    live_generation.add_argument(
+        "--max-tokens-policy",
+        default="model_context_minus_prompt_buffer",
+    )
+    live_generation.add_argument("--prompt-token-buffer", type=int, default=128)
+    live_generation.add_argument("--force", action="store_true")
+    live_generation.set_defaults(handler=_run_live_generation)
 
     return parser
 
@@ -80,6 +108,34 @@ def _dry_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_live_generation(args: argparse.Namespace) -> int:
+    summary = run_live_generation(
+        job_id=args.job_id,
+        output_dir=args.output_dir,
+        workload=args.workload,
+        model=args.model,
+        base_url=args.base_url,
+        endpoint=args.endpoint,
+        request_timeout_s=args.request_timeout_s,
+        max_concurrency=args.max_concurrency,
+        response_text_max_chars=args.response_text_max_chars,
+        serving_max_model_len=args.serving_max_model_len,
+        run_id=args.run_id,
+        force=bool(args.force),
+        decoding=QualityDecodingConfig(
+            temperature=args.temperature,
+            top_p=args.top_p,
+            top_k=args.top_k,
+            min_p=args.min_p,
+            n=args.n,
+            max_tokens=args.max_tokens,
+            max_tokens_policy=args.max_tokens_policy,
+            prompt_token_buffer=args.prompt_token_buffer,
+        ),
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
-

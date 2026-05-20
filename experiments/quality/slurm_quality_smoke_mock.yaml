@@ -1,0 +1,48 @@
+run:
+  run_id: quality-smoke-mock-000
+  output_root: ../../results/quality
+  default_endpoint: /v1/chat/completions
+
+slurm:
+  partition: ai
+  account: yiding
+  qos: normal
+  time: 00:05:00
+  cpus_per_gpu: 14
+  array_concurrency_limit: 1
+  base_port: 9900
+
+launch:
+  template:
+    - python
+    - -m
+    - output_quality_profiler.mock_openai_server
+    - --host
+    - "{host}"
+    - --port
+    - "{port}"
+  readiness_timeout_s: 60
+  readiness_interval_s: 1
+
+generation:
+  request_timeout_s: 120
+  concurrency_source: explicit
+  max_concurrency: 1
+  preserve_request_order: true
+  response_text_max_chars: 8192
+  include_prompt_text: true
+  decoding:
+    temperature: 0.6
+    top_p: 0.95
+    top_k: 20
+    min_p: 0.0
+    n: 1
+    max_tokens: 32768
+    max_tokens_policy: model_context_minus_prompt_buffer
+    prompt_token_buffer: 128
+    extra_body: {}
+
+experiments:
+  - id: mock-quality-smoke
+    model: mock-quality-model
+    workload: ./smoke_mock/workload_yamls/shard_000.yaml

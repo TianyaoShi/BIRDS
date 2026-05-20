@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .manifest import QualityManifestValidationError, load_quality_manifest
+from .generation import run_live_generation
 from .materialization import (
     QualityMaterializationConfigError,
     assign_prompt_length_bucket,
@@ -27,5 +28,5 @@ __all__ = [
     "compute_pairwise_score",
     "load_materialization_config",
     "load_quality_manifest",
+    "run_live_generation",
 ]
-
