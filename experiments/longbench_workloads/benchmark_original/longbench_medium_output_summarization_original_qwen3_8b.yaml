@@ -10,7 +10,7 @@ dataset:
   - qmsum
   - vcsum
 tokenization:
-  tokenizer: ../../../data/tokenizers/Qwen3-8B
+  tokenizer: Qwen/Qwen3-8B
 filtering:
   min_prompt_tokens: 128
   max_prompt_tokens: 32768
