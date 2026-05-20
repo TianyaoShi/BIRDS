@@ -278,7 +278,3 @@ Each quality task starts one server, waits for readiness, then invokes
 does not run MST search, latency reports, or energy monitoring.
 `generation.max_concurrency` must be resolved before submission, either as an
 explicit reviewed value or from the intended 40% MST policy.
-
-The tracked smoke manifest `experiments/quality/slurm_quality_smoke_mock.yaml`
-uses a tiny mock OpenAI-compatible server to verify Slurm wiring without a model
-download.

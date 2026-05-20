@@ -1,1 +1,0 @@
-{"expected_output_len": 32, "metadata": {"request_id": "smoke-000", "source": "smoke", "prompt_length_bucket": "short", "shard_id": "shard_000", "stratum": "smoke:short", "within_shard_index": 0}, "prompt": "Say hello in one short sentence.", "prompt_len": 7}

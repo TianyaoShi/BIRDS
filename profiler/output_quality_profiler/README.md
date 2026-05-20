@@ -29,30 +29,14 @@ PYTHONPATH=profiler:. python -m output_quality_profiler.cli dry-run \
   --manifest experiments/quality/run.yaml
 
 PYTHONPATH=profiler:. python -m output_quality_profiler.cli run-live-generation \
-  --job-id smoke \
-  --output-dir results/quality/live-smoke \
-  --workload experiments/quality/smoke_mock/workload_yamls/shard_000.yaml \
-  --model mock-quality-model \
-  --base-url http://127.0.0.1:9900 \
+  --job-id shard_000 \
+  --output-dir results/quality/live-shard-000 \
+  --workload experiments/quality/sharegpt_wildchat_10k/workload_yamls/shard_000.yaml \
+  --model <model-name> \
+  --base-url http://127.0.0.1:<port> \
   --endpoint /v1/chat/completions \
   --request-timeout-s 120 \
-  --max-concurrency 1 \
+  --max-concurrency <reviewed-concurrency> \
   --response-text-max-chars 8192 \
   --force
 ```
-
-Slurm smoke submission uses the mock OpenAI-compatible server:
-
-```bash
-PYTHONPATH=profiler:. python -m slurm_orchestrator.cli quality-submit \
-  --manifest experiments/quality/slurm_quality_smoke_mock.yaml \
-  --run-id quality-smoke-mock-000
-
-PYTHONPATH=profiler:. python -m slurm_orchestrator.cli quality-collect \
-  --run-root results/quality/quality-smoke-mock-000 \
-  --no-sync-results
-```
-
-The smoke path is for checking Slurm task wiring only. Real quality runs should
-replace the raw mock launch template with normal vLLM launch settings and use
-materialized ShareGPT/WildChat shards.

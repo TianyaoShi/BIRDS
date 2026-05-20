@@ -32,6 +32,12 @@ experiments/workloads/*4096*
 experiments/workloads/*8192*
 experiments/workloads/*16384*
 
+# Output quality profiler materialization products
+experiments/quality/*/materialization_report.json
+experiments/quality/*/request_manifest.json
+experiments/quality/*/shards/
+experiments/quality/*/workload_yamls/
+
 # Environment and local overrides
 .env
 .env.*
