@@ -14,7 +14,15 @@ from llm_mst_finder.request_client import (
     RESPONSE_TEXT_MAX_CHARS_ENV,
     RequestClient,
 )
-from llm_mst_finder.workload import load_workload_config, load_workload_samples_for_sampling_only, prepare_workload_for_trial
+from llm_mst_finder.model_context import resolve_model_context_info
+from llm_mst_finder.workload import (
+    _normalized_tokenizer_spec,
+    _tokenizer_cache_key,
+    generate_sample_requests,
+    load_workload_config,
+    load_workload_samples_for_sampling_only,
+    resolve_tokenizer,
+)
 
 from .models import QualityDecodingConfig
 
@@ -241,14 +249,64 @@ def _prepare_samples(
 ) -> tuple[list[SampleRequest], dict[str, Any]]:
     config = load_workload_config(workload)
     if config.context_policy is not None:
-        prepared = prepare_workload_for_trial(
-            workload,
+        fallback_tokenizer_name = config.tokenizer or model
+        fallback_tokenizer = resolve_tokenizer(fallback_tokenizer_name)
+        fallback_tokenizer_key = _tokenizer_cache_key(
+            fallback_tokenizer_name,
+            tokenizer=fallback_tokenizer,
+        )
+        model_context_info = resolve_model_context_info(
+            config.context_policy,
+            workload_tokenizer=fallback_tokenizer,
+            workload_tokenizer_key=fallback_tokenizer_key,
             model_name=model,
-            endpoint=endpoint,
+            fallback_tokenizer=fallback_tokenizer,
+            fallback_tokenizer_key=fallback_tokenizer_key,
+            fallback_tokenizer_name=_normalized_tokenizer_spec(fallback_tokenizer_name),
             serving_max_model_len=serving_max_model_len,
         )
-        samples = prepared.samples
-        metadata = prepared.metadata
+        effective_policy = model_context_info.effective_policy(config.context_policy)
+        raw_samples = generate_sample_requests(
+            config,
+            tokenizer=model_context_info.tokenizer,
+            tokenizer_key=model_context_info.tokenizer_key,
+        )
+        samples = []
+        skipped_source_indexes: list[int] = []
+        for index, sample in enumerate(raw_samples):
+            source_index = sample.metadata.get("source_index", index)
+            if sample.prompt_len + decoding.prompt_token_buffer >= effective_policy.max_model_len:
+                if isinstance(source_index, int):
+                    skipped_source_indexes.append(source_index)
+                continue
+            samples.append(sample)
+        if not samples:
+            raise ValueError(
+                "quality context validation removed all workload samples; no requests remain "
+                "after enforcing prompt-only context fit"
+            )
+        metadata = {
+            "workload": {
+                "name": config.name,
+                "source_path": str(config.source_path),
+                "dataset_type": config.dataset.type,
+                "num_requests": len(samples),
+                "context_policy": {
+                    "max_model_len": effective_policy.max_model_len,
+                    "tokenizer_source": effective_policy.tokenizer_source,
+                    "over_limit": effective_policy.over_limit,
+                    "reserve_tokens": decoding.prompt_token_buffer,
+                    "total_samples": len(raw_samples),
+                    "kept_samples": len(samples),
+                    "skipped_samples": len(raw_samples) - len(samples),
+                    "truncated_samples": 0,
+                    "skipped_source_indexes": skipped_source_indexes,
+                    "truncated_source_indexes": [],
+                    "quality_validation_mode": "prompt_only_dynamic_output_cap",
+                },
+                "model_context": model_context_info.to_metadata(),
+            }
+        }
     else:
         samples = load_workload_samples_for_sampling_only(workload)
         metadata = {
