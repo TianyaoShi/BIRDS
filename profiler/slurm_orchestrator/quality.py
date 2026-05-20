@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from local_orchestrator.lifecycle import render_launch_command
+from local_orchestrator.matrix import _dataset_slug
 from local_orchestrator.models import LaunchConfig, SlurmConfig
 from local_orchestrator.utils import now_utc_iso
 from output_quality_profiler.manifest import load_quality_manifest
@@ -297,11 +298,17 @@ def render_quality_task_shell(group_plan_path: str | Path, task_index: int) -> s
         base_port=int(task["base_port"]),
         metrics_port=int(task["metrics_port"]),
     )
-    generation_command = _build_quality_live_generation_command(
+    generation_commands = _build_quality_live_generation_commands(
         run_id=str(group_payload["run_id"]),
         job=job,
         python_executable=str(group_payload["python_executable"]),
         base_url=str(task["base_url"]),
+        output_dir=Path(str(task["result_dir"])),
+    )
+    summarize_command = _build_quality_summarize_command(
+        run_id=str(group_payload["run_id"]),
+        job=job,
+        python_executable=str(group_payload["python_executable"]),
         output_dir=Path(str(task["result_dir"])),
     )
     lines = [
@@ -317,8 +324,10 @@ def render_quality_task_shell(group_plan_path: str | Path, task_index: int) -> s
         _bash_assign("READINESS_TIMEOUT_S", _number_text(job.launch.readiness_timeout_s)),
         _bash_assign("READINESS_INTERVAL_S", _number_text(job.launch.readiness_interval_s)),
         _bash_array("VLLM_CMD", launch_command),
-        _bash_array("QUALITY_GENERATION_CMD", generation_command),
     ]
+    for index, command in enumerate(generation_commands):
+        lines.append(_bash_array(f"QUALITY_GENERATION_CMD_{index}", command))
+    lines.append(_bash_array("QUALITY_SUMMARIZE_CMD", summarize_command))
     for name, value in sorted(job.launch.env.items()):
         lines.append(_bash_export(name, value))
     return "\n".join(lines)
@@ -423,7 +432,12 @@ def render_quality_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmC
             '    --pid "$VLLM_PID"'.lstrip(),
             "",
             "GENERATION_STARTED=1",
-            '  "${QUALITY_GENERATION_CMD[@]}" >>"$QUALITY_STDOUT" 2>>"$QUALITY_STDERR"'.lstrip(),
+            'for cmd_name in "${!QUALITY_GENERATION_CMD_@}"; do',
+            '  declare -n generation_cmd="$cmd_name"',
+            '  "${generation_cmd[@]}" >>"$QUALITY_STDOUT" 2>>"$QUALITY_STDERR"',
+            '  unset -n generation_cmd',
+            "done",
+            '"${QUALITY_SUMMARIZE_CMD[@]}" >>"$QUALITY_STDOUT" 2>>"$QUALITY_STDERR"',
             "",
         ]
     )
@@ -514,6 +528,7 @@ def serialize_quality_job(job: QualityExperimentJob) -> dict[str, Any]:
         "source_index": job.source_index,
         "model": job.model,
         "workload": str(job.workload),
+        "workloads": [str(workload) for workload in job.workloads],
         "endpoint": job.endpoint,
         "launch": _launch_to_dict(job.launch),
         "generation": {
@@ -553,6 +568,7 @@ def deserialize_quality_job(payload: dict[str, Any]) -> QualityExperimentJob:
         source_index=int(payload["source_index"]),
         model=str(payload["model"]),
         workload=Path(str(payload["workload"])),
+        workloads=tuple(Path(str(item)) for item in payload.get("workloads", [payload["workload"]])),
         endpoint=str(payload["endpoint"]),
         launch=_launch_from_dict(payload["launch"]),
         generation=QualityGenerationConfig(
@@ -586,10 +602,32 @@ def deserialize_quality_job(payload: dict[str, Any]) -> QualityExperimentJob:
     )
 
 
+def _build_quality_live_generation_commands(
+    *,
+    run_id: str,
+    job: QualityExperimentJob,
+    python_executable: str,
+    base_url: str,
+    output_dir: Path,
+) -> tuple[tuple[str, ...], ...]:
+    return tuple(
+        _build_quality_live_generation_command(
+            run_id=run_id,
+            job=job,
+            workload=workload,
+            python_executable=python_executable,
+            base_url=base_url,
+            output_dir=_quality_shard_output_dir(output_dir, workload),
+        )
+        for workload in job.workloads
+    )
+
+
 def _build_quality_live_generation_command(
     *,
     run_id: str,
     job: QualityExperimentJob,
+    workload: Path,
     python_executable: str,
     base_url: str,
     output_dir: Path,
@@ -608,7 +646,7 @@ def _build_quality_live_generation_command(
         "--output-dir",
         str(output_dir),
         "--workload",
-        str(job.workload),
+        str(workload),
         "--model",
         job.model,
         "--base-url",
@@ -644,6 +682,36 @@ def _build_quality_live_generation_command(
     return tuple(command)
 
 
+def _build_quality_summarize_command(
+    *,
+    run_id: str,
+    job: QualityExperimentJob,
+    python_executable: str,
+    output_dir: Path,
+) -> tuple[str, ...]:
+    command = [
+        python_executable,
+        "-m",
+        "output_quality_profiler.cli",
+        "summarize-live-generation",
+        "--job-id",
+        job.job_id,
+        "--run-id",
+        run_id,
+        "--output-dir",
+        str(output_dir),
+        "--model",
+        job.model,
+    ]
+    for workload in job.workloads:
+        command.extend(["--shard-output-dir", str(_quality_shard_output_dir(output_dir, workload))])
+    return tuple(command)
+
+
+def _quality_shard_output_dir(output_dir: Path, workload: Path) -> Path:
+    return output_dir / "shards" / _dataset_slug(workload)
+
+
 def _resolved_quality_concurrency(generation: QualityGenerationConfig) -> int:
     if generation.max_concurrency is not None:
         return generation.max_concurrency
@@ -674,6 +742,7 @@ def _quality_job_state(
         "status": "planned",
         "model": job.model,
         "workload": str(job.workload),
+        "workloads": [str(workload) for workload in job.workloads],
         "endpoint": job.endpoint,
         "result_dir": str(job.result_dir),
         "server_signature_key": job.server_signature_key,

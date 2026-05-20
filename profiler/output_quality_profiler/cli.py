@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Sequence
 
-from .generation import run_live_generation
+from .generation import run_live_generation, summarize_live_generation_shards
 from .manifest import load_quality_manifest
 from .materialization import load_materialization_config, source_request_counts
 from .models import QualityDecodingConfig
@@ -54,6 +54,14 @@ def build_parser() -> argparse.ArgumentParser:
     live_generation.add_argument("--force", action="store_true")
     live_generation.set_defaults(handler=_run_live_generation)
 
+    summarize = subparsers.add_parser("summarize-live-generation")
+    summarize.add_argument("--job-id", required=True)
+    summarize.add_argument("--output-dir", type=Path, required=True)
+    summarize.add_argument("--shard-output-dir", type=Path, action="append", required=True)
+    summarize.add_argument("--model", required=True)
+    summarize.add_argument("--run-id", default=None)
+    summarize.set_defaults(handler=_summarize_live_generation)
+
     return parser
 
 
@@ -92,20 +100,20 @@ def _dry_run(args: argparse.Namespace) -> int:
     jobs = []
     for experiment in manifest.experiments:
         for model in experiment.models:
-            for workload in experiment.workloads:
-                jobs.append(
-                    {
-                        "experiment_id": experiment.experiment_id,
-                        "model": model,
-                        "workload": str(workload),
-                        "endpoint": experiment.endpoint,
-                        "gpu_count": experiment.launch.gpu_count,
-                        "tensor_parallel_size": experiment.launch.tensor_parallel_size,
-                        "decoding": experiment.generation.decoding.to_dict(),
-                        "concurrency_source": experiment.generation.concurrency_source,
-                        "concurrency_mst_fraction": experiment.generation.concurrency_mst_fraction,
-                    }
-                )
+            jobs.append(
+                {
+                    "experiment_id": experiment.experiment_id,
+                    "model": model,
+                    "workloads": [str(workload) for workload in experiment.workloads],
+                    "shard_count": len(experiment.workloads),
+                    "endpoint": experiment.endpoint,
+                    "gpu_count": experiment.launch.gpu_count,
+                    "tensor_parallel_size": experiment.launch.tensor_parallel_size,
+                    "decoding": experiment.generation.decoding.to_dict(),
+                    "concurrency_source": experiment.generation.concurrency_source,
+                    "concurrency_mst_fraction": experiment.generation.concurrency_mst_fraction,
+                }
+            )
     print(
         json.dumps(
             {
@@ -145,6 +153,18 @@ def _run_live_generation(args: argparse.Namespace) -> int:
             max_tokens_policy=args.max_tokens_policy,
             prompt_token_buffer=args.prompt_token_buffer,
         ),
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+def _summarize_live_generation(args: argparse.Namespace) -> int:
+    summary = summarize_live_generation_shards(
+        job_id=args.job_id,
+        output_dir=args.output_dir,
+        shard_output_dirs=args.shard_output_dir,
+        model=args.model,
+        run_id=args.run_id,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0

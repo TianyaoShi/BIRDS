@@ -6,7 +6,7 @@ import os
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Iterable, Sequence
 
 from llm_mst_finder.records import RequestRecord, SampleRequest
 from llm_mst_finder.request_client import (
@@ -52,6 +52,65 @@ def run_live_generation(
             force=force,
         )
     )
+
+
+def summarize_live_generation_shards(
+    *,
+    job_id: str,
+    output_dir: str | Path,
+    shard_output_dirs: Iterable[str | Path],
+    model: str,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    resolved_output_dir = Path(output_dir)
+    resolved_output_dir.mkdir(parents=True, exist_ok=True)
+    shard_dirs = [Path(item) for item in shard_output_dirs]
+    shard_summaries: list[dict[str, Any]] = []
+    total_requests = 0
+    successful_requests = 0
+    failed_requests = 0
+    response_text_truncated = 0
+    responses_path = resolved_output_dir / "responses.jsonl"
+    failed_path = resolved_output_dir / "failed_requests.jsonl"
+    with responses_path.open("w", encoding="utf-8") as responses_handle, failed_path.open(
+        "w", encoding="utf-8"
+    ) as failed_handle:
+        for shard_dir in shard_dirs:
+            summary_path = shard_dir / "summary.json"
+            if not summary_path.is_file():
+                raise FileNotFoundError(f"missing shard summary: {summary_path}")
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            shard_summaries.append(summary)
+            total_requests += int(summary.get("total_requests", 0))
+            successful_requests += int(summary.get("successful_requests", 0))
+            failed_requests += int(summary.get("failed_requests", 0))
+            response_text_truncated += int(summary.get("response_text_truncated", 0))
+            _copy_jsonl(shard_dir / "responses.jsonl", responses_handle)
+            failed_jsonl = shard_dir / "failed_requests.jsonl"
+            if failed_jsonl.is_file():
+                _copy_jsonl(failed_jsonl, failed_handle)
+    aggregate = {
+        "run_id": run_id,
+        "job_id": job_id,
+        "model": model,
+        "shard_count": len(shard_dirs),
+        "shard_output_dirs": [str(item) for item in shard_dirs],
+        "total_requests": total_requests,
+        "successful_requests": successful_requests,
+        "failed_requests": failed_requests,
+        "response_text_truncated": response_text_truncated,
+        "shards": shard_summaries,
+        "artifacts": {
+            "responses_jsonl": "responses.jsonl",
+            "failed_requests_jsonl": "failed_requests.jsonl",
+            "summary_json": "summary.json",
+        },
+    }
+    (resolved_output_dir / "summary.json").write_text(
+        json.dumps(aggregate, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return aggregate
 
 
 async def run_live_generation_async(
@@ -323,6 +382,14 @@ def _write_jsonl(path: Path, rows: Sequence[dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _copy_jsonl(path: Path, output_handle: Any) -> None:
+    if not path.is_file():
+        raise FileNotFoundError(f"missing jsonl artifact: {path}")
+    with path.open("r", encoding="utf-8") as input_handle:
+        for line in input_handle:
+            output_handle.write(line)
 
 
 def _restore_env(name: str, value: str | None) -> None:

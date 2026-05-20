@@ -19,8 +19,8 @@ def expand_quality_manifest(
     result_root = run_root / "responses" if run_root is not None else Path("results") / "quality" / "responses"
     for template in manifest.experiments:
         base_id = template.experiment_id or f"quality-exp-{template.source_index + 1:03d}"
-        combinations = [(model, workload) for model in template.models for workload in template.workloads]
-        for model, workload in combinations:
+        for model in template.models:
+            workload = template.workloads[0]
             launch = template.launch
             probe = _build_probe(
                 model=model,
@@ -46,14 +46,14 @@ def expand_quality_manifest(
                         else launch.tensor_parallel_size
                     ),
                 )
-            if len(combinations) == 1 and template.experiment_id is not None:
+            if len(template.models) == 1 and template.experiment_id is not None:
                 job_id = template.experiment_id
             else:
                 combo_hash = stable_hash(
                     {
                         "base_id": base_id,
                         "model": model,
-                        "workload": str(workload),
+                        "workloads": [str(item) for item in template.workloads],
                     },
                     length=10,
                 )
@@ -75,16 +75,16 @@ def expand_quality_manifest(
                     source_index=template.source_index,
                     model=model,
                     workload=workload,
+                    workloads=template.workloads,
                     endpoint=template.endpoint,
                     launch=launch,
                     generation=template.generation,
                     hardware=template.hardware,
                     probe=template.probe,
-                    result_dir=result_root / model_slug / _dataset_slug(workload),
+                    result_dir=result_root / model_slug,
                     model_slug=model_slug,
-                    shard_id=shard_id,
+                    shard_id="multi_shard" if len(template.workloads) > 1 else shard_id,
                     server_signature_key=server_signature_key,
                 )
             )
     return jobs
-

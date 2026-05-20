@@ -133,7 +133,8 @@ def test_materialize_quality_run_plan_renders_script_and_task_shell(tmp_path: Pa
     assert "emit-quality-task-shell" in script
     assert "mark-quality-task-running" in script
     assert "finalize-quality-task" in script
-    assert '"${QUALITY_GENERATION_CMD[@]}" >>"$QUALITY_STDOUT" 2>>"$QUALITY_STDERR"' in script
+    assert '"${generation_cmd[@]}" >>"$QUALITY_STDOUT" 2>>"$QUALITY_STDERR"' in script
+    assert '"${QUALITY_SUMMARIZE_CMD[@]}" >>"$QUALITY_STDOUT" 2>>"$QUALITY_STDERR"' in script
 
     task_shell = render_quality_task_shell(run_plan["groups"][0]["plan_path"], 0)
     assert "output_quality_profiler.mock_openai_server" in task_shell

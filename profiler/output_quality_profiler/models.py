@@ -220,6 +220,7 @@ class QualityExperimentJob:
     source_index: int
     model: str
     workload: Path
+    workloads: tuple[Path, ...]
     endpoint: str
     launch: LaunchConfig
     generation: QualityGenerationConfig
@@ -230,3 +231,6 @@ class QualityExperimentJob:
     shard_id: str
     server_signature_key: str
 
+    def __post_init__(self) -> None:
+        if not self.workloads:
+            raise ValueError("workloads must be non-empty")
