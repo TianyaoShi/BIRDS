@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 
@@ -17,6 +18,7 @@ def expand_quality_manifest(
     jobs: list[QualityExperimentJob] = []
     seen_ids: set[str] = set()
     result_root = run_root / "responses" if run_root is not None else Path("results") / "quality" / "responses"
+    model_counts = Counter(model for template in manifest.experiments for model in template.models)
     for template in manifest.experiments:
         base_id = template.experiment_id or f"quality-exp-{template.source_index + 1:03d}"
         for model in template.models:
@@ -63,6 +65,9 @@ def expand_quality_manifest(
             seen_ids.add(job_id)
 
             model_slug = slugify(model, max_length=56)
+            result_dir = result_root / model_slug
+            if model_counts[model] > 1:
+                result_dir = result_root / f"{model_slug}__{slugify(job_id, max_length=56)}"
             shard_id = workload.stem
             server_signature_key = _server_signature_key(
                 model=model,
@@ -81,7 +86,7 @@ def expand_quality_manifest(
                     generation=template.generation,
                     hardware=template.hardware,
                     probe=template.probe,
-                    result_dir=result_root / model_slug,
+                    result_dir=result_dir,
                     model_slug=model_slug,
                     shard_id="multi_shard" if len(template.workloads) > 1 else shard_id,
                     server_signature_key=server_signature_key,

@@ -65,3 +65,39 @@ aggregation. Aggregation also reports scores by candidate position. If those
 position breakdowns or a larger audit confirm judge position bias, run
 position-swap judging for the affected comparison set and aggregate the paired
 judgments before reporting final scores.
+
+## Ground-Truth Benchmark Compatibility
+
+Phase F adds a two-step path for benchmarks with ground truth:
+
+1. select missing `(model, benchmark)` pairs from
+   `experiments/quality/benchmark-scores-1.xlsx`;
+2. collect responses with the same Slurm quality generation path, then score
+   saved response JSONL with benchmark adapters.
+
+Supported targets are `SuperGPQA`, `RepoBench`, `CrossCodeEval`, and
+`LongBench-v1-covered`. LongBench is reported as a covered-task subset, not full
+LongBench v1.
+
+```bash
+PYTHONPATH=profiler:. python -m output_quality_profiler.cli select-missing-benchmark-scores \
+  --scorebook experiments/quality/benchmark-scores-1.xlsx \
+  --output-dir results/quality/<run_id>/benchmark_selection
+
+PYTHONPATH=profiler:. python -m output_quality_profiler.cli build-benchmark-generation-manifest \
+  --missing-plan results/quality/<run_id>/benchmark_selection/missing_scores.json \
+  --base-manifest experiments/quality/h100_sharegpt_wildchat_10k_responses.yaml \
+  --output experiments/quality/<run_id>_benchmark_responses.yaml \
+  --include-benchmark CrossCodeEval
+
+PYTHONPATH=profiler:. python -m output_quality_profiler.cli score-benchmark-responses \
+  --benchmark CrossCodeEval \
+  --responses-root results/quality/<run_id>/responses/<model-or-job-dir> \
+  --output-dir results/quality/<run_id>/benchmark_scores/crosscodeeval/<model-or-job-dir>
+```
+
+The current adapters are intentionally lightweight compatibility adapters:
+SuperGPQA uses answer-label extraction, RepoBench/CrossCodeEval report
+code-completion exact-match/similarity metrics, and LongBench covered tasks use
+ROUGE-L F1 for summarization plus token F1 for QA-style tasks. Treat these as
+adapter outputs until the official evaluator shims are wired in.

@@ -675,6 +675,8 @@ def _build_quality_live_generation_command(
         decoding.max_tokens_policy,
         "--prompt-token-buffer",
         str(decoding.prompt_token_buffer),
+        "--extra-body-json",
+        json.dumps(decoding.extra_body, sort_keys=True),
         "--force",
     ]
     if job.launch.max_model_len is not None:

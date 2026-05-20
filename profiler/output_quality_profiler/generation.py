@@ -339,7 +339,8 @@ def _sample_with_quality_decoding(
             max_tokens,
             max(1, int(serving_max_model_len) - int(sample.prompt_len) - decoding.prompt_token_buffer),
         )
-    extra_body = decoding.to_request_extra_body()
+    extra_body = dict(sample.extra_body or {})
+    extra_body.update(decoding.to_request_extra_body())
     metadata = dict(sample.metadata)
     metadata["prompt"] = sample.prompt
     return replace(

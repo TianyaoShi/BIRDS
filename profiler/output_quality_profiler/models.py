@@ -102,10 +102,8 @@ class QualityDecodingConfig:
         _require_positive_int("generation.decoding.top_k", self.top_k)
         _require_probability("generation.decoding.min_p", self.min_p)
         if self.n != 1:
-            raise ValueError("generation.decoding.n must be 1 for V1 quality profiling")
+            raise ValueError("generation.decoding.n must be 1 for quality profiling")
         _require_positive_int("generation.decoding.max_tokens", self.max_tokens)
-        if self.max_tokens != 32768:
-            raise ValueError("generation.decoding.max_tokens must be 32768 for V1")
         if self.max_tokens_policy != "model_context_minus_prompt_buffer":
             raise ValueError(
                 "generation.decoding.max_tokens_policy must be "

@@ -51,6 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="model_context_minus_prompt_buffer",
     )
     live_generation.add_argument("--prompt-token-buffer", type=int, default=128)
+    live_generation.add_argument("--extra-body-json", default=None)
     live_generation.add_argument("--force", action="store_true")
     live_generation.set_defaults(handler=_run_live_generation)
 
@@ -81,6 +82,26 @@ def build_parser() -> argparse.ArgumentParser:
     aggregate_judge.add_argument("--judge-results", type=Path, required=True)
     aggregate_judge.add_argument("--output-dir", type=Path, default=None)
     aggregate_judge.set_defaults(handler=_aggregate_judge_results)
+
+    select_benchmark = subparsers.add_parser("select-missing-benchmark-scores")
+    select_benchmark.add_argument("--scorebook", type=Path, required=True)
+    select_benchmark.add_argument("--output-dir", type=Path, required=True)
+    select_benchmark.add_argument("--target", action="append", default=None)
+    select_benchmark.set_defaults(handler=_select_missing_benchmark_scores)
+
+    build_benchmark_manifest = subparsers.add_parser("build-benchmark-generation-manifest")
+    build_benchmark_manifest.add_argument("--missing-plan", type=Path, required=True)
+    build_benchmark_manifest.add_argument("--base-manifest", type=Path, required=True)
+    build_benchmark_manifest.add_argument("--output", type=Path, required=True)
+    build_benchmark_manifest.add_argument("--run-id", default=None)
+    build_benchmark_manifest.add_argument("--include-benchmark", action="append", default=None)
+    build_benchmark_manifest.set_defaults(handler=_build_benchmark_generation_manifest)
+
+    score_benchmark = subparsers.add_parser("score-benchmark-responses")
+    score_benchmark.add_argument("--benchmark", required=True)
+    score_benchmark.add_argument("--responses-root", type=Path, required=True)
+    score_benchmark.add_argument("--output-dir", type=Path, required=True)
+    score_benchmark.set_defaults(handler=_score_benchmark_responses)
 
     return parser
 
@@ -172,6 +193,7 @@ def _run_live_generation(args: argparse.Namespace) -> int:
             max_tokens=args.max_tokens,
             max_tokens_policy=args.max_tokens_policy,
             prompt_token_buffer=args.prompt_token_buffer,
+            extra_body=_parse_json_mapping(args.extra_body_json, field_name="--extra-body-json"),
         ),
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
@@ -220,6 +242,56 @@ def _aggregate_judge_results(args: argparse.Namespace) -> int:
     )
     print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
     return 0
+
+
+def _select_missing_benchmark_scores(args: argparse.Namespace) -> int:
+    from .benchmark_selection import select_missing_benchmark_scores
+
+    result = select_missing_benchmark_scores(
+        scorebook=args.scorebook,
+        output_dir=args.output_dir,
+        targets=tuple(args.target) if args.target else None,
+    )
+    print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _build_benchmark_generation_manifest(args: argparse.Namespace) -> int:
+    from .benchmark_selection import build_benchmark_generation_manifest
+
+    result = build_benchmark_generation_manifest(
+        missing_plan=args.missing_plan,
+        base_manifest=args.base_manifest,
+        output_path=args.output,
+        run_id=args.run_id,
+        include_benchmarks=tuple(args.include_benchmark) if args.include_benchmark else None,
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _score_benchmark_responses(args: argparse.Namespace) -> int:
+    from .benchmark_adapters import score_benchmark_responses
+
+    payload = score_benchmark_responses(
+        benchmark=args.benchmark,
+        responses_root=args.responses_root,
+        output_dir=args.output_dir,
+    )
+    print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _parse_json_mapping(raw: str | None, *, field_name: str) -> dict:
+    if raw is None or raw == "":
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{field_name} must be valid JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{field_name} must decode to a JSON object")
+    return payload
 
 
 if __name__ == "__main__":  # pragma: no cover
