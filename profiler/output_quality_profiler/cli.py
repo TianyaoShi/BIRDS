@@ -91,6 +91,16 @@ def build_parser() -> argparse.ArgumentParser:
     aggregate_judge.add_argument("--output-dir", type=Path, default=None)
     aggregate_judge.set_defaults(handler=_aggregate_judge_results)
 
+    report_judge = subparsers.add_parser("report-judge-results")
+    report_judge.add_argument("--judge-responses-dir", type=Path, required=True)
+    report_judge.add_argument("--manifest-dir", type=Path, action="append", required=True)
+    report_judge.add_argument("--output-dir", type=Path, required=True)
+    report_judge.add_argument(
+        "--reference-model-slug",
+        default="meta-llama-llama-3-1-8b-instruct",
+    )
+    report_judge.set_defaults(handler=_report_judge_results)
+
     split_judge = subparsers.add_parser("split-judge-batch-by-candidate")
     split_judge.add_argument("--batch-jsonl", type=Path, required=True)
     split_judge.add_argument("--batch-manifest", type=Path, required=True)
@@ -271,6 +281,19 @@ def _aggregate_judge_results(args: argparse.Namespace) -> int:
         batch_manifest=args.batch_manifest,
         judge_results_jsonl=args.judge_results,
         output_dir=args.output_dir,
+    )
+    print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _report_judge_results(args: argparse.Namespace) -> int:
+    from .reporting import report_judge_results
+
+    payload = report_judge_results(
+        judge_responses_dir=args.judge_responses_dir,
+        manifest_dirs=tuple(args.manifest_dir),
+        output_dir=args.output_dir,
+        reference_model_slug=args.reference_model_slug,
     )
     print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
     return 0
