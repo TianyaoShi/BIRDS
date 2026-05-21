@@ -37,6 +37,8 @@ def build_parser() -> argparse.ArgumentParser:
     live_generation.add_argument("--endpoint", required=True)
     live_generation.add_argument("--request-timeout-s", type=float, required=True)
     live_generation.add_argument("--max-concurrency", type=int, required=True)
+    live_generation.add_argument("--load-mode", choices=("closed_loop", "open_loop"), default="closed_loop")
+    live_generation.add_argument("--request-rate", type=float, default=None)
     live_generation.add_argument("--response-text-max-chars", type=int, required=True)
     live_generation.add_argument("--serving-max-model-len", type=int, default=None)
     live_generation.add_argument("--run-id", default=None)
@@ -174,6 +176,9 @@ def _dry_run(args: argparse.Namespace) -> int:
                     "gpu_count": experiment.launch.gpu_count,
                     "tensor_parallel_size": experiment.launch.tensor_parallel_size,
                     "decoding": experiment.generation.decoding.to_dict(),
+                    "load_mode": experiment.generation.load_mode,
+                    "request_rate": experiment.generation.request_rate,
+                    "max_concurrency": experiment.generation.max_concurrency,
                     "concurrency_source": experiment.generation.concurrency_source,
                     "concurrency_mst_fraction": experiment.generation.concurrency_mst_fraction,
                 }
@@ -203,6 +208,8 @@ def _run_live_generation(args: argparse.Namespace) -> int:
         endpoint=args.endpoint,
         request_timeout_s=args.request_timeout_s,
         max_concurrency=args.max_concurrency,
+        load_mode=args.load_mode,
+        request_rate=args.request_rate,
         response_text_max_chars=args.response_text_max_chars,
         serving_max_model_len=args.serving_max_model_len,
         run_id=args.run_id,

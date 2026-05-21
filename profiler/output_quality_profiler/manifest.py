@@ -31,6 +31,8 @@ _TOP_LEVEL_KEYS = {"run", "slurm", "hardware", "probe", "launch", "generation", 
 _GENERATION_KEYS = {
     "request_timeout_s",
     "max_concurrency",
+    "request_rate",
+    "load_mode",
     "concurrency_source",
     "concurrency_mst_fraction",
     "preserve_request_order",
@@ -170,6 +172,12 @@ def _merge_generation_config(
                 if "max_concurrency" not in item
                 else _optional_int(item.get("max_concurrency"), f"{field_name}.max_concurrency")
             ),
+            request_rate=(
+                base.request_rate
+                if "request_rate" not in item
+                else _optional_float(item.get("request_rate"), f"{field_name}.request_rate")
+            ),
+            load_mode=str(item.get("load_mode", base.load_mode)),
             concurrency_source=str(item.get("concurrency_source", base.concurrency_source)),
             concurrency_mst_fraction=float(
                 item.get("concurrency_mst_fraction", base.concurrency_mst_fraction)
@@ -293,6 +301,14 @@ def _optional_int(value: Any, field_name: str) -> int | None:
     if value is None:
         return None
     return _expect_int(value, field_name, minimum=1)
+
+
+def _optional_float(value: Any, field_name: str) -> float | None:
+    if value is None:
+        return None
+    if not isinstance(value, (int, float)):
+        raise QualityManifestValidationError(f"{field_name} must be a number")
+    return float(value)
 
 
 def _check_allowed_keys(payload: Mapping[str, Any], field_name: str, allowed: set[str]) -> None:

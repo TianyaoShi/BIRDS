@@ -7,6 +7,7 @@ import yaml
 
 from slurm_orchestrator.cli import main as slurm_main
 from slurm_orchestrator.quality import (
+    _quality_shard_output_dir,
     collect_quality_run,
     finalize_quality_task,
     materialize_quality_run_plan,
@@ -60,7 +61,28 @@ def _write_quality_workload(tmp_path: Path) -> Path:
     return workload_path
 
 
-def _write_quality_manifest(tmp_path: Path, workload: Path) -> Path:
+def _write_quality_manifest(
+    tmp_path: Path,
+    workload: Path,
+    generation_overrides: dict[str, object] | None = None,
+) -> Path:
+    generation = {
+        "concurrency_source": "explicit",
+        "max_concurrency": 1,
+        "include_prompt_text": True,
+        "preserve_request_order": True,
+        "decoding": {
+            "temperature": 0.6,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "n": 1,
+            "max_tokens": 32768,
+            "max_tokens_policy": "model_context_minus_prompt_buffer",
+            "prompt_token_buffer": 128,
+        },
+    }
+    generation.update(generation_overrides or {})
     manifest_path = tmp_path / "quality_manifest.yaml"
     manifest_path.write_text(
         yaml.safe_dump(
@@ -91,22 +113,7 @@ def _write_quality_manifest(tmp_path: Path, workload: Path) -> Path:
                     "readiness_timeout_s": 30,
                     "readiness_interval_s": 1,
                 },
-                "generation": {
-                    "concurrency_source": "explicit",
-                    "max_concurrency": 1,
-                    "include_prompt_text": True,
-                    "preserve_request_order": True,
-                    "decoding": {
-                        "temperature": 0.6,
-                        "top_p": 0.95,
-                        "top_k": 20,
-                        "min_p": 0.0,
-                        "n": 1,
-                        "max_tokens": 32768,
-                        "max_tokens_policy": "model_context_minus_prompt_buffer",
-                        "prompt_token_buffer": 128,
-                    },
-                },
+                "generation": generation,
                 "experiments": [
                     {"id": "mock-quality", "model": "mock-quality-model", "workload": str(workload)}
                 ],
@@ -140,7 +147,39 @@ def test_materialize_quality_run_plan_renders_script_and_task_shell(tmp_path: Pa
     assert "output_quality_profiler.mock_openai_server" in task_shell
     assert "output_quality_profiler.cli run-live-generation" in task_shell
     assert "--max-concurrency 1" in task_shell
+    assert "--load-mode closed_loop" in task_shell
     assert "--temperature 0.6" in task_shell
+
+
+def test_materialize_quality_run_plan_renders_open_loop_settings(tmp_path: Path) -> None:
+    workload = _write_quality_workload(tmp_path)
+    manifest = load_quality_manifest(
+        _write_quality_manifest(
+            tmp_path,
+            workload,
+            generation_overrides={
+                "max_concurrency": 512,
+                "load_mode": "open_loop",
+                "request_rate": 21.0,
+            },
+        )
+    )
+
+    run_plan = materialize_quality_run_plan(manifest=manifest, run_id="quality-open-loop")
+    task_shell = render_quality_task_shell(run_plan["groups"][0]["plan_path"], 0)
+
+    assert "--max-concurrency 512" in task_shell
+    assert "--load-mode open_loop" in task_shell
+    assert "--request-rate 21.0" in task_shell
+
+
+def test_quality_shard_output_dirs_are_unique_for_generic_shards(tmp_path: Path) -> None:
+    workload = _write_quality_workload(tmp_path)
+    sibling = workload.with_name("shard_001.yaml")
+    sibling.write_text(workload.read_text(encoding="utf-8"), encoding="utf-8")
+    output_dir = tmp_path / "responses"
+
+    assert _quality_shard_output_dir(output_dir, workload) != _quality_shard_output_dir(output_dir, sibling)
 
 
 def test_finalize_and_collect_quality_run(tmp_path: Path) -> None:

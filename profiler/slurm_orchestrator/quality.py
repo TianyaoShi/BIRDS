@@ -13,7 +13,7 @@ from typing import Any
 from local_orchestrator.lifecycle import render_launch_command
 from local_orchestrator.matrix import _dataset_slug
 from local_orchestrator.models import LaunchConfig, SlurmConfig
-from local_orchestrator.utils import now_utc_iso
+from local_orchestrator.utils import now_utc_iso, stable_hash
 from output_quality_profiler.manifest import load_quality_manifest
 from output_quality_profiler.matrix import expand_quality_manifest
 from output_quality_profiler.models import (
@@ -546,6 +546,8 @@ def serialize_quality_job(job: QualityExperimentJob) -> dict[str, Any]:
         "generation": {
             "request_timeout_s": job.generation.request_timeout_s,
             "max_concurrency": job.generation.max_concurrency,
+            "load_mode": job.generation.load_mode,
+            "request_rate": job.generation.request_rate,
             "concurrency_source": job.generation.concurrency_source,
             "concurrency_mst_fraction": job.generation.concurrency_mst_fraction,
             "preserve_request_order": job.generation.preserve_request_order,
@@ -587,6 +589,10 @@ def deserialize_quality_job(payload: dict[str, Any]) -> QualityExperimentJob:
             request_timeout_s=float(generation["request_timeout_s"]),
             max_concurrency=(
                 None if generation.get("max_concurrency") is None else int(generation["max_concurrency"])
+            ),
+            load_mode=str(generation.get("load_mode", "closed_loop")),
+            request_rate=(
+                None if generation.get("request_rate") is None else float(generation["request_rate"])
             ),
             concurrency_source=str(generation["concurrency_source"]),
             concurrency_mst_fraction=float(generation["concurrency_mst_fraction"]),
@@ -670,6 +676,8 @@ def _build_quality_live_generation_command(
         str(job.generation.request_timeout_s),
         "--max-concurrency",
         str(max_concurrency),
+        "--load-mode",
+        job.generation.load_mode,
         "--response-text-max-chars",
         str(job.generation.response_text_max_chars),
         "--temperature",
@@ -692,6 +700,8 @@ def _build_quality_live_generation_command(
         json.dumps(decoding.extra_body, sort_keys=True),
         "--force",
     ]
+    if job.generation.request_rate is not None:
+        command.extend(["--request-rate", str(job.generation.request_rate)])
     if job.launch.max_model_len is not None:
         command.extend(["--serving-max-model-len", str(job.launch.max_model_len)])
     return tuple(command)
@@ -724,7 +734,9 @@ def _build_quality_summarize_command(
 
 
 def _quality_shard_output_dir(output_dir: Path, workload: Path) -> Path:
-    return output_dir / "shards" / _dataset_slug(workload)
+    workload_key = str(workload.resolve())
+    shard_slug = f"{_dataset_slug(workload)}-{stable_hash(workload_key, length=8)}"
+    return output_dir / "shards" / shard_slug
 
 
 def _quality_incomplete_workloads(*, output_dir: Path, job: QualityExperimentJob) -> tuple[Path, ...]:
@@ -786,6 +798,8 @@ def _quality_job_state(
         "generation": {
             "request_timeout_s": job.generation.request_timeout_s,
             "max_concurrency": _resolved_quality_concurrency(job.generation),
+            "load_mode": job.generation.load_mode,
+            "request_rate": job.generation.request_rate,
             "concurrency_source": job.generation.concurrency_source,
             "concurrency_mst_fraction": job.generation.concurrency_mst_fraction,
             "response_text_max_chars": job.generation.response_text_max_chars,

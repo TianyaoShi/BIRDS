@@ -87,8 +87,38 @@ def test_load_quality_manifest_accepts_v1_defaults(tmp_path: Path) -> None:
     assert manifest.generation.decoding.max_tokens == 32768
     assert manifest.generation.concurrency_source == "mst_fraction"
     assert manifest.generation.concurrency_mst_fraction == pytest.approx(0.40)
+    assert manifest.generation.load_mode == "closed_loop"
+    assert manifest.generation.request_rate is None
     assert manifest.generation.include_prompt_text is True
     assert manifest.experiments[0].workloads == (workload.resolve(),)
+
+
+def test_load_quality_manifest_accepts_open_loop_generation(tmp_path: Path) -> None:
+    workload = _write_workload(tmp_path)
+    payload = _base_manifest(workload)
+    payload["generation"].update(
+        {
+            "concurrency_source": "explicit",
+            "max_concurrency": 512,
+            "load_mode": "open_loop",
+            "request_rate": 21.0,
+        }
+    )
+    manifest = load_quality_manifest(_write_manifest(tmp_path, payload))
+
+    assert manifest.generation.concurrency_source == "explicit"
+    assert manifest.generation.max_concurrency == 512
+    assert manifest.generation.load_mode == "open_loop"
+    assert manifest.generation.request_rate == pytest.approx(21.0)
+
+
+def test_load_quality_manifest_rejects_open_loop_without_request_rate(tmp_path: Path) -> None:
+    workload = _write_workload(tmp_path)
+    payload = _base_manifest(workload)
+    payload["generation"].update({"concurrency_source": "explicit", "max_concurrency": 512, "load_mode": "open_loop"})
+
+    with pytest.raises(QualityManifestValidationError, match="request_rate"):
+        load_quality_manifest(_write_manifest(tmp_path, payload))
 
 
 def test_load_quality_manifest_rejects_search_section(tmp_path: Path) -> None:
@@ -125,4 +155,3 @@ def test_load_quality_manifest_rejects_non_40_percent_mst_fraction(tmp_path: Pat
 
     with pytest.raises(QualityManifestValidationError, match="0.40"):
         load_quality_manifest(_write_manifest(tmp_path, payload))
-

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
@@ -39,6 +40,8 @@ def run_live_generation(
     max_concurrency: int,
     response_text_max_chars: int,
     decoding: QualityDecodingConfig,
+    load_mode: str = "closed_loop",
+    request_rate: float | None = None,
     serving_max_model_len: int | None = None,
     run_id: str | None = None,
     force: bool = False,
@@ -53,6 +56,8 @@ def run_live_generation(
             endpoint=endpoint,
             request_timeout_s=request_timeout_s,
             max_concurrency=max_concurrency,
+            load_mode=load_mode,
+            request_rate=request_rate,
             response_text_max_chars=response_text_max_chars,
             decoding=decoding,
             serving_max_model_len=serving_max_model_len,
@@ -133,12 +138,20 @@ async def run_live_generation_async(
     max_concurrency: int,
     response_text_max_chars: int,
     decoding: QualityDecodingConfig,
+    load_mode: str = "closed_loop",
+    request_rate: float | None = None,
     serving_max_model_len: int | None = None,
     run_id: str | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
     if max_concurrency <= 0:
         raise ValueError("max_concurrency must be positive")
+    if load_mode not in {"closed_loop", "open_loop"}:
+        raise ValueError("load_mode must be closed_loop or open_loop")
+    if request_rate is not None and request_rate <= 0:
+        raise ValueError("request_rate must be positive")
+    if load_mode == "open_loop" and request_rate is None:
+        raise ValueError("request_rate is required when load_mode=open_loop")
     resolved_output_dir = Path(output_dir)
     if resolved_output_dir.exists() and any(resolved_output_dir.iterdir()):
         if not force:
@@ -177,16 +190,29 @@ async def run_live_generation_async(
         )
         semaphore = asyncio.Semaphore(max_concurrency)
         async with client:
-            tasks = [
-                _send_one(
+            if load_mode == "open_loop":
+                assert request_rate is not None
+                tasks = await _schedule_open_loop_requests(
                     client=client,
                     semaphore=semaphore,
-                    sample=sample,
-                    request_index=index,
+                    samples=samples,
                     job_id=job_id,
+                    request_rate=request_rate,
                 )
-                for index, sample in enumerate(samples)
-            ]
+            else:
+                tasks = [
+                    asyncio.create_task(
+                        _send_one(
+                            client=client,
+                            semaphore=semaphore,
+                            sample=sample,
+                            request_index=index,
+                            job_id=job_id,
+                            scheduled_send_ts=float(index),
+                        )
+                    )
+                    for index, sample in enumerate(samples)
+                ]
             records = await asyncio.gather(*tasks)
     finally:
         _restore_env(CAPTURE_RESPONSE_TEXT_ENV, previous_capture)
@@ -214,6 +240,8 @@ async def run_live_generation_async(
         base_url=base_url,
         endpoint=endpoint,
         max_concurrency=max_concurrency,
+        load_mode=load_mode,
+        request_rate=request_rate,
         response_text_max_chars=response_text_max_chars,
         decoding=decoding,
         workload_metadata=workload_metadata,
@@ -229,14 +257,46 @@ async def _send_one(
     sample: SampleRequest,
     request_index: int,
     job_id: str,
+    scheduled_send_ts: float,
 ) -> RequestRecord:
     async with semaphore:
         return await client.send_request(
             sample,
             request_id=f"{job_id}-{request_index:06d}",
             trial_id=job_id,
-            scheduled_send_ts=float(request_index),
+            scheduled_send_ts=scheduled_send_ts,
         )
+
+
+async def _schedule_open_loop_requests(
+    *,
+    client: RequestClient,
+    semaphore: asyncio.Semaphore,
+    samples: Sequence[SampleRequest],
+    job_id: str,
+    request_rate: float,
+) -> list[asyncio.Task[RequestRecord]]:
+    start_ts = time.perf_counter()
+    tasks: list[asyncio.Task[RequestRecord]] = []
+    for index, sample in enumerate(samples):
+        scheduled_send_ts = start_ts + (index / request_rate)
+        sleep_s = scheduled_send_ts - time.perf_counter()
+        if sleep_s > 0:
+            await asyncio.sleep(sleep_s)
+        tasks.append(
+            asyncio.create_task(
+                _send_one(
+                    client=client,
+                    semaphore=semaphore,
+                    sample=sample,
+                    request_index=index,
+                    job_id=job_id,
+                    scheduled_send_ts=scheduled_send_ts,
+                )
+            )
+        )
+        await asyncio.sleep(0)
+    return tasks
 
 
 def _prepare_samples(
@@ -399,6 +459,8 @@ def _build_summary(
     base_url: str,
     endpoint: str,
     max_concurrency: int,
+    load_mode: str,
+    request_rate: float | None,
     response_text_max_chars: int,
     decoding: QualityDecodingConfig,
     workload_metadata: dict[str, Any],
@@ -415,6 +477,8 @@ def _build_summary(
         "base_url": base_url,
         "endpoint": endpoint,
         "max_concurrency": max_concurrency,
+        "load_mode": load_mode,
+        "request_rate": request_rate,
         "response_text_max_chars": response_text_max_chars,
         "decoding": decoding.to_dict(),
         "total_requests": len(rows),

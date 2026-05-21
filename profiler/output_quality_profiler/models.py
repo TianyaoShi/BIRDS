@@ -147,6 +147,8 @@ DEFAULT_DECODING_CONFIG = QualityDecodingConfig()
 class QualityGenerationConfig:
     request_timeout_s: float = 21600.0
     max_concurrency: int | None = None
+    request_rate: float | None = None
+    load_mode: str = "closed_loop"
     concurrency_source: str = "mst_fraction"
     concurrency_mst_fraction: float = 0.40
     preserve_request_order: bool = True
@@ -158,6 +160,10 @@ class QualityGenerationConfig:
         _require_positive_float("generation.request_timeout_s", self.request_timeout_s)
         if self.max_concurrency is not None:
             _require_positive_int("generation.max_concurrency", self.max_concurrency)
+        if self.request_rate is not None:
+            _require_positive_float("generation.request_rate", self.request_rate)
+        if self.load_mode not in {"closed_loop", "open_loop"}:
+            raise ValueError("generation.load_mode must be closed_loop or open_loop")
         if self.concurrency_source not in {"mst_fraction", "explicit"}:
             raise ValueError("generation.concurrency_source must be mst_fraction or explicit")
         _require_probability("generation.concurrency_mst_fraction", self.concurrency_mst_fraction)
@@ -165,6 +171,8 @@ class QualityGenerationConfig:
             raise ValueError("generation.concurrency_mst_fraction must be 0.40 for V1")
         if self.concurrency_source == "explicit" and self.max_concurrency is None:
             raise ValueError("generation.max_concurrency is required when concurrency_source=explicit")
+        if self.load_mode == "open_loop" and self.request_rate is None:
+            raise ValueError("generation.request_rate is required when load_mode=open_loop")
         if not isinstance(self.preserve_request_order, bool):
             raise ValueError("generation.preserve_request_order must be a boolean")
         if not self.preserve_request_order:
