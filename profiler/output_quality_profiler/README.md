@@ -111,8 +111,11 @@ PYTHONPATH=profiler:. python -m output_quality_profiler.cli score-benchmark-resp
   --output-dir results/quality/<run_id>/benchmark_scores/crosscodeeval/<model-or-job-dir>
 ```
 
-The current adapters are intentionally lightweight compatibility adapters:
-SuperGPQA uses answer-label extraction, RepoBench/CrossCodeEval report
-code-completion exact-match/similarity metrics, and LongBench covered tasks use
-ROUGE-L F1 for summarization plus token F1 for QA-style tasks. Treat these as
-adapter outputs until the official evaluator shims are wired in.
+The current adapters are intentionally lightweight compatibility adapters for
+SuperGPQA and RepoBench/CrossCodeEval: SuperGPQA uses answer-label extraction,
+and RepoBench/CrossCodeEval report code-completion exact-match/similarity
+metrics. LongBench-v1-covered uses the original LongBench v1 task-to-metric
+mapping over the covered tasks and resolves answer lists from
+`data/raw/longbench` by `longbench_dataset` and `longbench_row_index`. The
+LongBench adapter prefers the original `rouge` and `jieba` packages when they
+are installed, and records dependency status in `score.json`.

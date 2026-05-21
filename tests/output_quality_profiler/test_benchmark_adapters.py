@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 
 from output_quality_profiler.benchmark_adapters import score_benchmark_responses
-from output_quality_profiler.benchmark_adapters.longbench_v1 import rouge_l_f1, token_f1
+from output_quality_profiler.benchmark_adapters.longbench_v1 import (
+    rouge_l_f1,
+    score_longbench_v1_responses,
+    token_f1,
+)
 from output_quality_profiler.benchmark_adapters.supergpqa import extract_supergpqa_answer
 
 
@@ -119,3 +123,46 @@ def test_longbench_adapter_scores_covered_subset(tmp_path: Path) -> None:
     assert rouge_l_f1("a b", "a b c") == pytest.approx(0.8)
     assert score["overall_score"] == pytest.approx(100.0)
     assert score["is_full_benchmark"] is False
+
+
+def test_longbench_adapter_resolves_raw_answer_lists(tmp_path: Path) -> None:
+    raw_root = tmp_path / "raw" / "longbench"
+    _write_rows(
+        raw_root / "qasper_e.jsonl",
+        [
+            {
+                "_id": "row-0",
+                "answers": ["alpha", "beta"],
+                "all_classes": [],
+                "length": 1234,
+            }
+        ],
+    )
+    responses = tmp_path / "responses.jsonl"
+    _write_rows(
+        responses,
+        [
+            {
+                "model": "org/model",
+                "request_id": "l1",
+                "success": True,
+                "response_text": "beta",
+                "metadata": {
+                    "ground_truth": "alpha",
+                    "longbench_dataset": "qasper_e",
+                    "longbench_id": "row-0",
+                    "longbench_row_index": 0,
+                },
+            },
+        ],
+    )
+
+    score = score_longbench_v1_responses(
+        responses_root=responses,
+        output_dir=tmp_path / "long-score-raw",
+        raw_data_root=raw_root,
+    )
+
+    assert score["overall_score"] == pytest.approx(100.0)
+    assert score["raw_reference_matches"] == 1
+    assert score["by_task"]["qasper_e"]["metric"] == "qa_f1"
