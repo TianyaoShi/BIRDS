@@ -1009,6 +1009,7 @@ def _build_cpu_die_midpoint_records(
     production_yield: float,
     spatial_awareness: bool,
     calculate_upstream_materials: bool,
+    include_logic_fab_scope3: Optional[bool],
     bom_template: Optional[Dict[str, float]],
     fallbacks: List[str],
     **upstream_transportation_kwargs: Any,
@@ -1018,6 +1019,8 @@ def _build_cpu_die_midpoint_records(
     year_idx = cpu_specs["production_year"] - 2016
     if year_idx < 0 or year_idx > 8:
         raise ValueError("Year must be between 2016 and 2024.")
+    if include_logic_fab_scope3 is None:
+        include_logic_fab_scope3 = calculate_upstream_materials
 
     total_produce_units = (
         data.node_to_layer_masks_map[cpu_specs["technology_node_nm"]] * (cpu_specs["die_size_mm2"] / legacy_model.EFFECTIVE_WAFER_AREA_MM2)
@@ -1143,6 +1146,7 @@ def _build_cpu_die_midpoint_records(
     carbon_scope_split = legacy_model._estimate_logic_fab_carbon_scope_split(
         cpu_specs,
         production_yield=production_yield,
+        include_scope3=include_logic_fab_scope3,
     )
     for scope_name, midpoint_value in carbon_scope_split.items():
         if abs(midpoint_value) <= EPSILON:
@@ -1405,6 +1409,7 @@ def _build_manufacturing_midpoint_records(
     *,
     spatial_awareness: bool,
     calculate_upstream_materials: bool,
+    include_logic_fab_scope3: Optional[bool],
     bom_template: Optional[Dict[str, float]],
     fallbacks: List[str],
     **transportation_kwargs: Any,
@@ -1419,6 +1424,7 @@ def _build_manufacturing_midpoint_records(
             production_yield=working_specs.get("production_yield", 0.875),
             spatial_awareness=spatial_awareness,
             calculate_upstream_materials=calculate_upstream_materials,
+            include_logic_fab_scope3=include_logic_fab_scope3,
             bom_template=bom_template,
             fallbacks=fallbacks,
             **transportation_kwargs,
@@ -1430,6 +1436,7 @@ def _build_manufacturing_midpoint_records(
             production_yield=working_specs["die_production_yield"],
             spatial_awareness=spatial_awareness,
             calculate_upstream_materials=calculate_upstream_materials,
+            include_logic_fab_scope3=include_logic_fab_scope3,
             bom_template=None,
             fallbacks=fallbacks,
             **transportation_kwargs,
@@ -2049,6 +2056,7 @@ def calculate_manufacturing_distribution(
     *,
     spatial_awareness: bool = True,
     calculate_upstream_materials: bool = True,
+    include_logic_fab_scope3: Optional[bool] = None,
     bom_template: Optional[Dict[str, float]] = None,
     perspective: str = data.DEFAULT_RECIPE_PERSPECTIVE,
     bii_weighting: bool = False,
@@ -2060,6 +2068,7 @@ def calculate_manufacturing_distribution(
         working_specs,
         spatial_awareness=spatial_awareness,
         calculate_upstream_materials=calculate_upstream_materials,
+        include_logic_fab_scope3=include_logic_fab_scope3,
         bom_template=bom_template,
         fallbacks=fallbacks,
         **transportation_kwargs,
@@ -2174,6 +2183,7 @@ def calculate_total_impact_distribution(
     manufacturing_only: bool = False,
     spatial_awareness: bool = True,
     calculate_upstream_materials: bool = True,
+    include_logic_fab_scope3: Optional[bool] = None,
     bom_template: Optional[Dict[str, float]] = None,
     use_region: Optional[str] = None,
     eol_region: Optional[str] = None,
@@ -2189,6 +2199,7 @@ def calculate_total_impact_distribution(
         working_specs,
         spatial_awareness=spatial_awareness,
         calculate_upstream_materials=calculate_upstream_materials,
+        include_logic_fab_scope3=include_logic_fab_scope3,
         bom_template=bom_template,
         fallbacks=fallbacks,
         **transportation_kwargs,
