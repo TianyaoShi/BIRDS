@@ -1491,11 +1491,12 @@ def _build_manufacturing_midpoint_records(
     else:
         raise ValueError("Unsupported component type. Must be one of ['CPU', 'GPU', 'SSD', 'DRAM', 'HDD'].")
 
-    _build_packaging_material_midpoint_records(
-        records,
-        working_specs,
-        spatial_awareness=spatial_awareness,
-    )
+    if calculate_upstream_materials:
+        _build_packaging_material_midpoint_records(
+            records,
+            working_specs,
+            spatial_awareness=spatial_awareness,
+        )
     return records
 
 
@@ -1505,6 +1506,7 @@ def _build_recycling_midpoint_records(
     use_region: Optional[str],
     eol_region: Optional[str],
     transport_region: Optional[str],
+    include_packaging_materials: bool,
     spatial_awareness: bool,
     fallbacks: List[str],
 ) -> List[Dict[str, Any]]:
@@ -1521,7 +1523,11 @@ def _build_recycling_midpoint_records(
 
     packaging_mass = working_specs.get("gross_weight", 0) - working_specs.get("net_weight", 0)
     landfill_mass = working_specs["net_weight"] * (1 - working_specs.get("recycling_rate", 0.8232))
-    incineration_impacts = legacy_model.calculate_recycling_impact(packaging_mass, mass_unit="g", pathway="inceneration")
+    incineration_impacts = (
+        legacy_model.calculate_recycling_impact(packaging_mass, mass_unit="g", pathway="inceneration")
+        if include_packaging_materials
+        else {}
+    )
     landfill_impacts = legacy_model.calculate_recycling_impact(landfill_mass, mass_unit="g", pathway="landfill")
 
     for impacts, substage, process_name in (
@@ -2137,6 +2143,7 @@ def calculate_recycling_distribution(
     use_region: Optional[str] = None,
     eol_region: Optional[str] = None,
     transport_region: Optional[str] = None,
+    calculate_upstream_materials: bool = True,
     spatial_awareness: bool = True,
     perspective: str = data.DEFAULT_RECIPE_PERSPECTIVE,
     bii_weighting: bool = False,
@@ -2148,6 +2155,7 @@ def calculate_recycling_distribution(
         use_region=use_region,
         eol_region=eol_region,
         transport_region=transport_region,
+        include_packaging_materials=calculate_upstream_materials,
         spatial_awareness=spatial_awareness,
         fallbacks=fallbacks,
     )
@@ -2201,6 +2209,7 @@ def calculate_total_impact_distribution(
                 use_region=use_region,
                 eol_region=eol_region,
                 transport_region=transport_region,
+                include_packaging_materials=calculate_upstream_materials,
                 spatial_awareness=spatial_awareness,
                 fallbacks=fallbacks,
             )

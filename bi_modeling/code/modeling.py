@@ -1686,7 +1686,15 @@ def calculate_recycling_impact(mass, mass_unit='kg', pathway='recycling', PAPER_
     
     return impacts
 
-def calculate_device_recycling_impact(device_specs, use_region=None, eol_region=None, transport_region=None, midpoint_scopes=None, **kwargs):
+def calculate_device_recycling_impact(
+    device_specs,
+    use_region=None,
+    eol_region=None,
+    transport_region=None,
+    midpoint_scopes=None,
+    include_packaging_materials=True,
+    **kwargs,
+):
     # TODO: Add Al, Cu, and Fe recovery impacts
     """
     Calculate recycling impact of a device based on its specifications.
@@ -1720,12 +1728,15 @@ def calculate_device_recycling_impact(device_specs, use_region=None, eol_region=
 
     selected_midpoint_scopes = tuple(midpoint_scopes or MIDPOINT_SCOPES)
 
-    impacts_inceneration = calculate_recycling_impact(
-        packaging_mass,
-        mass_unit='g',
-        pathway='inceneration',
-        midpoint_scopes=selected_midpoint_scopes,
-    )
+    if include_packaging_materials:
+        impacts_inceneration = calculate_recycling_impact(
+            packaging_mass,
+            mass_unit='g',
+            pathway='inceneration',
+            midpoint_scopes=selected_midpoint_scopes,
+        )
+    else:
+        impacts_inceneration = {midpoint: 0.0 for midpoint in selected_midpoint_scopes}
     impacts_transportation = calculate_transport_impact(
         mass,
         distance=transport_distances['use_to_eol'],
@@ -1865,9 +1876,12 @@ def calculate_total_impact(device_specs, occupy_ratio=1.0, manufacturing_only=Fa
         **transportation_kwargs,
     )
 
-    # packaging material impacts for all components
-    packaging_material_impacts = calculate_packaging_material_impacts(working_specs['gross_weight'] - working_specs['net_weight'], mass_unit='g')
-    _add_midpoint_impacts(manufacturing_scope_breakdown['scope3'], packaging_material_impacts)
+    if calculate_upstream_materials:
+        packaging_material_impacts = calculate_packaging_material_impacts(
+            working_specs['gross_weight'] - working_specs['net_weight'],
+            mass_unit='g',
+        )
+        _add_midpoint_impacts(manufacturing_scope_breakdown['scope3'], packaging_material_impacts)
     manufacturing_impacts = _sum_manufacturing_scope_breakdown(manufacturing_scope_breakdown)
     manufacturing_endpoint = midpoint_to_endpoint(manufacturing_impacts, perspective=perspective)
     manufacturing_scope_breakdown_payload = _build_scope_breakdown_payload(
@@ -1915,6 +1929,7 @@ def calculate_total_impact(device_specs, occupy_ratio=1.0, manufacturing_only=Fa
             use_region=use_region,
             eol_region=eol_region,
             transport_region=transport_region,
+            include_packaging_materials=calculate_upstream_materials,
         )
     else:
         if any(region is not None for region in (use_region, eol_region, transport_region)):
