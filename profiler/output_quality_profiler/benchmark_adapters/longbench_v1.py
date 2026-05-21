@@ -67,6 +67,35 @@ COVERED_TASKS = {
     "vcsum",
 }
 
+PROFILE_SPECS: dict[str, dict[str, Any]] = {
+    "long_output_summarization": {
+        "label": "Long-output summarization",
+        "metric_family": "ROUGE-style summarization",
+        "tasks": {"gov_report", "gov_report_e"},
+    },
+    "medium_output_summarization": {
+        "label": "Medium-output summarization",
+        "metric_family": "ROUGE-style summarization",
+        "tasks": {"multi_news", "multi_news_e", "qmsum", "vcsum"},
+    },
+    "medium_answer_rag_qa": {
+        "label": "Medium-answer RAG QA",
+        "metric_family": "LongBench Chinese ROUGE-style QA",
+        "tasks": {"dureader"},
+    },
+    "short_answer_document_qa": {
+        "label": "Short-answer document QA",
+        "metric_family": "F1-style QA",
+        "tasks": {"multifieldqa_en", "multifieldqa_en_e", "multifieldqa_zh", "qasper", "qasper_e"},
+    },
+}
+
+TASK_TO_PROFILE = {
+    task: profile
+    for profile, spec in PROFILE_SPECS.items()
+    for task in spec["tasks"]
+}
+
 FIRST_LINE_TASKS = {"trec", "triviaqa", "samsum", "lsht"}
 
 
@@ -83,11 +112,13 @@ def score_longbench_v1_responses(
     scores: list[float] = []
     by_task: dict[str, list[float]] = {}
     by_metric_task: dict[str, list[float]] = {}
+    by_bucket_task: dict[str, dict[str, list[float]]] = {}
     for index, row in enumerate(rows):
         meta = metadata(row)
         request_id = str(row.get("request_id") or meta.get("sample_id") or index)
         task = _row_longbench_task(row, meta)
         metric_task = metric_task_name(task)
+        bucket = _row_profile(meta, task=task)
         if not row.get("success", False):
             failed += 1
             per_item.append(
@@ -95,6 +126,7 @@ def score_longbench_v1_responses(
                     "request_id": request_id,
                     "task": task,
                     "metric_task": metric_task,
+                    "bucket": bucket,
                     "invalid_reason": "failed_generation",
                 }
             )
@@ -119,6 +151,7 @@ def score_longbench_v1_responses(
                     "request_id": request_id,
                     "task": task,
                     "metric_task": metric_task,
+                    "bucket": bucket,
                     "invalid_reason": "missing_ground_truth",
                 }
             )
@@ -134,11 +167,13 @@ def score_longbench_v1_responses(
         scores.append(item_score)
         by_task.setdefault(task, []).append(item_score)
         by_metric_task.setdefault(metric_task, []).append(item_score)
+        by_bucket_task.setdefault(bucket, {}).setdefault(task, []).append(item_score)
         per_item.append(
             {
                 "request_id": request_id,
                 "task": task,
                 "metric_task": metric_task,
+                "bucket": bucket,
                 "prediction": prediction,
                 "ground_truth": references,
                 "length": length,
@@ -169,11 +204,17 @@ def score_longbench_v1_responses(
             task: _score_group_payload(values, metric=DATASET_METRICS.get(task))
             for task, values in sorted(by_metric_task.items())
         },
+        "by_bucket": _bucket_score_payload(by_bucket_task),
         "is_full_benchmark": False,
         "raw_data_root": str(Path(raw_data_root or default_longbench_raw_data_root()).resolve()),
         "covered_tasks": sorted(by_task),
         "unexpected_tasks": sorted(set(by_task) - COVERED_TASKS),
         "dependency_status": longbench_dependency_status(),
+        "score_interpretation": (
+            "Use by_bucket for the main workload-track interpretation. overall_score is a "
+            "cross-bucket macro average retained for LongBench-style comparability and mixes "
+            "ROUGE-style and F1-style metrics."
+        ),
         "compatibility_note": (
             "Scores the materialized LongBench v1 covered-task subset with the original LongBench "
             "task-to-metric mapping. Overall score is the mean of covered task scores, not a full "
@@ -295,6 +336,13 @@ def _row_longbench_task(row: dict[str, Any], meta: dict[str, Any]) -> str:
     return str(raw)
 
 
+def _row_profile(meta: dict[str, Any], *, task: str) -> str:
+    raw_profile = meta.get("profile")
+    if isinstance(raw_profile, str) and raw_profile:
+        return raw_profile
+    return TASK_TO_PROFILE.get(task, "unknown")
+
+
 def _resolve_raw_entry(
     meta: dict[str, Any],
     *,
@@ -323,6 +371,28 @@ def _score_group_payload(values: Sequence[float], *, metric: str | None) -> dict
         "metric": metric,
         "score": 100.0 * sum(values) / len(values) if values else None,
     }
+
+
+def _bucket_score_payload(by_bucket_task: dict[str, dict[str, list[float]]]) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for bucket, task_values in sorted(by_bucket_task.items()):
+        by_task = {
+            task: _score_group_payload(values, metric=DATASET_METRICS.get(metric_task_name(task)))
+            for task, values in sorted(task_values.items())
+        }
+        task_scores = [task_payload["score"] for task_payload in by_task.values() if task_payload["score"] is not None]
+        item_scores = [score for values in task_values.values() for score in values]
+        spec = PROFILE_SPECS.get(bucket, {})
+        payload[bucket] = {
+            "label": spec.get("label", bucket),
+            "metric_family": spec.get("metric_family", "unknown"),
+            "count": len(item_scores),
+            "score": None if not task_scores else sum(task_scores) / len(task_scores),
+            "score_type": "task_macro_percent",
+            "item_weighted_score": None if not item_scores else 100.0 * sum(item_scores) / len(item_scores),
+            "by_task": by_task,
+        }
+    return payload
 
 
 def longbench_dependency_status() -> dict[str, bool]:

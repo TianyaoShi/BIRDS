@@ -118,4 +118,8 @@ metrics. LongBench-v1-covered uses the original LongBench v1 task-to-metric
 mapping over the covered tasks and resolves answer lists from
 `data/raw/longbench` by `longbench_dataset` and `longbench_row_index`. The
 LongBench adapter prefers the original `rouge` and `jieba` packages when they
-are installed, and records dependency status in `score.json`.
+are installed, and records dependency status in `score.json`. Treat `by_bucket`
+as the primary workload-track report: each LongBench bucket gets a task-macro
+`score`, an `item_weighted_score`, and per-task scores. The top-level
+`overall_score` is retained only as a LongBench-style cross-bucket macro
+summary and mixes ROUGE-style and F1-style metrics.

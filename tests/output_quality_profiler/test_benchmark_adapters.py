@@ -101,14 +101,22 @@ def test_longbench_adapter_scores_covered_subset(tmp_path: Path) -> None:
                 "request_id": "l1",
                 "success": True,
                 "response_text": "alpha beta gamma",
-                "metadata": {"ground_truth": "alpha beta gamma", "longbench_task": "qasper"},
+                "metadata": {
+                    "ground_truth": "alpha beta gamma",
+                    "longbench_task": "qasper",
+                    "profile": "short_answer_document_qa",
+                },
             },
             {
                 "model": "org/model",
                 "request_id": "l2",
                 "success": True,
                 "response_text": "summary alpha beta",
-                "metadata": {"ground_truth": "summary alpha beta", "longbench_task": "gov_report"},
+                "metadata": {
+                    "ground_truth": "summary alpha beta",
+                    "longbench_task": "gov_report",
+                    "profile": "long_output_summarization",
+                },
             },
         ],
     )
@@ -122,6 +130,9 @@ def test_longbench_adapter_scores_covered_subset(tmp_path: Path) -> None:
     assert token_f1("a b", "a b c") == pytest.approx(0.8)
     assert rouge_l_f1("a b", "a b c") == pytest.approx(0.8)
     assert score["overall_score"] == pytest.approx(100.0)
+    assert score["by_bucket"]["short_answer_document_qa"]["score"] == pytest.approx(100.0)
+    assert score["by_bucket"]["short_answer_document_qa"]["metric_family"] == "F1-style QA"
+    assert score["by_bucket"]["long_output_summarization"]["score"] == pytest.approx(100.0)
     assert score["is_full_benchmark"] is False
 
 
@@ -152,6 +163,7 @@ def test_longbench_adapter_resolves_raw_answer_lists(tmp_path: Path) -> None:
                     "longbench_dataset": "qasper_e",
                     "longbench_id": "row-0",
                     "longbench_row_index": 0,
+                    "profile": "short_answer_document_qa",
                 },
             },
         ],
@@ -166,3 +178,4 @@ def test_longbench_adapter_resolves_raw_answer_lists(tmp_path: Path) -> None:
     assert score["overall_score"] == pytest.approx(100.0)
     assert score["raw_reference_matches"] == 1
     assert score["by_task"]["qasper_e"]["metric"] == "qa_f1"
+    assert score["by_bucket"]["short_answer_document_qa"]["by_task"]["qasper_e"]["score"] == pytest.approx(100.0)
