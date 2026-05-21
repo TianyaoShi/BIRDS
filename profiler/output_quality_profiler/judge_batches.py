@@ -34,6 +34,7 @@ def build_openai_judge_batch(
     endpoint: str = "/v1/chat/completions",
     max_tokens: int = 256,
     temperature: float = 0.0,
+    shard_ids: Sequence[str] = (),
 ) -> JudgeBatchResult:
     if max_comparisons <= 0:
         raise ValueError("max_comparisons must be positive")
@@ -44,20 +45,28 @@ def build_openai_judge_batch(
     output_dir_path.mkdir(parents=True, exist_ok=True)
     template = Path(judge_template_path).read_text(encoding="utf-8")
 
-    reference_rows = _load_successful_rows(responses_root_path / reference_model_slug)
+    reference_rows = _load_successful_rows(
+        responses_root_path / reference_model_slug,
+        shard_ids=shard_ids,
+    )
     if not reference_rows:
         raise ValueError(f"no successful reference responses found for {reference_model_slug}")
 
     rng = random.Random(seed)
     comparison_records: list[dict[str, Any]] = []
     batch_rows: list[dict[str, Any]] = []
+    request_counts_by_candidate: dict[str, int] = {}
     remaining = max_comparisons
     for candidate_slug in candidate_model_slugs:
         if remaining <= 0:
             break
-        candidate_rows = _load_successful_rows(responses_root_path / candidate_slug)
+        candidate_rows = _load_successful_rows(
+            responses_root_path / candidate_slug,
+            shard_ids=shard_ids,
+        )
         shared_request_ids = sorted(set(reference_rows) & set(candidate_rows))
         rng.shuffle(shared_request_ids)
+        candidate_count = 0
         for request_id in shared_request_ids[:remaining]:
             candidate = candidate_rows[request_id]
             reference = reference_rows[request_id]
@@ -110,6 +119,8 @@ def build_openai_judge_batch(
                     or reference.get("prompt_length_bucket"),
                 }
             )
+            candidate_count += 1
+        request_counts_by_candidate[candidate_slug] = candidate_count
         remaining = max_comparisons - len(batch_rows)
 
     if not batch_rows:
@@ -128,8 +139,10 @@ def build_openai_judge_batch(
         "candidate_model_slugs": list(candidate_model_slugs),
         "seed": seed,
         "request_count": len(batch_rows),
+        "request_counts_by_candidate": request_counts_by_candidate,
         "output_jsonl": str(output_jsonl),
         "judge_template_path": str(Path(judge_template_path).resolve()),
+        "shard_ids": list(shard_ids),
         "comparisons": comparison_records,
     }
     manifest_path.write_text(
@@ -143,9 +156,13 @@ def build_openai_judge_batch(
     )
 
 
-def _load_successful_rows(model_dir: Path) -> dict[str, dict[str, Any]]:
+def _load_successful_rows(
+    model_dir: Path,
+    *,
+    shard_ids: Sequence[str] = (),
+) -> dict[str, dict[str, Any]]:
     rows: dict[str, dict[str, Any]] = {}
-    for path in _response_jsonl_paths(model_dir):
+    for path in _response_jsonl_paths(model_dir, shard_ids=shard_ids):
         with path.open("r", encoding="utf-8") as handle:
             for line in handle:
                 if not line.strip():
@@ -175,14 +192,26 @@ def _render_template(
     )
 
 
-def _response_jsonl_paths(model_dir: Path) -> Iterable[Path]:
+def _response_jsonl_paths(model_dir: Path, *, shard_ids: Sequence[str] = ()) -> Iterable[Path]:
     aggregate = model_dir / "responses.jsonl"
-    if aggregate.is_file():
+    if aggregate.is_file() and not shard_ids:
         yield aggregate
         return
     shards_dir = model_dir / "shards"
     if shards_dir.is_dir():
-        yield from sorted(shards_dir.glob("*/responses.jsonl"))
+        for path in sorted(shards_dir.glob("*/responses.jsonl")):
+            if shard_ids and not _shard_matches(path.parent.name, shard_ids):
+                continue
+            yield path
+
+
+def _shard_matches(shard_name: str, shard_ids: Sequence[str]) -> bool:
+    normalized = _normalize_shard_id(shard_name)
+    return any(normalized == _normalize_shard_id(shard_id) for shard_id in shard_ids)
+
+
+def _normalize_shard_id(value: str) -> str:
+    return value.replace("_", "-").lower()
 
 
 def _custom_id(

@@ -75,6 +75,12 @@ def build_parser() -> argparse.ArgumentParser:
     judge_batch.add_argument("--endpoint", default="/v1/chat/completions")
     judge_batch.add_argument("--max-tokens", type=int, default=256)
     judge_batch.add_argument("--temperature", type=float, default=0.0)
+    judge_batch.add_argument(
+        "--shard-id",
+        action="append",
+        default=[],
+        help="restrict judge comparisons to response shards whose directory name matches this shard id; may be repeated",
+    )
     judge_batch.set_defaults(handler=_build_judge_batch)
 
     aggregate_judge = subparsers.add_parser("aggregate-judge-results")
@@ -227,6 +233,7 @@ def _build_judge_batch(args: argparse.Namespace) -> int:
         endpoint=args.endpoint,
         max_tokens=args.max_tokens,
         temperature=args.temperature,
+        shard_ids=tuple(args.shard_id or ()),
     )
     print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
     return 0
