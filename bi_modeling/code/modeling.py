@@ -4,7 +4,10 @@ from functools import lru_cache
 from pathlib import Path
 from sklearn.linear_model import LinearRegression
 
-from load_data import *
+try:
+    from .load_data import *
+except ImportError:
+    from load_data import *
 
 DRAM_SSD_PACKAGING_WEIGHT_FACTOR = 2.0
 CPU_GPU_PACKAGING_WEIGHT_FACTOR = 1.2
@@ -506,7 +509,10 @@ def _get_hdd_stage_impact_factors_for_year(production_year):
     """
     year_map = globals().get('hdd_impact_factors_by_stage_year')
     if year_map is None:
-        from model_hdd_by_stage_impact import hdd_impact_factors_by_stage_year as generated_hdd_stage_year_map
+        try:
+            from .model_hdd_by_stage_impact import hdd_impact_factors_by_stage_year as generated_hdd_stage_year_map
+        except ImportError:
+            from model_hdd_by_stage_impact import hdd_impact_factors_by_stage_year as generated_hdd_stage_year_map
         year_map = generated_hdd_stage_year_map
     if not isinstance(year_map, dict):
         raise ValueError("Invalid HDD by-stage impact factor payload: expected a dictionary.")

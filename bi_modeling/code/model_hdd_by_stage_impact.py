@@ -4,7 +4,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from load_data import me_data, unified_emission_factors, impact_factors, cf_transportation, cf_eol
+try:
+    from .load_data import me_data, unified_emission_factors, impact_factors, cf_transportation, cf_eol
+except ImportError:
+    from load_data import me_data, unified_emission_factors, impact_factors, cf_transportation, cf_eol
 from sklearn.linear_model import LinearRegression
 
 MIDPOINT_SCOPES = ['AP', 'FEP', 'MEP', 'POFP', 'TETP', 'FETP', 'METP', 'GWP', 'WC']   
@@ -34,7 +37,7 @@ for year in seagate_hdd_lca_results.keys():
             # ReCiPe 2008 Midpoint POFP assigned to photochemical oxidant formation (kg NMVOC) with a 1:1 ratio, as the POFP factor for NMVOC is 1.0 in ReCiPe 2008
             seagate_hdd_lca_results[year]['POFP'] = seagate_hdd_lca_results[year]['photochemical oxidant formation (kg NMVOC)'] * 1.0
 
-hdd_carbon_footprint_records = me_data['hdd_carbon_footprint_records']
+hdd_carbon_footprint_records = me_data.get('hdd_carbon_footprint_records', [])
 
 # Calculate the per-GB impacts for each year and each metric, after adjusting for the electricity-related emissions
 

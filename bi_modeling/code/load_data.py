@@ -187,6 +187,15 @@ def load_bii_distribution_data(file_path=BII_DISTRIBUTION_LOOKUP_PATH):
     """
     return load_json_file(os.fspath(file_path))
 
+
+def load_optional_json_file(file_path, default):
+    """
+    Load optional integration data, returning ``default`` when it is absent.
+    """
+    if not os.path.exists(file_path):
+        return default
+    return load_json_file(file_path)
+
 cf_data = load_json_file(os.path.join(DATA_DIR, "characterization_factors.json"))
 ef_data = load_json_file(os.path.join(DATA_DIR, "energy_and_emission_factors/grid_emission_factors_2016_2024.json"))
 
@@ -287,19 +296,28 @@ vram_bit_density = me_data['vram_bit_density']
 ssd_bit_density_by_year = me_data['ssd_bit_density_by_year']
 
 ds_data = load_json_file(os.path.join(DATA_DIR, "device_specs.json"))
-regional_direct_wue_data = load_json_file(os.path.join(DATA_DIR, "wet_bulb_temperature/regional_direct_wue_compact.json"))
-regional_device_transport_routes = load_json_file(os.path.join(DATA_DIR, "transportation/regional_device_transport_routes.json"))
-missing_transport_regions = sorted(
-    set(regional_direct_wue_data["regions"].keys()) - set(regional_device_transport_routes["regions"].keys())
+REGIONAL_DIRECT_WUE_DATA_PATH = os.path.join(DATA_DIR, "wet_bulb_temperature/regional_direct_wue_compact.json")
+REGIONAL_DEVICE_TRANSPORT_ROUTES_PATH = os.path.join(DATA_DIR, "transportation/regional_device_transport_routes.json")
+regional_direct_wue_data = load_optional_json_file(
+    REGIONAL_DIRECT_WUE_DATA_PATH,
+    {"metadata": {}, "regions": {}},
 )
-extra_transport_regions = sorted(
-    set(regional_device_transport_routes["regions"].keys()) - set(regional_direct_wue_data["regions"].keys())
+regional_device_transport_routes = load_optional_json_file(
+    REGIONAL_DEVICE_TRANSPORT_ROUTES_PATH,
+    {"metadata": {"fixed_origin_legs": {}}, "regions": {}},
 )
-if missing_transport_regions or extra_transport_regions:
-    raise ValueError(
-        "Transport route regions must stay aligned with the regional direct-WUE dataset. "
-        f"Missing transport regions: {missing_transport_regions}; extra transport regions: {extra_transport_regions}"
+if os.path.exists(REGIONAL_DIRECT_WUE_DATA_PATH) and os.path.exists(REGIONAL_DEVICE_TRANSPORT_ROUTES_PATH):
+    missing_transport_regions = sorted(
+        set(regional_direct_wue_data["regions"].keys()) - set(regional_device_transport_routes["regions"].keys())
     )
+    extra_transport_regions = sorted(
+        set(regional_device_transport_routes["regions"].keys()) - set(regional_direct_wue_data["regions"].keys())
+    )
+    if missing_transport_regions or extra_transport_regions:
+        raise ValueError(
+            "Transport route regions must stay aligned with the regional direct-WUE dataset. "
+            f"Missing transport regions: {missing_transport_regions}; extra transport regions: {extra_transport_regions}"
+        )
 
 epyc_7b12_specs = ds_data['CPUs']['EPYC 7B12']
 epyc_7443_specs = ds_data['CPUs']['EPYC 7443']

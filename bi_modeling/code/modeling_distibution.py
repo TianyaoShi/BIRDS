@@ -3,8 +3,12 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
-import load_data as data
-import modeling as legacy_model
+try:
+    from . import load_data as data
+    from . import modeling as legacy_model
+except ImportError:
+    import load_data as data
+    import modeling as legacy_model
 
 
 RECEIVING_BUCKETS = (
