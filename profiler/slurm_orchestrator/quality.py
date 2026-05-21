@@ -5,6 +5,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from glob import glob
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -496,6 +497,9 @@ def finalize_quality_task(
 
 def collect_quality_run(run_root: str | Path) -> dict[str, Any]:
     plan = load_quality_run_plan(run_root)
+    groups_by_key = {
+        str(group.get("group_key")): group for group in plan.get("groups", []) if isinstance(group, dict)
+    }
     jobs: list[dict[str, Any]] = []
     latest_update = str(plan.get("created_at", now_utc_iso()))
     for job_entry in plan.get("jobs", []):
@@ -503,7 +507,14 @@ def collect_quality_run(run_root: str | Path) -> dict[str, Any]:
         state = _read_json_mapping(status_path)
         if state is None:
             state = dict(job_entry["initial_state"])
-        _reconcile_quality_state_artifacts(state)
+        before_reconcile = json.dumps(state, sort_keys=True)
+        _reconcile_quality_state_artifacts(
+            state,
+            job_entry=job_entry if isinstance(job_entry, dict) else None,
+            group_entry=groups_by_key.get(str(job_entry.get("group_key"))) if isinstance(job_entry, dict) else None,
+        )
+        if json.dumps(state, sort_keys=True) != before_reconcile:
+            _write_json(status_path, state)
         jobs.append(state)
         updated_at = state.get("updated_at")
         if isinstance(updated_at, str) and updated_at > latest_update:
@@ -829,7 +840,12 @@ def _fill_quality_artifacts(
     artifacts["vllm_stderr_log"] = str(vllm_stderr_log)
 
 
-def _reconcile_quality_state_artifacts(state: dict[str, Any]) -> None:
+def _reconcile_quality_state_artifacts(
+    state: dict[str, Any],
+    *,
+    job_entry: dict[str, Any] | None = None,
+    group_entry: dict[str, Any] | None = None,
+) -> None:
     result_dir = Path(str(state.get("result_dir", "")))
     if not result_dir:
         return
@@ -841,6 +857,66 @@ def _reconcile_quality_state_artifacts(state: dict[str, Any]) -> None:
         artifacts["failed_requests_jsonl"] = str(failed) if failed.is_file() else None
         state["status"] = "succeeded"
         state["last_error"] = None
+        return
+    if str(state.get("status", "planned")) in {"planned", "running"}:
+        slurm_failure = _quality_slurm_failure_from_logs(
+            state=state,
+            job_entry=job_entry,
+            group_entry=group_entry,
+        )
+        if slurm_failure is not None:
+            state["status"] = "failed"
+            state["last_error"] = slurm_failure
+            state["updated_at"] = now_utc_iso()
+
+
+def _quality_slurm_failure_from_logs(
+    *,
+    state: dict[str, Any],
+    job_entry: dict[str, Any] | None,
+    group_entry: dict[str, Any] | None,
+) -> str | None:
+    for path in _quality_slurm_log_candidates(state=state, job_entry=job_entry, group_entry=group_entry):
+        if not path.is_file():
+            continue
+        try:
+            tail = path.read_text(encoding="utf-8", errors="replace")[-8192:]
+        except OSError:
+            continue
+        normalized = tail.upper()
+        if "DUE TO TIME LIMIT" in normalized or "TIME LIMIT" in normalized and "CANCELLED" in normalized:
+            return f"Slurm task was cancelled due to time limit; see {path}"
+        if "CANCELLED" in normalized:
+            return f"Slurm task was cancelled before orchestrator finalization; see {path}"
+    return None
+
+
+def _quality_slurm_log_candidates(
+    *,
+    state: dict[str, Any],
+    job_entry: dict[str, Any] | None,
+    group_entry: dict[str, Any] | None,
+) -> tuple[Path, ...]:
+    group_key = str(
+        (state.get("slurm") or {}).get("group_key")
+        or (job_entry or {}).get("group_key")
+        or ""
+    )
+    task_index_value = (state.get("slurm") or {}).get("group_task_index")
+    if task_index_value is None and job_entry is not None:
+        task_index_value = job_entry.get("group_task_index")
+    task_index = "" if task_index_value is None else str(task_index_value)
+    patterns: list[Path] = []
+    slurm_stderr = (group_entry or {}).get("slurm_stderr_log")
+    if isinstance(slurm_stderr, str) and slurm_stderr:
+        pattern = slurm_stderr.replace("%A", "*").replace("%a", task_index)
+        patterns.extend(Path(match) for match in sorted(glob(pattern)))
+    if group_key and task_index:
+        result_dir = Path(str(state.get("result_dir", "")))
+        run_root = result_dir.parent.parent if result_dir.name and result_dir.parent.name == "responses" else None
+        if run_root is not None:
+            patterns.extend(sorted((run_root / "logs").glob(f"slurm-quality-{group_key}-*_{task_index}.err")))
+    return tuple(dict.fromkeys(patterns))
 
 
 def _derive_quality_run_status(jobs: list[dict[str, Any]]) -> str:
