@@ -11,6 +11,10 @@ from output_quality_profiler.benchmark_adapters.longbench_v1 import (
     score_longbench_v1_responses,
     token_f1,
 )
+from output_quality_profiler.benchmark_adapters.repobench import (
+    repobench_edit_similarity,
+    repobench_exact_match,
+)
 from output_quality_profiler.benchmark_adapters.supergpqa import extract_supergpqa_answer
 
 
@@ -58,7 +62,7 @@ def test_supergpqa_adapter_scores_extracted_answer(tmp_path: Path) -> None:
     assert (tmp_path / "score" / "per_item.jsonl").is_file()
 
 
-def test_code_completion_adapter_reports_exact_and_similarity(tmp_path: Path) -> None:
+def test_repobench_adapter_reports_official_em_and_es(tmp_path: Path) -> None:
     responses = tmp_path / "responses.jsonl"
     _write_rows(
         responses,
@@ -67,15 +71,40 @@ def test_code_completion_adapter_reports_exact_and_similarity(tmp_path: Path) ->
                 "model": "org/model",
                 "request_id": "c1",
                 "success": True,
-                "response_text": "```python\nreturn value\n```",
-                "metadata": {"ground_truth": "return value", "language": "python"},
+                "response_text": "return    value",
+                "metadata": {
+                    "ground_truth": "return value",
+                    "language": "python",
+                    "task": "in_file",
+                    "level": "2k",
+                    "sample_id": "repobench-python-000001",
+                },
             },
             {
                 "model": "org/model",
                 "request_id": "c2",
                 "success": True,
                 "response_text": "return other",
-                "metadata": {"ground_truth": "return value", "language": "python"},
+                "metadata": {
+                    "ground_truth": "return value",
+                    "language": "python",
+                    "task": "cross_file_first",
+                    "level": "4k",
+                    "sample_id": "repobench-python-000002",
+                },
+            },
+            {
+                "model": "org/model",
+                "request_id": "c2-dup",
+                "success": True,
+                "response_text": "return other",
+                "metadata": {
+                    "ground_truth": "return value",
+                    "language": "python",
+                    "task": "cross_file_first",
+                    "level": "4k",
+                    "sample_id": "repobench-python-000002",
+                },
             },
         ],
     )
@@ -86,9 +115,14 @@ def test_code_completion_adapter_reports_exact_and_similarity(tmp_path: Path) ->
         output_dir=tmp_path / "code-score",
     )
 
-    assert score["normalized_exact_match_rate"] == pytest.approx(0.5)
-    assert score["mean_similarity"] < 1.0
+    assert repobench_exact_match("return    value", "return value")
+    assert repobench_edit_similarity("abc", "abc") == pytest.approx(100.0)
+    assert score["exact_match_percent"] == pytest.approx(50.0)
+    assert score["edit_similarity_percent"] < 100.0
+    assert score["overall_score"] == score["edit_similarity_percent"]
+    assert score["duplicate_items"] == 1
     assert score["by_language"]["python"]["count"] == 2
+    assert score["by_task"]["cross_file_first"]["count"] == 1
 
 
 def test_longbench_adapter_scores_covered_subset(tmp_path: Path) -> None:

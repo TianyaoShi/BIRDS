@@ -5,6 +5,7 @@ from typing import Any
 
 from .code_completion import score_code_completion_responses
 from .longbench_v1 import score_longbench_v1_responses
+from .repobench import score_repobench_responses
 from .supergpqa import score_supergpqa_responses
 
 
@@ -30,10 +31,9 @@ def score_benchmark_responses(
             is_full_benchmark=False,
         )
     if normalized == "repobench":
-        return score_code_completion_responses(
+        return score_repobench_responses(
             responses_root=responses_root,
             output_dir=output_dir,
-            benchmark_name="RepoBench",
         )
     if normalized in {"crosscodeeval", "cceval"}:
         return score_code_completion_responses(
