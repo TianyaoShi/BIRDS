@@ -966,6 +966,21 @@ def _write_quality_summary(run_root: Path, state: dict[str, Any]) -> dict[str, A
         f"- Successful requests: {successful_requests}",
         f"- Failed requests: {failed_requests}",
     ]
+    failed_jobs = [job for job in jobs if str(job.get("status")) == "failed"]
+    if failed_jobs:
+        lines.extend(["", "## Failed Jobs", ""])
+        for job in failed_jobs:
+            lines.append(f"- `{job.get('job_id')}`")
+            lines.append(f"  - Model: `{job.get('model')}`")
+            lines.append(f"  - Error: {job.get('last_error') or 'unknown'}")
+            artifacts = job.get("artifacts") or {}
+            for label, key in (
+                ("quality stderr", "quality_stderr_log"),
+                ("vLLM stderr", "vllm_stderr_log"),
+            ):
+                path = artifacts.get(key)
+                if isinstance(path, str) and path:
+                    lines.append(f"  - {label}: `{path}`")
     (run_root / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return summary
 
