@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import json
 import random
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
+
+
+THINK_BLOCK_RE = re.compile(r"^\s*<think>\s*.*?</think>\s*", re.DOTALL | re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,8 +75,10 @@ def build_openai_judge_batch(
             candidate = candidate_rows[request_id]
             reference = reference_rows[request_id]
             candidate_is_a = bool(rng.getrandbits(1))
-            response_a = candidate["response_text"] if candidate_is_a else reference["response_text"]
-            response_b = reference["response_text"] if candidate_is_a else candidate["response_text"]
+            candidate_response = _judge_visible_response_text(candidate["response_text"])
+            reference_response = _judge_visible_response_text(reference["response_text"])
+            response_a = candidate_response if candidate_is_a else reference_response
+            response_b = reference_response if candidate_is_a else candidate_response
             prompt = candidate.get("prompt") or reference.get("prompt") or ""
             custom_id = _custom_id(
                 candidate_slug=candidate_slug,
@@ -117,6 +123,14 @@ def build_openai_judge_batch(
                     "source": candidate.get("source") or reference.get("source"),
                     "prompt_length_bucket": candidate.get("prompt_length_bucket")
                     or reference.get("prompt_length_bucket"),
+                    "candidate_response_preprocessing": _response_preprocessing_metadata(
+                        original=candidate["response_text"],
+                        rendered=candidate_response,
+                    ),
+                    "reference_response_preprocessing": _response_preprocessing_metadata(
+                        original=reference["response_text"],
+                        rendered=reference_response,
+                    ),
                 }
             )
             candidate_count += 1
@@ -144,6 +158,10 @@ def build_openai_judge_batch(
         "judge_template_path": str(Path(judge_template_path).resolve()),
         "shard_ids": list(shard_ids),
         "max_tokens_field": _max_tokens_field(evaluator_model),
+        "response_preprocessing": {
+            "strip_leading_think_blocks": True,
+            "policy": "remove a completed leading <think>...</think> block before judge prompt composition",
+        },
         "comparisons": comparison_records,
     }
     manifest_path.write_text(
@@ -191,6 +209,35 @@ def _render_template(
         .replace("{response_a}", response_a)
         .replace("{response_b}", response_b)
     )
+
+
+def _judge_visible_response_text(text: str) -> str:
+    normalized = text.lstrip().lower()
+    if normalized.startswith("<think>"):
+        stripped = THINK_BLOCK_RE.sub("", text, count=1)
+        if stripped != text:
+            return stripped.strip()
+        return ""
+    orphan_close_index = normalized.find("</think>")
+    if orphan_close_index >= 0:
+        leading_ws = len(text) - len(text.lstrip())
+        return text[leading_ws + orphan_close_index + len("</think>") :].strip()
+    return text
+
+
+def _response_preprocessing_metadata(*, original: str, rendered: str) -> dict[str, Any]:
+    removed_chars = len(original) - len(rendered)
+    normalized = original.lstrip().lower()
+    starts_with_think = normalized.startswith("<think>")
+    stripped_orphan_close = not starts_with_think and "</think>" in normalized and removed_chars > 0
+    return {
+        "stripped_leading_think_block": bool(removed_chars > 0 and starts_with_think),
+        "stripped_unclosed_leading_think_block": bool(starts_with_think and rendered == ""),
+        "stripped_orphan_think_close_prefix": bool(stripped_orphan_close),
+        "original_chars": len(original),
+        "rendered_chars": len(rendered),
+        "removed_chars": max(0, removed_chars),
+    }
 
 
 def _max_tokens_field(model: str) -> str:
