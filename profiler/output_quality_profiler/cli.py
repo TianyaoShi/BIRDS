@@ -89,6 +89,23 @@ def build_parser() -> argparse.ArgumentParser:
     aggregate_judge.add_argument("--output-dir", type=Path, default=None)
     aggregate_judge.set_defaults(handler=_aggregate_judge_results)
 
+    split_judge = subparsers.add_parser("split-judge-batch-by-candidate")
+    split_judge.add_argument("--batch-jsonl", type=Path, required=True)
+    split_judge.add_argument("--batch-manifest", type=Path, required=True)
+    split_judge.add_argument("--output-dir", type=Path, required=True)
+    split_judge.add_argument("--parts-per-candidate", type=int, default=2)
+    split_judge.set_defaults(handler=_split_judge_batch_by_candidate)
+
+    submit_batches = subparsers.add_parser("submit-openai-batches")
+    submit_batches.add_argument("--split-manifest", type=Path, required=True)
+    submit_batches.add_argument("--api-key-file", type=Path, required=True)
+    submit_batches.add_argument("--ledger", type=Path, default=None)
+    submit_batches.add_argument("--limit", type=int, default=None)
+    submit_batches.add_argument("--wait-for-completion", action="store_true")
+    submit_batches.add_argument("--poll-interval-s", type=float, default=60.0)
+    submit_batches.add_argument("--completion-window", default="24h")
+    submit_batches.set_defaults(handler=_submit_openai_batches)
+
     select_benchmark = subparsers.add_parser("select-missing-benchmark-scores")
     select_benchmark.add_argument("--scorebook", type=Path, required=True)
     select_benchmark.add_argument("--output-dir", type=Path, required=True)
@@ -246,6 +263,35 @@ def _aggregate_judge_results(args: argparse.Namespace) -> int:
         batch_manifest=args.batch_manifest,
         judge_results_jsonl=args.judge_results,
         output_dir=args.output_dir,
+    )
+    print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _split_judge_batch_by_candidate(args: argparse.Namespace) -> int:
+    from .openai_batch_ops import split_judge_batch_by_candidate
+
+    payload = split_judge_batch_by_candidate(
+        batch_jsonl=args.batch_jsonl,
+        batch_manifest=args.batch_manifest,
+        output_dir=args.output_dir,
+        parts_per_candidate=args.parts_per_candidate,
+    )
+    print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _submit_openai_batches(args: argparse.Namespace) -> int:
+    from .openai_batch_ops import submit_openai_batch_parts
+
+    payload = submit_openai_batch_parts(
+        split_manifest=args.split_manifest,
+        api_key_file=args.api_key_file,
+        ledger_path=args.ledger,
+        limit=args.limit,
+        wait_for_completion=bool(args.wait_for_completion),
+        poll_interval_s=args.poll_interval_s,
+        completion_window=args.completion_window,
     )
     print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
     return 0

@@ -100,7 +100,7 @@ def build_openai_judge_batch(
                             }
                         ],
                         "temperature": temperature,
-                        "max_tokens": max_tokens,
+                        _max_tokens_field(evaluator_model): max_tokens,
                         "response_format": {"type": "json_object"},
                     },
                 }
@@ -143,6 +143,7 @@ def build_openai_judge_batch(
         "output_jsonl": str(output_jsonl),
         "judge_template_path": str(Path(judge_template_path).resolve()),
         "shard_ids": list(shard_ids),
+        "max_tokens_field": _max_tokens_field(evaluator_model),
         "comparisons": comparison_records,
     }
     manifest_path.write_text(
@@ -190,6 +191,13 @@ def _render_template(
         .replace("{response_a}", response_a)
         .replace("{response_b}", response_b)
     )
+
+
+def _max_tokens_field(model: str) -> str:
+    normalized = model.lower()
+    if normalized.startswith("gpt-5"):
+        return "max_completion_tokens"
+    return "max_tokens"
 
 
 def _response_jsonl_paths(model_dir: Path, *, shard_ids: Sequence[str] = ()) -> Iterable[Path]:
