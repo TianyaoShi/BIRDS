@@ -299,18 +299,20 @@ def render_quality_task_shell(group_plan_path: str | Path, task_index: int) -> s
         base_port=int(task["base_port"]),
         metrics_port=int(task["metrics_port"]),
     )
+    output_dir = Path(str(task["result_dir"]))
     generation_commands = _build_quality_live_generation_commands(
         run_id=str(group_payload["run_id"]),
         job=job,
         python_executable=str(group_payload["python_executable"]),
         base_url=str(task["base_url"]),
-        output_dir=Path(str(task["result_dir"])),
+        output_dir=output_dir,
+        workloads=_quality_incomplete_workloads(output_dir=output_dir, job=job),
     )
     summarize_command = _build_quality_summarize_command(
         run_id=str(group_payload["run_id"]),
         job=job,
         python_executable=str(group_payload["python_executable"]),
-        output_dir=Path(str(task["result_dir"])),
+        output_dir=output_dir,
     )
     lines = [
         _bash_assign("QUALITY_JOB_ID", job.job_id),
@@ -419,7 +421,6 @@ def render_quality_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmC
             ': >"$VLLM_STDERR"',
             ': >"$QUALITY_STDOUT"',
             ': >"$QUALITY_STDERR"',
-            'rm -rf "$RESULT_DIR"',
             'mkdir -p "$RESULT_DIR"',
             "",
             'setsid "${VLLM_CMD[@]}" >>"$VLLM_STDOUT" 2>>"$VLLM_STDERR" &',
@@ -620,6 +621,7 @@ def _build_quality_live_generation_commands(
     python_executable: str,
     base_url: str,
     output_dir: Path,
+    workloads: tuple[Path, ...] | None = None,
 ) -> tuple[tuple[str, ...], ...]:
     return tuple(
         _build_quality_live_generation_command(
@@ -630,7 +632,7 @@ def _build_quality_live_generation_commands(
             base_url=base_url,
             output_dir=_quality_shard_output_dir(output_dir, workload),
         )
-        for workload in job.workloads
+        for workload in (job.workloads if workloads is None else workloads)
     )
 
 
@@ -723,6 +725,25 @@ def _build_quality_summarize_command(
 
 def _quality_shard_output_dir(output_dir: Path, workload: Path) -> Path:
     return output_dir / "shards" / _dataset_slug(workload)
+
+
+def _quality_incomplete_workloads(*, output_dir: Path, job: QualityExperimentJob) -> tuple[Path, ...]:
+    return tuple(
+        workload
+        for workload in job.workloads
+        if not _quality_shard_is_complete(_quality_shard_output_dir(output_dir, workload))
+    )
+
+
+def _quality_shard_is_complete(shard_output_dir: Path) -> bool:
+    responses_path = shard_output_dir / "responses.jsonl"
+    summary_path = shard_output_dir / "summary.json"
+    if not responses_path.is_file() or not summary_path.is_file():
+        return False
+    summary = _read_json_mapping(summary_path)
+    if summary is None:
+        return False
+    return int(summary.get("failed_requests", 0)) == 0
 
 
 def _resolved_quality_concurrency(generation: QualityGenerationConfig) -> int:
@@ -858,7 +879,14 @@ def _reconcile_quality_state_artifacts(
         state["status"] = "succeeded"
         state["last_error"] = None
         return
-    if str(state.get("status", "planned")) in {"planned", "running"}:
+    status = str(state.get("status", "planned"))
+    last_error = state.get("last_error")
+    generic_missing_artifacts = (
+        status == "failed"
+        and isinstance(last_error, str)
+        and "required artifacts are missing" in last_error
+    )
+    if status in {"planned", "running"} or generic_missing_artifacts:
         slurm_failure = _quality_slurm_failure_from_logs(
             state=state,
             job_entry=job_entry,
@@ -879,6 +907,8 @@ def _quality_slurm_failure_from_logs(
     for path in _quality_slurm_log_candidates(state=state, job_entry=job_entry, group_entry=group_entry):
         if not path.is_file():
             continue
+        if not _quality_log_is_newer_than_state(path, state):
+            continue
         try:
             tail = path.read_text(encoding="utf-8", errors="replace")[-8192:]
         except OSError:
@@ -889,6 +919,23 @@ def _quality_slurm_failure_from_logs(
         if "CANCELLED" in normalized:
             return f"Slurm task was cancelled before orchestrator finalization; see {path}"
     return None
+
+
+def _quality_log_is_newer_than_state(path: Path, state: dict[str, Any]) -> bool:
+    updated_at = state.get("updated_at")
+    if not isinstance(updated_at, str) or not updated_at:
+        return True
+    try:
+        state_updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    try:
+        log_mtime = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+    except OSError:
+        return True
+    if state_updated_at.tzinfo is None:
+        state_updated_at = state_updated_at.replace(tzinfo=timezone.utc)
+    return log_mtime > state_updated_at
 
 
 def _quality_slurm_log_candidates(
