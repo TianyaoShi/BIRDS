@@ -16,6 +16,7 @@ def split_judge_batch_by_candidate(
     batch_manifest: str | Path,
     output_dir: str | Path,
     parts_per_candidate: int = 2,
+    candidate_model_slugs: Sequence[str] = (),
 ) -> dict[str, Any]:
     if parts_per_candidate <= 0:
         raise ValueError("parts_per_candidate must be positive")
@@ -29,6 +30,7 @@ def split_judge_batch_by_candidate(
     if not isinstance(comparisons, list) or not comparisons:
         raise ValueError("batch manifest must contain non-empty comparisons")
     comparison_by_id = {str(item["custom_id"]): item for item in comparisons}
+    candidate_filter = set(candidate_model_slugs)
 
     rows_by_candidate: dict[str, list[str]] = {}
     with batch_jsonl_path.open("r", encoding="utf-8") as handle:
@@ -40,7 +42,13 @@ def split_judge_batch_by_candidate(
             if not isinstance(custom_id, str) or custom_id not in comparison_by_id:
                 raise ValueError(f"JSONL row custom_id is missing from manifest: {custom_id!r}")
             candidate_slug = str(comparison_by_id[custom_id]["candidate_model_slug"])
+            if candidate_filter and candidate_slug not in candidate_filter:
+                continue
             rows_by_candidate.setdefault(candidate_slug, []).append(line)
+    if candidate_filter:
+        missing_candidates = sorted(candidate_filter - set(rows_by_candidate))
+        if missing_candidates:
+            raise ValueError(f"requested candidate slugs have no rows: {missing_candidates}")
 
     parts: list[dict[str, Any]] = []
     for candidate_slug, rows in sorted(rows_by_candidate.items()):
@@ -92,6 +100,7 @@ def split_judge_batch_by_candidate(
         "parent_manifest_path": str(batch_manifest_path),
         "parent_output_jsonl": str(batch_jsonl_path),
         "parts_per_candidate": parts_per_candidate,
+        "candidate_model_slugs": sorted(rows_by_candidate),
         "part_count": len(parts),
         "total_requests": sum(int(part["requests"]) for part in parts),
         "total_bytes": sum(int(part["bytes"]) for part in parts),

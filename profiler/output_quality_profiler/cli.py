@@ -96,6 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
     split_judge.add_argument("--batch-manifest", type=Path, required=True)
     split_judge.add_argument("--output-dir", type=Path, required=True)
     split_judge.add_argument("--parts-per-candidate", type=int, default=2)
+    split_judge.add_argument("--candidate-model-slug", action="append", default=[])
     split_judge.set_defaults(handler=_split_judge_batch_by_candidate)
 
     submit_batches = subparsers.add_parser("submit-openai-batches")
@@ -283,6 +284,7 @@ def _split_judge_batch_by_candidate(args: argparse.Namespace) -> int:
         batch_manifest=args.batch_manifest,
         output_dir=args.output_dir,
         parts_per_candidate=args.parts_per_candidate,
+        candidate_model_slugs=tuple(args.candidate_model_slug or ()),
     )
     print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
     return 0
