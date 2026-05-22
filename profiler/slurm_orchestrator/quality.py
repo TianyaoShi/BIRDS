@@ -548,6 +548,7 @@ def serialize_quality_job(job: QualityExperimentJob) -> dict[str, Any]:
             "max_concurrency": job.generation.max_concurrency,
             "load_mode": job.generation.load_mode,
             "request_rate": job.generation.request_rate,
+            "request_rates_by_workload": dict(job.generation.request_rates_by_workload),
             "concurrency_source": job.generation.concurrency_source,
             "concurrency_mst_fraction": job.generation.concurrency_mst_fraction,
             "preserve_request_order": job.generation.preserve_request_order,
@@ -594,6 +595,10 @@ def deserialize_quality_job(payload: dict[str, Any]) -> QualityExperimentJob:
             request_rate=(
                 None if generation.get("request_rate") is None else float(generation["request_rate"])
             ),
+            request_rates_by_workload={
+                str(key): float(value)
+                for key, value in dict(generation.get("request_rates_by_workload") or {}).items()
+            },
             concurrency_source=str(generation["concurrency_source"]),
             concurrency_mst_fraction=float(generation["concurrency_mst_fraction"]),
             preserve_request_order=bool(generation["preserve_request_order"]),
@@ -700,11 +705,35 @@ def _build_quality_live_generation_command(
         json.dumps(decoding.extra_body, sort_keys=True),
         "--force",
     ]
-    if job.generation.request_rate is not None:
+    workload_request_rate = _request_rate_for_workload(job=job, workload=workload)
+    if workload_request_rate is not None:
+        command.extend(["--request-rate", str(workload_request_rate)])
+    elif job.generation.request_rate is not None:
         command.extend(["--request-rate", str(job.generation.request_rate)])
     if job.launch.max_model_len is not None:
         command.extend(["--serving-max-model-len", str(job.launch.max_model_len)])
     return tuple(command)
+
+
+def _request_rate_for_workload(*, job: QualityExperimentJob, workload: Path) -> float | None:
+    rates = job.generation.request_rates_by_workload
+    if not rates:
+        return None
+    keys = (
+        str(workload),
+        str(workload.resolve()),
+        workload.stem,
+        workload.parent.parent.name,
+        _dataset_slug(workload),
+    )
+    for key in keys:
+        rate = rates.get(key)
+        if rate is not None:
+            return rate
+    raise ValueError(
+        "generation.request_rates_by_workload does not contain an entry for workload "
+        f"{workload}; tried keys {keys}"
+    )
 
 
 def _build_quality_summarize_command(
@@ -800,6 +829,7 @@ def _quality_job_state(
             "max_concurrency": _resolved_quality_concurrency(job.generation),
             "load_mode": job.generation.load_mode,
             "request_rate": job.generation.request_rate,
+            "request_rates_by_workload": dict(job.generation.request_rates_by_workload),
             "concurrency_source": job.generation.concurrency_source,
             "concurrency_mst_fraction": job.generation.concurrency_mst_fraction,
             "response_text_max_chars": job.generation.response_text_max_chars,

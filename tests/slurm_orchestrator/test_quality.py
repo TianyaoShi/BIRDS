@@ -173,6 +173,40 @@ def test_materialize_quality_run_plan_renders_open_loop_settings(tmp_path: Path)
     assert "--request-rate 21.0" in task_shell
 
 
+def test_materialize_quality_run_plan_renders_per_workload_open_loop_rates(tmp_path: Path) -> None:
+    workload = _write_quality_workload(tmp_path)
+    sibling_dir = tmp_path / "quality_sibling" / "workload_yamls"
+    sibling_dir.mkdir(parents=True)
+    sibling = sibling_dir / "shard_000.yaml"
+    sibling.write_text(workload.read_text(encoding="utf-8"), encoding="utf-8")
+    manifest_path = _write_quality_manifest(
+        tmp_path,
+        workload,
+        generation_overrides={
+            "max_concurrency": 7,
+            "load_mode": "open_loop",
+            "request_rates_by_workload": {
+                workload.parent.parent.name: 1.25,
+                sibling.parent.parent.name: 2.5,
+            },
+        },
+    )
+    payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    payload["experiments"][0].pop("workload")
+    payload["experiments"][0]["workloads"] = [str(workload), str(sibling)]
+    manifest_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    manifest = load_quality_manifest(manifest_path)
+
+    run_plan = materialize_quality_run_plan(manifest=manifest, run_id="quality-open-loop-by-workload")
+    task_shell = render_quality_task_shell(run_plan["groups"][0]["plan_path"], 0)
+
+    assert "--max-concurrency 7" in task_shell
+    assert "--load-mode open_loop" in task_shell
+    assert task_shell.count("--request-rate 1.25") == 1
+    assert task_shell.count("--request-rate 2.5") == 1
+    assert "--request-rate 21.0" not in task_shell
+
+
 def test_quality_shard_output_dirs_are_unique_for_generic_shards(tmp_path: Path) -> None:
     workload = _write_quality_workload(tmp_path)
     sibling = workload.with_name("shard_001.yaml")

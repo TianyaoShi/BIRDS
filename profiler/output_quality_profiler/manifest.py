@@ -32,6 +32,7 @@ _GENERATION_KEYS = {
     "request_timeout_s",
     "max_concurrency",
     "request_rate",
+    "request_rates_by_workload",
     "load_mode",
     "concurrency_source",
     "concurrency_mst_fraction",
@@ -177,6 +178,14 @@ def _merge_generation_config(
                 if "request_rate" not in item
                 else _optional_float(item.get("request_rate"), f"{field_name}.request_rate")
             ),
+            request_rates_by_workload=(
+                dict(base.request_rates_by_workload)
+                if "request_rates_by_workload" not in item
+                else _parse_request_rates_by_workload(
+                    item.get("request_rates_by_workload"),
+                    f"{field_name}.request_rates_by_workload",
+                )
+            ),
             load_mode=str(item.get("load_mode", base.load_mode)),
             concurrency_source=str(item.get("concurrency_source", base.concurrency_source)),
             concurrency_mst_fraction=float(
@@ -199,6 +208,21 @@ def _merge_generation_config(
         )
     except ValueError as exc:
         raise QualityManifestValidationError(str(exc)) from exc
+
+
+def _parse_request_rates_by_workload(value: Any, field_name: str) -> dict[str, float]:
+    if value is None:
+        return {}
+    payload = _expect_mapping(value, field_name)
+    parsed: dict[str, float] = {}
+    for key, raw_rate in payload.items():
+        if not isinstance(key, str) or not key:
+            raise QualityManifestValidationError(f"{field_name} keys must be non-empty strings")
+        rate = _optional_float(raw_rate, f"{field_name}.{key}")
+        if rate is None or rate <= 0:
+            raise QualityManifestValidationError(f"{field_name}.{key} must be positive")
+        parsed[key] = rate
+    return parsed
 
 
 def _merge_decoding_config(

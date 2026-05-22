@@ -151,6 +151,7 @@ class QualityGenerationConfig:
     request_timeout_s: float = 21600.0
     max_concurrency: int | None = None
     request_rate: float | None = None
+    request_rates_by_workload: dict[str, float] = field(default_factory=dict)
     load_mode: str = "closed_loop"
     concurrency_source: str = "mst_fraction"
     concurrency_mst_fraction: float = 0.40
@@ -165,6 +166,12 @@ class QualityGenerationConfig:
             _require_positive_int("generation.max_concurrency", self.max_concurrency)
         if self.request_rate is not None:
             _require_positive_float("generation.request_rate", self.request_rate)
+        if not isinstance(self.request_rates_by_workload, dict):
+            raise ValueError("generation.request_rates_by_workload must be a mapping")
+        for key, value in self.request_rates_by_workload.items():
+            if not isinstance(key, str) or not key:
+                raise ValueError("generation.request_rates_by_workload keys must be non-empty strings")
+            _require_positive_float(f"generation.request_rates_by_workload[{key!r}]", value)
         if self.load_mode not in {"closed_loop", "open_loop"}:
             raise ValueError("generation.load_mode must be closed_loop or open_loop")
         if self.concurrency_source not in {"mst_fraction", "explicit"}:
@@ -174,8 +181,11 @@ class QualityGenerationConfig:
             raise ValueError("generation.concurrency_mst_fraction must be 0.40 for V1")
         if self.concurrency_source == "explicit" and self.max_concurrency is None:
             raise ValueError("generation.max_concurrency is required when concurrency_source=explicit")
-        if self.load_mode == "open_loop" and self.request_rate is None:
-            raise ValueError("generation.request_rate is required when load_mode=open_loop")
+        if self.load_mode == "open_loop" and self.request_rate is None and not self.request_rates_by_workload:
+            raise ValueError(
+                "generation.request_rate or generation.request_rates_by_workload is required "
+                "when load_mode=open_loop"
+            )
         if not isinstance(self.preserve_request_order, bool):
             raise ValueError("generation.preserve_request_order must be a boolean")
         if not self.preserve_request_order:
