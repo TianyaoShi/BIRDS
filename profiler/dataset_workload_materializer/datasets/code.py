@@ -308,6 +308,8 @@ def crosscodeeval_row_to_sample(
     prompt = render_crosscodeeval_prompt(
         current_file_prefix,
         cross_file_context,
+        file_path=str(metadata_alias(row, aliases["file_path"], "unknown")),
+        language=str(metadata_alias(row, aliases["language"], input_path.parent.name)),
         prompt_template=prompt_template,
     )
     prompt_token_count = len(tokenizer.encode(prompt))
@@ -358,7 +360,11 @@ def crosscodeeval_row_to_sample(
         "target_hash": hash_text(target),
         "prompt_token_count": prompt_token_count,
         "target_token_count": target_token_count,
+        "current_file_prefix": current_file_prefix,
     }
+    system_prompt = crosscodeeval_system_prompt(prompt_template)
+    if system_prompt is not None:
+        metadata["system_prompt"] = system_prompt
     return MaterializedSample(
         sample_id=sample_id,
         prompt=prompt,
@@ -372,6 +378,8 @@ def render_crosscodeeval_prompt(
     current_file_prefix: str,
     cross_file_context: str | None,
     *,
+    file_path: str = "unknown",
+    language: str = "unknown",
     prompt_template: str,
 ) -> str:
     if prompt_template == "plain_prefix":
@@ -379,6 +387,23 @@ def render_crosscodeeval_prompt(
         if cross_file_context:
             parts.append("Relevant repository context:\n" + cross_file_context.strip())
         parts.append(current_file_prefix.rstrip())
+        return "\n\n".join(parts)
+    if prompt_template == "gemma_chat_completion":
+        parts = [
+            "Complete the code at <CURSOR>.",
+        ]
+        if cross_file_context:
+            parts.append(
+                "<REPOSITORY_CONTEXT>\n"
+                f"{cross_file_context.strip()}\n"
+                "</REPOSITORY_CONTEXT>"
+            )
+        parts.append(
+            f'<TARGET_FILE path="{file_path}" language="{language}">\n'
+            f"{current_file_prefix.rstrip()}<CURSOR>\n"
+            "</TARGET_FILE>"
+        )
+        parts.append("Return only the continuation after <CURSOR>.")
         return "\n\n".join(parts)
     if prompt_template == "xml_tags" and cross_file_context:
         return (
@@ -397,6 +422,20 @@ def render_crosscodeeval_prompt(
         "<CURRENT_FILE_PREFIX>\n"
         f"{current_file_prefix}\n"
         "</CURRENT_FILE_PREFIX>"
+    )
+
+
+def crosscodeeval_system_prompt(prompt_template: str) -> str | None:
+    if prompt_template != "gemma_chat_completion":
+        return None
+    return (
+        "You are a code completion engine.\n"
+        "Return only the exact code continuation after <CURSOR>.\n"
+        "Do not return Markdown, code fences, comments, explanations, XML tags, "
+        "or natural language.\n"
+        "Do not repeat the provided context or prefix.\n"
+        "Complete the current statement or line only.\n"
+        "Begin immediately with code."
     )
 
 

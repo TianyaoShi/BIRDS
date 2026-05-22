@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from llm_mst_finder.records import SampleRequest
 from llm_mst_finder.workload import (
     generate_sample_requests,
     inspect_workload_dataset,
@@ -233,6 +234,22 @@ def test_jsonl_natural_until_eos_uses_cap_without_dataset_output_length(tmp_path
     assert sample.extra_body == {"temperature": 0.0, "ignore_eos": False}
     assert payload["max_tokens"] == 2048
     assert payload["ignore_eos"] is False
+
+
+def test_chat_payload_includes_sample_system_prompt() -> None:
+    sample = SampleRequest(
+        prompt="Complete the code at <CURSOR>.",
+        prompt_len=7,
+        expected_output_len=64,
+        metadata={"system_prompt": "You are a code completion engine."},
+    )
+
+    payload = build_openai_payload("/v1/chat/completions", "fake-model", sample)
+
+    assert payload["messages"] == [
+        {"role": "system", "content": "You are a code completion engine."},
+        {"role": "user", "content": "Complete the code at <CURSOR>."},
+    ]
 
 
 def test_natural_until_eos_rejects_ignore_eos_true(tmp_path: Path) -> None:

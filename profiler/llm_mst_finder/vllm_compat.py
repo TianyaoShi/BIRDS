@@ -35,9 +35,14 @@ def build_openai_payload(
     endpoint_kind = detect_endpoint_kind(endpoint)
     payload: dict[str, Any]
     if endpoint_kind == "chat":
+        system_prompt = sample_request.metadata.get("system_prompt")
+        messages: list[dict[str, str]] = []
+        if isinstance(system_prompt, str) and system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": sample_request.prompt})
         payload = {
             "model": model,
-            "messages": [{"role": "user", "content": sample_request.prompt}],
+            "messages": messages,
             "temperature": 0.0,
             "max_tokens": sample_request.expected_output_len,
             "stream": True,

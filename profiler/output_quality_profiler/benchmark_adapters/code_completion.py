@@ -285,10 +285,18 @@ def score_code_completion_responses(
             )
             continue
         target = truth_values[0]
-        prompt = str(row.get("prompt") or meta.get("prompt") or "")
+        prompt = str(
+            meta.get("current_file_prefix")
+            or row.get("prompt")
+            or meta.get("prompt")
+            or ""
+        )
+        completion = str(row.get("response_text") or "")
+        if _is_gemma_completion_row(row, meta):
+            completion = sanitize_gemma_completion(completion)
         prediction = crosscodeeval_postprocess_prediction(
             prompt=prompt,
-            completion=str(row.get("response_text") or ""),
+            completion=completion,
             language=language,
         )
         target_processed = remove_code_comments(target)
@@ -377,6 +385,32 @@ def crosscodeeval_postprocess_prediction(*, prompt: str, completion: str, langua
     elif language == "python":
         text = _first_python_statement(prompt, text)
     return remove_code_comments(text)
+
+
+def sanitize_gemma_completion(value: str) -> str:
+    text = value
+    for marker in (
+        "<|channel>thought\n<channel|>",
+        "<|channel>thought",
+        "<channel|>",
+        "<|turn>model",
+        "<|turn>assistant",
+        "<turn|>",
+    ):
+        text = text.replace(marker, "")
+    for marker in ("<COMPLETION>", "<CURSOR>"):
+        if marker in text:
+            text = text.split(marker, 1)[-1]
+    for marker in ("</COMPLETION>", "</TARGET_FILE>", "</REPOSITORY_CONTEXT>"):
+        if marker in text:
+            text = text.split(marker, 1)[0]
+    return text.strip("\r\n ")
+
+
+def _is_gemma_completion_row(row: dict[str, Any], meta: dict[str, Any]) -> bool:
+    model = str(row.get("model") or "").lower()
+    prompt_template = str(meta.get("prompt_template") or "")
+    return "gemma" in model or prompt_template == "gemma_chat_completion"
 
 
 def _first_bracket_language_statement(completion: str) -> str:

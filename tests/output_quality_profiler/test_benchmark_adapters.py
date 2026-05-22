@@ -11,6 +11,7 @@ from output_quality_profiler.benchmark_adapters.code_completion import (
     crosscodeeval_exact_match,
     crosscodeeval_postprocess_prediction,
     extract_identifiers,
+    sanitize_gemma_completion,
 )
 from output_quality_profiler.benchmark_adapters.longbench_v1 import (
     rouge_l_f1,
@@ -66,6 +67,12 @@ def test_supergpqa_adapter_scores_extracted_answer(tmp_path: Path) -> None:
     assert score["overall_score"] == pytest.approx(0.5)
     assert score["correct"] == 1
     assert (tmp_path / "score" / "per_item.jsonl").is_file()
+
+
+def test_cceval_sanitizes_gemma_control_and_xml_markers() -> None:
+    raw = "<|channel>thought\n<channel|><COMPLETION> value);</TARGET_FILE> ignored"
+
+    assert sanitize_gemma_completion(raw) == "value);"
 
 
 def test_repobench_adapter_reports_official_em_and_es(tmp_path: Path) -> None:

@@ -35,8 +35,11 @@ def config_raw_path(dataset: dict[str, Any], *, base_dir: Path) -> Path | None:
 
 def prompt_template(value: Any) -> str:
     template = optional_string(value, "prompt_template") or "plain_prefix"
-    if template not in {"plain_prefix", "xml_tags"}:
-        raise ValueError("prompt_template must be one of: plain_prefix, xml_tags")
+    if template not in {"plain_prefix", "xml_tags", "gemma_chat_completion"}:
+        raise ValueError(
+            "prompt_template must be one of: plain_prefix, xml_tags, "
+            "gemma_chat_completion"
+        )
     return template
 
 
