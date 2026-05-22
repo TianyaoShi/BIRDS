@@ -76,6 +76,8 @@ experiments:
       extra_body:
         chat_template_kwargs:
           enable_thinking: false
+    load_mode: open_loop
+    request_rate: 1.03343
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -101,6 +103,8 @@ experiments:
       extra_body:
         chat_template_kwargs:
           enable_thinking: false
+    load_mode: open_loop
+    request_rate: 0.982966
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -126,6 +130,8 @@ experiments:
       extra_body:
         chat_template_kwargs:
           enable_thinking: false
+    load_mode: open_loop
+    request_rate: 0.04754
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -155,6 +161,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.20677
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -184,6 +192,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.284267
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -210,6 +220,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 1.270627
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -236,6 +248,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 1.317387
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -264,6 +278,8 @@ experiments:
       extra_body:
         chat_template_kwargs:
           enable_thinking: false
+    load_mode: open_loop
+    request_rate: 0.561738
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -287,6 +303,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.515346
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -310,6 +328,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.524555
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -335,6 +355,8 @@ experiments:
       extra_body:
         chat_template_kwargs:
           enable_thinking: false
+    load_mode: open_loop
+    request_rate: 0.431854
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -361,6 +383,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.895062
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -387,6 +411,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.47648
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -410,6 +436,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.25399
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -433,6 +461,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.897715
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -459,6 +489,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.279531
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -482,6 +514,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.44454
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -505,6 +539,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 2.847955
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -528,6 +564,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.798456
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -555,6 +593,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.821685
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -582,6 +622,8 @@ experiments:
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
       extra_body: {}
+    load_mode: open_loop
+    request_rate: 1.317737
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
