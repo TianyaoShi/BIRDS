@@ -7,7 +7,7 @@ slurm:
   partition: ai
   account: yiding
   qos: normal
-  time: '10:00:00'
+  time: 06:00:00
   cpus_per_gpu: 14
   modules:
   - modtree/gpu
@@ -140,15 +140,18 @@ experiments:
           enable_thinking: false
     load_mode: open_loop
     request_rates_by_workload:
-      longbench_long_output_summarization_original_official_qwen3_8b: 0.04754
-      longbench_medium_answer_rag_qa_original_official_qwen3_8b: 0.86845
-      longbench_medium_output_summarization_original_official_qwen3_8b: 0.754628
-      longbench_short_answer_document_qa_original_official_qwen3_8b: 0.04754
+      longbench_long_output_summarization_original_official_qwen3_8b: 0.11885
+      longbench_medium_answer_rag_qa_original_official_qwen3_8b: 2.171125
+      longbench_medium_output_summarization_original_official_qwen3_8b: 1.88657
+      longbench_short_answer_document_qa_original_official_qwen3_8b: 0.11885
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_answer_rag_qa_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_short_answer_document_qa_original_official_qwen3_8b/workload_yamls/shard_000.yaml
+  launch:
+    gpu_count: 2
+    tensor_parallel_size: 2
 - id: qwen-qwen3-235b-a22b-instruct-2507-longbench-v1-covered-responses
   model: Qwen/Qwen3-235B-A22B-Instruct-2507
   launch:
