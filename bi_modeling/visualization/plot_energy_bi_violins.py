@@ -67,8 +67,8 @@ def _plot_violin(ax, data, *, column: str, ylabel: str, color: str) -> None:
     ax.set_xticks([1])
     ax.set_xticklabels([ylabel])
     ax.set_yscale("log")
-    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=12)
-    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE, width=0, length=0)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE+2, width=LINEWIDTH * 0.45, length=12)
+    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE+4, width=0, length=0)
     for spine in ax.spines.values():
         spine.set_linewidth(LINEWIDTH * 0.45)
 
@@ -117,10 +117,10 @@ def _apply_bi_token_stats(series: pd.DataFrame, stats: dict[str, float]) -> pd.D
 
 def _format_daily_tokens(tokens: float) -> str:
     if tokens >= 1e12:
-        return f"{tokens / 1e12:.2f}".rstrip("0").rstrip(".") + " T\nToken/Day"
+        return f"{tokens / 1e12:.1f}".rstrip("0").rstrip(".") + " T\nTokens/Day"
     if tokens >= 1e9:
-        return f"{tokens / 1e9:.0f} B\nToken/Day"
-    return f"{tokens:.0f}\nToken/Day"
+        return f"{tokens / 1e9:.0f} B\nTokens/Day"
+    return f"{tokens:.0f}\nTokens/Day"
 
 
 def _annotate_may_token_rates(
@@ -204,14 +204,17 @@ def _plot_platform_trends(ax, data) -> None:
         year_y_offsets={2026: -99.8},
     )
 
-    ax.set_ylabel(r"Daily BI (species·yr/day)", fontsize=FONTSIZE)
+    ax.set_ylabel(r"Daily BI (species·yr/day)", fontsize=FONTSIZE+2)
     ax.set_yscale("log")
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=8))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
     ax.set_xlim(google["date"].min(), google["date"].max())
     ax.margins(x=0)
     ax.tick_params(axis="x", rotation=0)
-    ax.tick_params(axis="both", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=12)
+    ax.tick_params(axis="both", labelsize=TICK_FONTSIZE+2, width=LINEWIDTH * 0.45, length=12)
+    for label in ax.get_xticklabels():
+        if label.get_text() == "2026-05":
+            label.set_ha("right")
     for spine in ax.spines.values():
         spine.set_linewidth(LINEWIDTH * 0.45)
     ax.legend(frameon=False, fontsize=LEGEND_FONTSIZE+4, loc="upper left")
@@ -233,7 +236,7 @@ def plot_energy_bi_violins(data, output_path: Path) -> None:
         ylabel="BI per req",
         color=VIOLIN_COLORS["request"],
     )
-    axes[0].set_ylabel(r"BI (species·yr)", fontsize=FONTSIZE)
+    axes[0].set_ylabel(r"BI (species·yr)", fontsize=FONTSIZE+2)
     _plot_violin(
         axes[1],
         data,
