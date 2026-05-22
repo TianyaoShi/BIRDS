@@ -109,6 +109,12 @@ def build_parser() -> argparse.ArgumentParser:
     split_judge.add_argument("--candidate-model-slug", action="append", default=[])
     split_judge.set_defaults(handler=_split_judge_batch_by_candidate)
 
+    preprocess_responses = subparsers.add_parser("preprocess-responses")
+    preprocess_responses.add_argument("--responses-root", type=Path, required=True)
+    preprocess_responses.add_argument("--output-root", type=Path, required=True)
+    preprocess_responses.add_argument("--force", action="store_true")
+    preprocess_responses.set_defaults(handler=_preprocess_responses)
+
     submit_batches = subparsers.add_parser("submit-openai-batches")
     submit_batches.add_argument("--split-manifest", type=Path, required=True)
     submit_batches.add_argument("--api-key-file", type=Path, required=True)
@@ -310,6 +316,18 @@ def _split_judge_batch_by_candidate(args: argparse.Namespace) -> int:
         candidate_model_slugs=tuple(args.candidate_model_slug or ()),
     )
     print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _preprocess_responses(args: argparse.Namespace) -> int:
+    from .response_preprocessing import preprocess_response_tree
+
+    payload = preprocess_response_tree(
+        responses_root=args.responses_root,
+        output_root=args.output_root,
+        force=bool(args.force),
+    )
+    print(json.dumps(payload.to_dict(), indent=2, ensure_ascii=False, sort_keys=True))
     return 0
 
 
