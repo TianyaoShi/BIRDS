@@ -23,6 +23,7 @@ REASONING_FINAL_CUE_RE = re.compile(
     r"(?:final\s+)?(?:answer|response|reply|output|tweet|summary)\s*:"
     r"|(?:let'?s|we\s+can|i'?ll)\s+(?:craft|write|produce|provide|give)\s+"
     r"(?:the\s+)?(?:final\s+)?(?:answer|response|reply|output|tweet|summary|code)[^\n]*"
+    r"|(?:let'?s|we\s+can|i'?ll)\s+(?:craft|write|produce|provide|give)\s*\.?"
     r"|(?:so|thus|therefore)\s*:"
     r")\s*\n{2,}",
     re.IGNORECASE,

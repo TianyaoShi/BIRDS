@@ -164,6 +164,71 @@ LONGBENCH_OFFICIAL_MAX_NEW_TOKENS: dict[str, int] = {
     "multi_news": 512,
     "vcsum": 512,
 }
+LONGBENCH_OFFICIAL_ANSWER_STYLE_PROMPTS: dict[str, str] = {
+    "qasper": (
+        "You are given a scientific article and a question.\n"
+        "Answer with only the final answer text. Use a single short phrase or sentence whenever possible. "
+        'If the article does not answer the question, write exactly "unanswerable". '
+        'If the question is yes/no, write exactly "yes", "no", or "unanswerable". '
+        "Do not include reasoning, citations, section titles, bullet points, markdown, or explanations.\n\n"
+        "Article: {context}\n\n"
+        "Question: {input}\n\n"
+        "Final answer only:"
+    ),
+    "multifieldqa_en": (
+        "Read the following text and answer the question.\n\n"
+        "{context}\n\n"
+        "Return only the answer span or shortest possible answer phrase. "
+        "Do not write a full sentence unless the answer itself requires it. "
+        "Do not include reasoning, source discussion, markdown, or any extra words.\n\n"
+        "Question: {input}\n"
+        "Final answer only:"
+    ),
+    "multifieldqa_zh": (
+        "阅读以下文字并回答问题。\n\n"
+        "{context}\n\n"
+        "只输出最终答案本身，尽量使用最短的答案短语。"
+        "不要解释，不要引用来源，不要使用 Markdown，不要输出多余文字。\n\n"
+        "问题：{input}\n"
+        "最终答案："
+    ),
+    "dureader": (
+        "请基于给定的文章回答问题。\n\n"
+        "文章：{context}\n\n"
+        "只输出最终答案本身，尽量使用最短的答案短语。"
+        "不要解释，不要引用来源，不要使用 Markdown，不要输出多余文字。\n\n"
+        "问题：{input}\n"
+        "最终答案："
+    ),
+    "gov_report": (
+        "You are given a report by a government agency. Write a one-page summary of the report.\n\n"
+        "Report:\n{context}\n\n"
+        "Write only the final one-page summary. Start directly with the summary content. "
+        "Do not mention that you are summarizing, do not include planning text, headings, markdown, or bullet points.\n\n"
+        "Summary:"
+    ),
+    "qmsum": (
+        "You are given a meeting transcript and a query containing a question or instruction.\n\n"
+        "Transcript:\n{context}\n\n"
+        "Answer the query directly in one or more sentences. "
+        "Do not include reasoning, planning text, headings, markdown, bullet points, or source discussion.\n\n"
+        "Query: {input}\n"
+        "Final answer:"
+    ),
+    "multi_news": (
+        "You are given several news passages. Write a one-page summary of all news.\n\n"
+        "News:\n{context}\n\n"
+        "Write only the final one-page summary. Start directly with the summary content. "
+        "Do not mention that you are summarizing, do not include planning text, headings, markdown, or bullet points.\n\n"
+        "Summary:"
+    ),
+    "vcsum": (
+        "下面有一段会议记录，请你阅读后写一段总结。\n"
+        "会议记录：\n{context}\n\n"
+        "只输出最终会议总结正文。不要解释，不要写计划过程，不要使用标题、Markdown 或项目符号。\n\n"
+        "会议总结："
+    ),
+}
 
 
 def load_longbench_dataset(dataset: dict[str, Any], ctx: MaterializationContext) -> DatasetLoadResult:
@@ -174,9 +239,14 @@ def load_longbench_dataset(dataset: dict[str, Any], ctx: MaterializationContext)
         raise ValueError("longbench materialization only supports sampling.policy=task_uniform")
     profile, profile_spec, selected_tasks = longbench_selection(dataset)
     prompt_template = optional_string(dataset.get("prompt_template"), "dataset.prompt_template")
-    if prompt_template is not None and prompt_template not in {"longbench_context_task", "longbench_official"}:
+    if prompt_template is not None and prompt_template not in {
+        "longbench_context_task",
+        "longbench_official",
+        "longbench_official_answer_style",
+    }:
         raise ValueError(
-            "dataset.prompt_template must be one of: longbench_context_task, longbench_official"
+            "dataset.prompt_template must be one of: longbench_context_task, "
+            "longbench_official, longbench_official_answer_style"
         )
     prompt_template = prompt_template or "longbench_context_task"
     external_sources = longbench_external_sources(dataset, base_dir=ctx.base_dir, profile=profile)
@@ -536,7 +606,9 @@ def longbench_row_to_sample(
     prompt_token_count = len(tokenizer.encode(prompt))
     target_token_count = len(tokenizer.encode(target))
     expected_output_len = (
-        official_longbench_max_new_tokens(task) if prompt_template == "longbench_official" else max(1, target_token_count)
+        official_longbench_max_new_tokens(task)
+        if prompt_template in {"longbench_official", "longbench_official_answer_style"}
+        else max(1, target_token_count)
     )
     if prompt_token_count < filtering.min_prompt_tokens:
         counters.drops["prompt_too_short"] += 1
@@ -898,6 +970,9 @@ def render_longbench_prompt(
     if prompt_template == "longbench_official":
         task = expect_string(row.get("dataset"), "longbench row.dataset")
         return official_longbench_prompt(task).format(context=context, input=resolved_task_input)
+    if prompt_template == "longbench_official_answer_style":
+        task = expect_string(row.get("dataset"), "longbench row.dataset")
+        return official_longbench_answer_style_prompt(task).format(context=context, input=resolved_task_input)
     if prompt_template != "longbench_context_task":
         raise ValueError(f"unsupported LongBench prompt template: {prompt_template}")
     all_classes = row.get("all_classes")
@@ -925,6 +1000,14 @@ def official_longbench_prompt(task: str) -> str:
         return LONGBENCH_OFFICIAL_PROMPTS[base_task]
     except KeyError as exc:
         raise ValueError(f"unsupported LongBench official prompt task: {task}") from exc
+
+
+def official_longbench_answer_style_prompt(task: str) -> str:
+    base_task = metric_longbench_task(task)
+    try:
+        return LONGBENCH_OFFICIAL_ANSWER_STYLE_PROMPTS[base_task]
+    except KeyError as exc:
+        raise ValueError(f"unsupported LongBench answer-style prompt task: {task}") from exc
 
 
 def official_longbench_max_new_tokens(task: str) -> int:
