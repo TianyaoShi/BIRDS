@@ -64,9 +64,45 @@ def test_supergpqa_adapter_scores_extracted_answer(tmp_path: Path) -> None:
     )
 
     assert extract_supergpqa_answer("Answer: D", ground_truth="D") == "D"
+    assert extract_supergpqa_answer("<think>Answer: A</think>\n\nAnswer: <C>", ground_truth="C") == "C"
+    assert extract_supergpqa_answer(r"$$\boxed{\text{F}}$$", ground_truth="F") == "F"
     assert score["overall_score"] == pytest.approx(0.5)
     assert score["correct"] == 1
     assert (tmp_path / "score" / "per_item.jsonl").is_file()
+
+
+def test_supergpqa_unextractable_answer_counts_as_incorrect(tmp_path: Path) -> None:
+    responses = tmp_path / "responses.jsonl"
+    _write_rows(
+        responses,
+        [
+            {
+                "model": "org/model",
+                "request_id": "q1",
+                "success": True,
+                "response_text": "I cannot decide.",
+                "metadata": {"ground_truth": "B"},
+            },
+            {
+                "model": "org/model",
+                "request_id": "q2",
+                "success": True,
+                "response_text": "Answer: B",
+                "metadata": {"ground_truth": "B"},
+            },
+        ],
+    )
+
+    score = score_benchmark_responses(
+        benchmark="SuperGPQA-hard",
+        responses_root=responses,
+        output_dir=tmp_path / "score",
+    )
+
+    assert score["overall_score"] == pytest.approx(0.5)
+    assert score["correct"] == 1
+    assert score["scored_items"] == 2
+    assert score["invalid_items"] == 1
 
 
 def test_cceval_sanitizes_gemma_control_and_xml_markers() -> None:

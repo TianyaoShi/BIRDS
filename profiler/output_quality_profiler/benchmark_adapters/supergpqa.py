@@ -14,9 +14,29 @@ from .base import (
 )
 
 
+_MCQ_LABEL = r"([A-J])"
 _ANSWER_PATTERNS = (
-    re.compile(r"(?:final\s+answer|answer)\s*(?:is|:)?\s*\(?\s*([A-Z])\s*\)?", re.IGNORECASE),
-    re.compile(r"^\s*\(?\s*([A-Z])\s*\)?(?:[).:\s]|$)", re.IGNORECASE),
+    re.compile(
+        r"\\boxed\s*\{\s*(?:\\(?:text|mathrm)\s*\{\s*)?"
+        + _MCQ_LABEL
+        + r"\s*\}?\s*\}",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:final\s+answer|answer)\s*(?:is|:|：)?\s*"
+        r"(?:option|choice)?\s*[<({\[]?\s*"
+        + _MCQ_LABEL
+        + r"\s*[>)}\]]?",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:correct|final)\s+(?:answer|option|choice|response)\s*"
+        r"(?:is|would\s+be|should\s+be|:|：)\s*"
+        r"(?:option|choice)?\s*[<({\[]?\s*"
+        + _MCQ_LABEL
+        + r"\s*[>)}\]]?",
+        re.IGNORECASE,
+    ),
 )
 
 
@@ -47,8 +67,13 @@ def score_supergpqa_responses(
         ground_truth = truth_values[0].strip()
         response_text = str(row.get("response_text") or "")
         prediction = extract_supergpqa_answer(response_text, ground_truth=ground_truth)
+        subject = str(meta.get("subject") or meta.get("discipline") or "unknown")
+        difficulty = str(meta.get("difficulty") or "unknown")
         if prediction is None:
             invalid += 1
+            scored += 1
+            by_subject.setdefault(subject, []).append(False)
+            by_difficulty.setdefault(difficulty, []).append(False)
             per_item.append(
                 {
                     "request_id": request_id,
@@ -66,8 +91,6 @@ def score_supergpqa_responses(
         )
         scored += 1
         correct += int(is_correct)
-        subject = str(meta.get("subject") or meta.get("discipline") or "unknown")
-        difficulty = str(meta.get("difficulty") or "unknown")
         by_subject.setdefault(subject, []).append(is_correct)
         by_difficulty.setdefault(difficulty, []).append(is_correct)
         per_item.append(
@@ -96,7 +119,9 @@ def score_supergpqa_responses(
         "is_full_benchmark": is_full_benchmark,
         "compatibility_note": (
             "Uses local answer-label extraction against materialized SuperGPQA ground truth. "
-            "Run the official evaluator too if strict benchmark parity is required."
+            "Unextractable successful responses are scored as incorrect, not dropped from "
+            "the accuracy denominator. Run the official evaluator too if strict benchmark "
+            "parity is required."
         ),
     }
     return write_score_artifacts(
@@ -112,14 +137,26 @@ def extract_supergpqa_answer(response_text: str, *, ground_truth: str) -> str | 
     if not text:
         return None
     if len(ground_truth.strip()) == 1 and ground_truth.strip().isalpha():
+        text = _answer_region(text)
+        matches: list[tuple[int, str]] = []
         for pattern in _ANSWER_PATTERNS:
-            match = pattern.search(text)
+            matches.extend((match.start(), match.group(1).upper()) for match in pattern.finditer(text))
+        if matches:
+            return max(matches, key=lambda item: item[0])[1]
+        final_lines = [line.strip() for line in text.splitlines() if line.strip()]
+        for line in reversed(final_lines[-8:]):
+            match = re.fullmatch(r"[<({\[]?\s*([A-J])\s*[>)}\].。．,，:]?", line, re.IGNORECASE)
             if match:
                 return match.group(1).upper()
-        options = sorted(set(re.findall(r"\b[A-Z]\b", text.upper())))
-        if len(options) == 1:
-            return options[0]
         return None
+    return text
+
+
+def _answer_region(text: str) -> str:
+    if "</think>" in text:
+        return text.rsplit("</think>", 1)[-1].strip() or text
+    if "<think>" in text:
+        return text.rsplit("<think>", 1)[-1].strip() or text
     return text
 
 
