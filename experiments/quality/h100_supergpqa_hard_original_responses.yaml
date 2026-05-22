@@ -1,7 +1,7 @@
 run:
   run_id: h100-quality-supergpqa-hard-original-responses-000
   output_root: ../../results/quality
-  default_endpoint: /v1/completions
+  default_endpoint: /v1/chat/completions
   python_executable: /scratch/gautschi/shi676/BioLLM/.venv-h100/bin/python
 slurm:
   partition: ai
@@ -79,7 +79,7 @@ experiments:
     load_mode: open_loop
     request_rate: 0.961003
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: &id001
   - /scratch/gautschi/shi676/BioLLM/experiments/reasoning_workloads/supergpqa_hard_reasoning/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/reasoning_workloads/supergpqa_hard_reasoning/workload_yamls/shard_001.yaml
@@ -104,7 +104,7 @@ experiments:
     load_mode: open_loop
     request_rate: 0.914544
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: qwen-qwen3-14b-supergpqa-hard-responses
   model: Qwen/Qwen3-14B
@@ -130,7 +130,7 @@ experiments:
     load_mode: open_loop
     request_rate: 0.5
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: qwen-qwen3-235b-a22b-instruct-2507-supergpqa-hard-responses
   model: Qwen/Qwen3-235B-A22B-Instruct-2507
@@ -159,7 +159,7 @@ experiments:
     load_mode: open_loop
     request_rate: 0.4
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: qwen-qwen3-235b-a22b-thinking-2507-supergpqa-hard-responses
   model: Qwen/Qwen3-235B-A22B-Thinking-2507
@@ -188,7 +188,7 @@ experiments:
     load_mode: open_loop
     request_timeout_s: 36000
     request_rate: 0.285592
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: qwen-qwen3-30b-a3b-instruct-2507-supergpqa-hard-responses
   model: Qwen/Qwen3-30B-A3B-Instruct-2507
@@ -214,7 +214,7 @@ experiments:
     load_mode: open_loop
     request_rate: 1.02252
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: qwen-qwen3-30b-a3b-thinking-2507-supergpqa-hard-responses
   model: Qwen/Qwen3-30B-A3B-Thinking-2507
@@ -240,7 +240,7 @@ experiments:
     load_mode: open_loop
     request_timeout_s: 36000
     request_rate: 1.302621
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: qwen-qwen3-32b-supergpqa-hard-responses
   model: Qwen/Qwen3-32B
@@ -266,7 +266,7 @@ experiments:
     load_mode: open_loop
     request_rate: 0.800436
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: qwen-qwen3-4b-instruct-2507-supergpqa-hard-responses
   model: Qwen/Qwen3-4B-Instruct-2507
@@ -289,7 +289,7 @@ experiments:
     load_mode: open_loop
     request_rate: 0.8473
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: qwen-qwen3-4b-thinking-2507-supergpqa-hard-responses
   model: Qwen/Qwen3-4B-Thinking-2507
@@ -312,7 +312,7 @@ experiments:
     load_mode: open_loop
     request_timeout_s: 36000
     request_rate: 0.65
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: qwen-qwen3-8b-supergpqa-hard-responses
   model: Qwen/Qwen3-8B
@@ -335,7 +335,7 @@ experiments:
     load_mode: open_loop
     request_rate: 0.511768
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: google-gemma-4-26b-a4b-it-supergpqa-hard-responses
   model: google/gemma-4-26B-A4B-it
@@ -361,7 +361,7 @@ experiments:
     load_mode: open_loop
     request_rate: 0.929466
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: google-gemma-4-31b-it-supergpqa-hard-responses
   model: google/gemma-4-31B-it
@@ -387,7 +387,7 @@ experiments:
     load_mode: open_loop
     request_rate: 0.514756
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: google-gemma-4-e2b-it-supergpqa-hard-responses
   model: google/gemma-4-E2B-it
@@ -410,7 +410,7 @@ experiments:
     load_mode: open_loop
     request_rate: 12.8
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: google-gemma-4-e4b-it-supergpqa-hard-responses
   model: google/gemma-4-E4B-it
@@ -433,7 +433,7 @@ experiments:
     load_mode: open_loop
     request_rate: 6.2
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: meta-llama-llama-2-13b-chat-hf-supergpqa-hard-responses
   model: meta-llama/Llama-2-13b-chat-hf
@@ -458,7 +458,7 @@ experiments:
     request_rate: 0.8
     load_mode: open_loop
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: meta-llama-llama-2-70b-chat-hf-supergpqa-hard-responses
   model: meta-llama/Llama-2-70b-chat-hf
@@ -485,7 +485,7 @@ experiments:
     request_rate: 0.6
     load_mode: open_loop
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: meta-llama-llama-2-7b-chat-hf-supergpqa-hard-responses
   model: meta-llama/Llama-2-7b-chat-hf
@@ -510,7 +510,7 @@ experiments:
     request_rate: 1.0
     load_mode: open_loop
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: meta-llama-llama-3-1-70b-instruct-supergpqa-hard-responses
   model: meta-llama/Llama-3.1-70B-Instruct
@@ -536,7 +536,7 @@ experiments:
     load_mode: open_loop
     request_rate: 1.6
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: meta-llama-llama-3-1-8b-instruct-supergpqa-hard-responses
   model: meta-llama/Llama-3.1-8B-Instruct
@@ -559,7 +559,7 @@ experiments:
     load_mode: open_loop
     request_rate: 0.775
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: meta-llama-llama-3-2-1b-instruct-supergpqa-hard-responses
   model: meta-llama/Llama-3.2-1B-Instruct
@@ -582,7 +582,7 @@ experiments:
     load_mode: open_loop
     request_rate: 4.402713
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: meta-llama-llama-3-2-3b-instruct-supergpqa-hard-responses
   model: meta-llama/Llama-3.2-3B-Instruct
@@ -605,7 +605,7 @@ experiments:
     load_mode: open_loop
     request_rate: 1.770622
     request_timeout_s: 36000
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: openai-gpt-oss-120b-supergpqa-hard-responses
   model: openai/gpt-oss-120b
@@ -632,7 +632,7 @@ experiments:
     load_mode: open_loop
     request_timeout_s: 36000
     request_rate: 0.451974
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
 - id: openai-gpt-oss-20b-supergpqa-hard-responses
   model: openai/gpt-oss-20b
@@ -659,5 +659,5 @@ experiments:
     load_mode: open_loop
     request_timeout_s: 36000
     request_rate: 1.628877
-  endpoint: /v1/completions
+  endpoint: /v1/chat/completions
   workloads: *id001
