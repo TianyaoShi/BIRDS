@@ -1,5 +1,5 @@
 run:
-  run_id: h100-quality-longbench-v1-covered-original-responses-001
+  run_id: h100-quality-longbench-v1-covered-original-responses-002
   output_root: ../../results/quality
   default_endpoint: /v1/chat/completions
   python_executable: /scratch/gautschi/shi676/BioLLM/.venv-h100/bin/python
@@ -73,7 +73,9 @@ experiments:
       n: 1
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
-      extra_body: {}
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -96,7 +98,9 @@ experiments:
       n: 1
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
-      extra_body: {}
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -119,7 +123,9 @@ experiments:
       n: 1
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
-      extra_body: {}
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -255,7 +261,9 @@ experiments:
       n: 1
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
-      extra_body: {}
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
@@ -324,7 +332,9 @@ experiments:
       n: 1
       max_tokens_policy: workload_expected_output_len
       prompt_token_buffer: 128
-      extra_body: {}
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/longbench_workloads/benchmark_original/longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls/shard_000.yaml

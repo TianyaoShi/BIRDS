@@ -71,6 +71,19 @@ def _write_scorebook(path: Path) -> None:
     )
     ws.append(
         [
+            "Qwen/Qwen3-4B-Thinking-2507",
+            None,
+            None,
+            "SuperGPQA",
+            "40",
+            "N/A",
+            "N/A",
+            None,
+            None,
+        ]
+    )
+    ws.append(
+        [
             "meta-llama/Llama-2-7b-chat-hf",
             None,
             None,
@@ -215,6 +228,8 @@ def test_select_missing_benchmark_scores_uses_alias_policy_and_registry(tmp_path
     assert ("org/model-b", "LongBench-v1-covered") in missing
     assert ("openai/gpt-oss-20b", "RepoBench") not in missing
     assert ("openai/gpt-oss-20b", "CrossCodeEval") not in missing
+    assert ("Qwen/Qwen3-4B-Thinking-2507", "RepoBench") not in missing
+    assert ("Qwen/Qwen3-4B-Thinking-2507", "CrossCodeEval") not in missing
     assert ("meta-llama/Llama-2-7b-chat-hf", "LongBench-v1-covered") not in missing
     assert (tmp_path / "out" / "missing_scores.json").is_file()
     assert any(row["reason"] == "not a model id" for row in result.skipped_rows)
@@ -276,7 +291,58 @@ def test_build_benchmark_generation_manifest_inherits_model_overrides(tmp_path: 
     assert result["experiment_count"] == 3
     assert manifest.run.run_id == "benchmark-run"
     assert manifest.experiments[0].generation.decoding.temperature == 0.0
-    assert manifest.experiments[0].generation.decoding.max_tokens == 512
+    assert manifest.experiments[0].endpoint == "/v1/completions"
+    assert manifest.experiments[0].generation.decoding.max_tokens == 128
     assert manifest.experiments[0].generation.max_concurrency == 3
-    assert raw["experiments"][0]["generation"]["decoding"]["extra_body"] == {"stop": ["\n\n"]}
+    assert raw["experiments"][0]["generation"]["decoding"]["extra_body"] == {"stop": ["\n"]}
     assert json.loads((tmp_path / "selection" / "missing_scores.json").read_text(encoding="utf-8"))
+
+
+def test_build_longbench_manifest_disables_qwen3_switchable_thinking(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _write_registry_dirs(repo)
+    scorebook = tmp_path / "scores.xlsx"
+    _write_scorebook(scorebook)
+    selection = select_missing_benchmark_scores(
+        scorebook=scorebook,
+        output_dir=tmp_path / "selection",
+        repo_root=repo,
+        targets=("LongBench-v1-covered",),
+    )
+    plan = json.loads((tmp_path / "selection" / "missing_scores.json").read_text(encoding="utf-8"))
+    plan.append(
+        {
+            "model": "Qwen/Qwen3-8B",
+            "benchmark": "LongBench-v1-covered",
+            "scorebook_category": "Long Context",
+            "scorebook_benchmark_cell": None,
+            "scorebook_score_cell": None,
+            "reason": "test qwen thinking switch",
+            "workload_group": selection.records[0].workload_group,
+            "workload_paths": [str(path) for path in selection.records[0].workload_paths],
+            "is_full_benchmark": False,
+            "workbook_row": 99,
+        }
+    )
+    (tmp_path / "selection" / "missing_scores.json").write_text(
+        json.dumps(plan),
+        encoding="utf-8",
+    )
+    base_workload = selection.records[0].workload_paths[0]
+    base_manifest = tmp_path / "base.yaml"
+    output_manifest = tmp_path / "longbench.yaml"
+    _write_base_manifest(base_manifest, base_workload)
+
+    build_benchmark_generation_manifest(
+        missing_plan=tmp_path / "selection" / "missing_scores.json",
+        base_manifest=base_manifest,
+        output_path=output_manifest,
+        run_id="longbench-run",
+    )
+    raw = yaml.safe_load(output_manifest.read_text(encoding="utf-8"))
+
+    qwen_exp = next(item for item in raw["experiments"] if item["model"] == "Qwen/Qwen3-8B")
+    assert qwen_exp["generation"]["decoding"]["extra_body"] == {
+        "chat_template_kwargs": {"enable_thinking": False}
+    }
+    assert qwen_exp["generation"]["decoding"]["max_tokens_policy"] == "workload_expected_output_len"

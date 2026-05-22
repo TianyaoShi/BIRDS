@@ -1,7 +1,7 @@
 run:
-  run_id: h100-quality-cceval-original-responses-001
+  run_id: h100-quality-cceval-original-responses-002
   output_root: ../../results/quality
-  default_endpoint: /v1/chat/completions
+  default_endpoint: /v1/completions
   python_executable: /scratch/gautschi/shi676/BioLLM/.venv-h100/bin/python
 slurm:
   partition: ai
@@ -69,7 +69,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -84,6 +84,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: qwen-qwen3-1-7b-crosscodeeval-responses
   model: Qwen/Qwen3-1.7B
   generation:
@@ -97,7 +98,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -108,6 +109,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: qwen-qwen3-14b-crosscodeeval-responses
   model: Qwen/Qwen3-14B
   generation:
@@ -121,7 +123,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -132,6 +134,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: qwen-qwen3-235b-a22b-instruct-2507-crosscodeeval-responses
   model: Qwen/Qwen3-235B-A22B-Instruct-2507
   launch:
@@ -151,7 +154,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -162,36 +165,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
-- id: qwen-qwen3-235b-a22b-thinking-2507-crosscodeeval-responses
-  model: Qwen/Qwen3-235B-A22B-Thinking-2507
-  launch:
-    gpu_count: 8
-    tensor_parallel_size: 8
-    env:
-      VLLM_ENGINE_READY_TIMEOUT_S: '4800'
-    readiness_timeout_s: 5400
-  generation:
-    concurrency_source: explicit
-    max_concurrency: 512
-    preserve_request_order: true
-    include_prompt_text: true
-    response_text_max_chars: 65536
-    decoding:
-      temperature: 0.0
-      top_p: 1.0
-      top_k: 20
-      min_p: 0.0
-      max_tokens: 512
-      n: 1
-      max_tokens_policy: model_context_minus_prompt_buffer
-      prompt_token_buffer: 128
-      extra_body:
-        stop: *id001
-    request_rate: 2.0
-    load_mode: open_loop
-  workloads:
-  - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
-  - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: qwen-qwen3-30b-a3b-instruct-2507-crosscodeeval-responses
   model: Qwen/Qwen3-30B-A3B-Instruct-2507
   launch:
@@ -208,7 +182,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -219,33 +193,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
-- id: qwen-qwen3-30b-a3b-thinking-2507-crosscodeeval-responses
-  model: Qwen/Qwen3-30B-A3B-Thinking-2507
-  launch:
-    gpu_count: 2
-    tensor_parallel_size: 2
-  generation:
-    concurrency_source: explicit
-    max_concurrency: 512
-    preserve_request_order: true
-    include_prompt_text: true
-    response_text_max_chars: 65536
-    decoding:
-      temperature: 0.0
-      top_p: 1.0
-      top_k: 20
-      min_p: 0.0
-      max_tokens: 512
-      n: 1
-      max_tokens_policy: model_context_minus_prompt_buffer
-      prompt_token_buffer: 128
-      extra_body:
-        stop: *id001
-    request_rate: 27.0
-    load_mode: open_loop
-  workloads:
-  - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
-  - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: qwen-qwen3-32b-crosscodeeval-responses
   model: Qwen/Qwen3-32B
   launch:
@@ -262,7 +210,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -273,6 +221,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: qwen-qwen3-4b-instruct-2507-crosscodeeval-responses
   model: Qwen/Qwen3-4B-Instruct-2507
   generation:
@@ -286,7 +235,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -297,30 +246,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
-- id: qwen-qwen3-4b-thinking-2507-crosscodeeval-responses
-  model: Qwen/Qwen3-4B-Thinking-2507
-  generation:
-    concurrency_source: explicit
-    max_concurrency: 512
-    preserve_request_order: true
-    include_prompt_text: true
-    response_text_max_chars: 65536
-    decoding:
-      temperature: 0.0
-      top_p: 1.0
-      top_k: 20
-      min_p: 0.0
-      max_tokens: 512
-      n: 1
-      max_tokens_policy: model_context_minus_prompt_buffer
-      prompt_token_buffer: 128
-      extra_body:
-        stop: *id001
-    request_rate: 17.0
-    load_mode: open_loop
-  workloads:
-  - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
-  - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: qwen-qwen3-8b-crosscodeeval-responses
   model: Qwen/Qwen3-8B
   generation:
@@ -334,7 +260,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -345,6 +271,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: google-gemma-4-26b-a4b-it-crosscodeeval-responses
   model: google/gemma-4-26B-A4B-it
   launch:
@@ -361,7 +288,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -372,6 +299,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: google-gemma-4-31b-it-crosscodeeval-responses
   model: google/gemma-4-31B-it
   launch:
@@ -388,7 +316,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -399,6 +327,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: google-gemma-4-e2b-it-crosscodeeval-responses
   model: google/gemma-4-E2B-it
   generation:
@@ -412,7 +341,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -423,6 +352,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: google-gemma-4-e4b-it-crosscodeeval-responses
   model: google/gemma-4-E4B-it
   generation:
@@ -436,7 +366,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -447,6 +377,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: meta-llama-llama-2-13b-chat-hf-crosscodeeval-responses
   model: meta-llama/Llama-2-13b-chat-hf
   launch:
@@ -462,7 +393,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -473,6 +404,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: meta-llama-llama-2-70b-chat-hf-crosscodeeval-responses
   model: meta-llama/Llama-2-70b-chat-hf
   launch:
@@ -490,7 +422,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -501,6 +433,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: meta-llama-llama-2-7b-chat-hf-crosscodeeval-responses
   model: meta-llama/Llama-2-7b-chat-hf
   launch:
@@ -516,7 +449,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -527,6 +460,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: meta-llama-llama-3-1-70b-instruct-crosscodeeval-responses
   model: meta-llama/Llama-3.1-70B-Instruct
   launch:
@@ -543,7 +477,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -554,6 +488,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: meta-llama-llama-3-1-8b-instruct-crosscodeeval-responses
   model: meta-llama/Llama-3.1-8B-Instruct
   generation:
@@ -567,7 +502,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -578,6 +513,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: meta-llama-llama-3-2-1b-instruct-crosscodeeval-responses
   model: meta-llama/Llama-3.2-1B-Instruct
   generation:
@@ -591,7 +527,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -602,6 +538,7 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions
 - id: meta-llama-llama-3-2-3b-instruct-crosscodeeval-responses
   model: meta-llama/Llama-3.2-3B-Instruct
   generation:
@@ -615,7 +552,7 @@ experiments:
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 512
+      max_tokens: 128
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -626,3 +563,4 @@ experiments:
   workloads:
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
   - /scratch/gautschi/shi676/BioLLM/experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_001.yaml
+  endpoint: /v1/completions

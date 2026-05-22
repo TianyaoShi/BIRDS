@@ -46,15 +46,16 @@ BENCHMARK_TARGETS: dict[str, dict[str, Any]] = {
         "accepted_aliases": ("repobench", "repo bench"),
         "workload_group": "repobench_python_java_aggregate_cache_realistic",
         "selection_policy": "all_models",
-        "exclude_model_substrings": ("gpt-oss",),
+        "exclude_model_substrings": ("gpt-oss", "Thinking-2507"),
         "is_full_benchmark": True,
+        "endpoint": "/v1/completions",
         "decoding": {
             "temperature": 0.0,
             "top_p": 1.0,
             "top_k": 20,
             "min_p": 0.0,
-            "max_tokens": 512,
-            "extra_body": {"stop": ["\n\n"]},
+            "max_tokens": 128,
+            "extra_body": {"stop": ["\n"]},
         },
     },
     "CrossCodeEval": {
@@ -64,14 +65,15 @@ BENCHMARK_TARGETS: dict[str, dict[str, Any]] = {
         "accepted_aliases": ("crosscodeeval", "cross code eval", "cceval", "crosscode"),
         "workload_group": "crosscodeeval_rg1_unixcoder_cache_realistic",
         "selection_policy": "all_models",
-        "exclude_model_substrings": ("gpt-oss",),
+        "exclude_model_substrings": ("gpt-oss", "Thinking-2507"),
         "is_full_benchmark": True,
+        "endpoint": "/v1/completions",
         "decoding": {
             "temperature": 0.0,
             "top_p": 1.0,
             "top_k": 20,
             "min_p": 0.0,
-            "max_tokens": 512,
+            "max_tokens": 128,
             "extra_body": {"stop": ["\n\n"]},
         },
     },
@@ -85,7 +87,14 @@ BENCHMARK_TARGETS: dict[str, dict[str, Any]] = {
         "selection_policy": "all_models",
         "exclude_model_substrings": ("llama-2",),
         "is_full_benchmark": False,
-        "decoding": {"temperature": 0.0, "top_p": 1.0, "top_k": 20, "min_p": 0.0, "max_tokens": 4096},
+        "decoding": {
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "top_k": 20,
+            "min_p": 0.0,
+            "max_tokens": 4096,
+            "max_tokens_policy": "workload_expected_output_len",
+        },
     },
 }
 
@@ -307,9 +316,12 @@ def build_benchmark_generation_manifest(
         base_experiment["id"] = f"{slugify(model, max_length=42)}-{slugify(benchmark, max_length=28)}-responses"
         base_experiment["model"] = model
         base_experiment["workloads"] = list(record["workload_paths"])
+        endpoint = BENCHMARK_TARGETS[benchmark].get("endpoint")
+        if endpoint is not None:
+            base_experiment["endpoint"] = endpoint
         base_experiment["generation"] = _merge_benchmark_generation(
             base_experiment.get("generation"),
-            BENCHMARK_TARGETS[benchmark]["decoding"],
+            _benchmark_decoding_for_model(benchmark, model),
         )
         payload["experiments"].append(base_experiment)
 
@@ -621,3 +633,23 @@ def _merge_benchmark_generation(base_generation: Any, decoding_overrides: dict[s
     decoding["extra_body"] = extra_body
     generation["decoding"] = decoding
     return generation
+
+
+def _benchmark_decoding_for_model(benchmark: str, model: str) -> dict[str, Any]:
+    decoding = dict(BENCHMARK_TARGETS[benchmark]["decoding"])
+    if benchmark == "LongBench-v1-covered" and _is_qwen3_switchable_thinking_model(model):
+        extra_body = dict(decoding.get("extra_body") or {})
+        chat_template_kwargs = dict(extra_body.get("chat_template_kwargs") or {})
+        chat_template_kwargs["enable_thinking"] = False
+        extra_body["chat_template_kwargs"] = chat_template_kwargs
+        decoding["extra_body"] = extra_body
+    return decoding
+
+
+def _is_qwen3_switchable_thinking_model(model: str) -> bool:
+    normalized = model.lower()
+    if "qwen3" not in normalized:
+        return False
+    if "2507" in normalized:
+        return False
+    return True
