@@ -69,3 +69,7 @@ data/
 slurm-*.out
 slurm-*.err
 cleanup*.log
+
+
+figures/
+derived/

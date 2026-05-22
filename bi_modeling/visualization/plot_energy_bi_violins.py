@@ -114,10 +114,10 @@ def _apply_bi_token_stats(series: pd.DataFrame, stats: dict[str, float]) -> pd.D
 
 def _format_daily_tokens(tokens: float) -> str:
     if tokens >= 1e12:
-        return f"{tokens / 1e12:.2f}".rstrip("0").rstrip(".") + " T\ntoken/day"
+        return f"{tokens / 1e12:.2f}".rstrip("0").rstrip(".") + " T\nToken/Day"
     if tokens >= 1e9:
-        return f"{tokens / 1e9:.0f} B\ntoken/day"
-    return f"{tokens:.0f}\ntoken/day"
+        return f"{tokens / 1e9:.0f} B\nToken/Day"
+    return f"{tokens:.0f}\nToken/Day"
 
 
 def _annotate_may_token_rates(ax, frame: pd.DataFrame, *, label: str, color: str, y_multiplier: float) -> None:
