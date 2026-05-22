@@ -14,6 +14,8 @@ SECONDS_PER_YEAR = 365 * 24 * 60 * 60
 DEFAULT_LIFETIME_YEARS = 5
 DEFAULT_OPERATIONAL_YEAR = 2024
 DEFAULT_LOCATION = "US"
+DEFAULT_DATACENTER_WUE_L_PER_KWH = 0.36
+DEFAULT_DATACENTER_PUE = 1.16
 
 
 @dataclass(frozen=True)
@@ -21,6 +23,8 @@ class EnergyBiConfig:
     lifetime_years: int = DEFAULT_LIFETIME_YEARS
     operational_year: int = DEFAULT_OPERATIONAL_YEAR
     location: str = DEFAULT_LOCATION
+    datacenter_wue_l_per_kwh: float = DEFAULT_DATACENTER_WUE_L_PER_KWH
+    datacenter_pue: float = DEFAULT_DATACENTER_PUE
     use_incremental_energy: bool = True
     calculate_upstream_materials: bool = False
     include_logic_fab_scope3: bool | None = None
@@ -62,6 +66,8 @@ def operational_bi_for_energy_joules(
         config.operational_year,
         location=config.location,
         energy_unit="J",
+        datacenter_wue=config.datacenter_wue_l_per_kwh,
+        pue=config.datacenter_pue,
     )
     endpoint = modeling.midpoint_to_endpoint(midpoint)
     return biodiversity_total(endpoint)
@@ -132,6 +138,8 @@ def add_biodiversity_metrics(rows: pd.DataFrame, *, config: EnergyBiConfig) -> p
     result["bi_energy_basis"] = "incremental" if config.use_incremental_energy else "total"
     result["bi_operational_year"] = config.operational_year
     result["bi_location"] = config.location
+    result["bi_datacenter_wue_l_per_kwh"] = config.datacenter_wue_l_per_kwh
+    result["bi_datacenter_pue"] = config.datacenter_pue
     result["bi_lifetime_years"] = config.lifetime_years
     result["bi_calculate_upstream_materials"] = config.calculate_upstream_materials
     result["bi_include_logic_fab_scope3"] = config.include_logic_fab_scope3
