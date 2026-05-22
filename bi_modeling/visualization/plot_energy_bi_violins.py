@@ -9,6 +9,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd
+import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -62,10 +63,12 @@ def _plot_violin(ax, data, *, column: str, ylabel: str, color: str) -> None:
             parts[key].set_linewidth(LINEWIDTH * 0.55)
 
     ax.set_xlim(0.76, 1.24)
+    ax.set_ylim(bottom=np.min(values) * 0.95, top=np.max(values) * 1.25)
     ax.set_xticks([1])
     ax.set_xticklabels([ylabel])
     ax.set_yscale("log")
-    ax.tick_params(axis="both", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=12)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=12)
+    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE, width=0, length=0)
     for spine in ax.spines.values():
         spine.set_linewidth(LINEWIDTH * 0.45)
 
@@ -120,7 +123,15 @@ def _format_daily_tokens(tokens: float) -> str:
     return f"{tokens:.0f}\nToken/Day"
 
 
-def _annotate_may_token_rates(ax, frame: pd.DataFrame, *, label: str, color: str, y_multiplier: float) -> None:
+def _annotate_may_token_rates(
+    ax,
+    frame: pd.DataFrame,
+    *,
+    label: str,
+    color: str,
+    y_multiplier: float,
+    year_y_offsets: dict[int, float] | None = None,
+) -> None:
     for year in (2024, 2025, 2026):
         target = pd.Timestamp(year=year, month=5, day=1)
         if frame.empty:
@@ -131,19 +142,20 @@ def _annotate_may_token_rates(ax, frame: pd.DataFrame, *, label: str, color: str
             continue
         x_offset = 0
         if year == 2024:
-            x_offset = 28
+            x_offset = 15
         elif year == 2026:
-            x_offset = -28
+            x_offset = -15
+        y_offset = (year_y_offsets or {}).get(year, y_multiplier)
         ax.annotate(
             _format_daily_tokens(row["daily_tokens"]),
             xy=(row["date"], row["bi_daily_median"]),
-            xytext=(x_offset, y_multiplier),
+            xytext=(x_offset, y_offset),
             textcoords="offset points",
             ha="left" if x_offset > 0 else "right" if x_offset < 0 else "center",
-            va="bottom" if y_multiplier > 0 else "top",
+            va="bottom" if y_offset > 0 else "top",
             fontsize=TICK_FONTSIZE - 3,
             color=color,
-            arrowprops={"arrowstyle": "-", "color": color, "lw": LINEWIDTH * 0.25},
+            arrowprops={"arrowstyle": "-", "linestyle": "--", "color": color, "lw": LINEWIDTH * 0.5},
         )
 
 
@@ -175,16 +187,24 @@ def _plot_platform_trends(ax, data) -> None:
             label=label,
         )
 
-    _annotate_may_token_rates(ax, google, label="Google", color=TREND_COLORS["google"], y_multiplier=44)
+    _annotate_may_token_rates(
+        ax,
+        google,
+        label="Google",
+        color=TREND_COLORS["google"],
+        y_multiplier=35,
+        year_y_offsets={2024: 125},
+    )
     _annotate_may_token_rates(
         ax,
         openrouter,
         label="OR",
         color=TREND_COLORS["openrouter"],
         y_multiplier=-50,
+        year_y_offsets={2026: -99.8},
     )
 
-    ax.set_ylabel(r"Daily BI (species$\cdot$yr/day)", fontsize=FONTSIZE)
+    ax.set_ylabel(r"Daily BI (species·yr/day)", fontsize=FONTSIZE)
     ax.set_yscale("log")
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=8))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
@@ -194,7 +214,7 @@ def _plot_platform_trends(ax, data) -> None:
     ax.tick_params(axis="both", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=12)
     for spine in ax.spines.values():
         spine.set_linewidth(LINEWIDTH * 0.45)
-    ax.legend(frameon=False, fontsize=LEGEND_FONTSIZE, loc="upper left")
+    ax.legend(frameon=False, fontsize=LEGEND_FONTSIZE+4, loc="upper left")
 
 
 def plot_energy_bi_violins(data, output_path: Path) -> None:
@@ -213,7 +233,7 @@ def plot_energy_bi_violins(data, output_path: Path) -> None:
         ylabel="BI per req",
         color=VIOLIN_COLORS["request"],
     )
-    axes[0].set_ylabel(r"BI (species$\cdot$yr)", fontsize=FONTSIZE)
+    axes[0].set_ylabel(r"BI (species·yr)", fontsize=FONTSIZE)
     _plot_violin(
         axes[1],
         data,
