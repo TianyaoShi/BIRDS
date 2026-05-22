@@ -6,6 +6,12 @@ from pathlib import Path
 import pytest
 
 from output_quality_profiler.benchmark_adapters import score_benchmark_responses
+from output_quality_profiler.benchmark_adapters.code_completion import (
+    crosscodeeval_edit_similarity,
+    crosscodeeval_exact_match,
+    crosscodeeval_postprocess_prediction,
+    extract_identifiers,
+)
 from output_quality_profiler.benchmark_adapters.longbench_v1 import (
     rouge_l_f1,
     score_longbench_v1_responses,
@@ -123,6 +129,63 @@ def test_repobench_adapter_reports_official_em_and_es(tmp_path: Path) -> None:
     assert score["duplicate_items"] == 1
     assert score["by_language"]["python"]["count"] == 2
     assert score["by_task"]["cross_file_first"]["count"] == 1
+
+
+def test_crosscodeeval_adapter_reports_official_code_and_identifier_metrics(tmp_path: Path) -> None:
+    responses = tmp_path / "responses.jsonl"
+    _write_rows(
+        responses,
+        [
+            {
+                "model": "org/model",
+                "request_id": "cc1",
+                "success": True,
+                "prompt": "function f() {\n  ",
+                "response_text": "return helper(value); // trailing\n}\nextra();",
+                "metadata": {
+                    "ground_truth": "return helper(value);",
+                    "language": "typescript",
+                    "sample_id": "crosscodeeval-typescript-000001",
+                },
+            },
+            {
+                "model": "org/model",
+                "request_id": "cc2",
+                "success": True,
+                "prompt": "x = ",
+                "response_text": "other_value\nprint(other_value)",
+                "metadata": {
+                    "ground_truth": "target_value",
+                    "language": "python",
+                    "sample_id": "crosscodeeval-python-000002",
+                },
+            },
+        ],
+    )
+
+    score = score_benchmark_responses(
+        benchmark="CrossCodeEval",
+        responses_root=responses,
+        output_dir=tmp_path / "cceval-score",
+    )
+
+    assert crosscodeeval_postprocess_prediction(
+        prompt="function f() {\n  ",
+        completion="return helper(value); // trailing\n}",
+        language="typescript",
+    ) == "return helper(value);"
+    assert crosscodeeval_exact_match(" return helper(value); ", "return helper(value);")
+    assert crosscodeeval_edit_similarity("abc", "abc") == pytest.approx(100.0)
+    assert extract_identifiers('return helper("value", actual_value);', "typescript") == [
+        "helper",
+        "actual_value",
+    ]
+    assert score["adapter"] == "crosscodeeval_official_metrics_v1"
+    assert score["overall_score"] == pytest.approx(50.0)
+    assert score["exact_match_percent"] == pytest.approx(50.0)
+    assert score["edit_similarity_percent"] < 100.0
+    assert score["identifier_f1_percent"] < 100.0
+    assert score["by_language"]["typescript"]["exact_match_percent"] == pytest.approx(100.0)
 
 
 def test_longbench_adapter_scores_covered_subset(tmp_path: Path) -> None:
