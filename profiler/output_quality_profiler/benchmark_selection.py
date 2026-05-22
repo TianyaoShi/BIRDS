@@ -26,7 +26,25 @@ BENCHMARK_TARGETS: dict[str, dict[str, Any]] = {
             "top_k": 20,
             "min_p": 0.0,
             "max_tokens": 4096,
-            "max_tokens_policy": "workload_expected_output_len",
+            "max_tokens_policy": "model_context_minus_prompt_buffer",
+        },
+    },
+    "SuperGPQA-easy-medium": {
+        "category": "Problem Solving",
+        "benchmark_header": "Problem Solving Benchmark",
+        "score_header": "Problem Solving Score",
+        "accepted_aliases": ("supergpqa", "super gpqa"),
+        "workload_group": "supergpqa_easy_medium_reasoning",
+        "selection_policy": "workbook_missing",
+        "default_selected": False,
+        "is_full_benchmark": False,
+        "decoding": {
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "top_k": 20,
+            "min_p": 0.0,
+            "max_tokens": 4096,
+            "max_tokens_policy": "model_context_minus_prompt_buffer",
         },
     },
     "SuperGPQA-hard": {
@@ -37,7 +55,14 @@ BENCHMARK_TARGETS: dict[str, dict[str, Any]] = {
         "workload_group": "supergpqa_hard_reasoning",
         "selection_policy": "all_models",
         "is_full_benchmark": False,
-        "decoding": {"temperature": 0.0, "top_p": 1.0, "top_k": 20, "min_p": 0.0, "max_tokens": 4096},
+        "decoding": {
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "top_k": 20,
+            "min_p": 0.0,
+            "max_tokens": 4096,
+            "max_tokens_policy": "model_context_minus_prompt_buffer",
+        },
     },
     "RepoBench": {
         "category": "Code Completion",
@@ -349,6 +374,15 @@ def resolve_workload_group(benchmark: str, *, repo_root: str | Path | None = Non
             is_full_benchmark=True,
             notes="Existing SuperGPQA reasoning materialization.",
         )
+    if target == "SuperGPQA-easy-medium":
+        return _single_directory_group(
+            repo,
+            benchmark=target,
+            name="supergpqa_easy_medium_reasoning",
+            directory=Path("experiments/reasoning_workloads/supergpqa_easy_medium_reasoning/workload_yamls"),
+            is_full_benchmark=False,
+            notes="Easy+medium SuperGPQA subset derived from the full original materialization.",
+        )
     if target == "SuperGPQA-hard":
         return _single_directory_group(
             repo,
@@ -417,11 +451,12 @@ def resolve_workload_group(benchmark: str, *, repo_root: str | Path | None = Non
 
 def _normalize_targets(targets: Sequence[str] | None) -> tuple[str, ...]:
     if targets is None:
-        return tuple(BENCHMARK_TARGETS)
+        return tuple(name for name, spec in BENCHMARK_TARGETS.items() if spec.get("default_selected", True))
     normalized: list[str] = []
     aliases = {_normalize_text(name): name for name in BENCHMARK_TARGETS}
     aliases.update(
         {
+            "supergpqaeasymedium": "SuperGPQA-easy-medium",
             "supergpqahard": "SuperGPQA-hard",
             "longbenchv1covered": "LongBench-v1-covered",
             "longbench": "LongBench-v1-covered",

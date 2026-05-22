@@ -142,6 +142,7 @@ def _write_materialization_report(directory: Path, *, materialized: int = 1, rep
 
 def _write_registry_dirs(repo: Path) -> None:
     _write_workload_group(repo, "experiments/reasoning_workloads/supergpqa_reasoning/workload_yamls")
+    _write_workload_group(repo, "experiments/reasoning_workloads/supergpqa_easy_medium_reasoning/workload_yamls")
     _write_workload_group(repo, "experiments/reasoning_workloads/supergpqa_hard_reasoning/workload_yamls")
     _write_workload_group(
         repo,
@@ -235,6 +236,24 @@ def test_select_missing_benchmark_scores_uses_alias_policy_and_registry(tmp_path
     assert any(row["reason"] == "not a model id" for row in result.skipped_rows)
     assert any("gpt-oss" in row["reason"] for row in result.skipped_rows)
     assert any("llama-2" in row["reason"] for row in result.skipped_rows)
+
+
+def test_select_supergpqa_easy_medium_is_explicit_target(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _write_registry_dirs(repo)
+    scorebook = tmp_path / "scores.xlsx"
+    _write_scorebook(scorebook)
+
+    result = select_missing_benchmark_scores(
+        scorebook=scorebook,
+        output_dir=tmp_path / "out",
+        repo_root=repo,
+        targets=("SuperGPQA-easy-medium",),
+    )
+
+    missing = {(record.model, record.benchmark, record.workload_group) for record in result.records}
+    assert ("org/model-a", "SuperGPQA-easy-medium", "supergpqa_easy_medium_reasoning") in missing
+    assert ("org/model-b", "SuperGPQA-easy-medium", "supergpqa_easy_medium_reasoning") not in missing
 
 
 def test_resolve_longbench_group_is_marked_subset(tmp_path: Path) -> None:
