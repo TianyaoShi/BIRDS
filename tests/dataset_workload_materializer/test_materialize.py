@@ -271,6 +271,34 @@ def test_longbench_generated_workload_yaml_loads_through_llm_mst_finder(tmp_path
     assert prepared.samples[0].metadata["shard_id"] == "shard_000"
 
 
+def test_longbench_official_prompt_template_uses_benchmark_prompt_and_max_gen(tmp_path: Path) -> None:
+    raw_path = _write_longbench_zip(
+        tmp_path,
+        {
+            "qasper": [_longbench_row("qasper-0", "qasper", "en", suffix="paper")],
+        },
+    )
+    output_dir = tmp_path / "out"
+    config_path = _write_longbench_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_dir=output_dir,
+        profile="short_answer_document_qa",
+        configs=["qasper"],
+        samples_per_task=1,
+        prompt_template="longbench_official",
+        max_prompt_tokens=4096,
+    )
+    materialize_from_config(config_path)
+
+    row = json.loads((output_dir / "shards" / "shard_000.runner.jsonl").read_text(encoding="utf-8"))
+    assert row["prompt"].startswith("You are given a scientific article and a question.")
+    assert "Do not provide any explanation." in row["prompt"]
+    assert row["expected_output_len"] == 128
+    assert row["metadata"]["prompt_template"] == "longbench_official"
+    assert row["metadata"]["benchmark_max_new_tokens"] == 128
+
+
 def test_longbench_external_qasper_jsonl_materializes_and_reports_group_reuse(tmp_path: Path) -> None:
     raw_path = _write_longbench_zip(
         tmp_path,
@@ -808,8 +836,10 @@ def _write_longbench_config(
     repeat_policy: str | None = None,
     target_samples: int | None = None,
     min_prompt_tokens: int = 4,
+    max_prompt_tokens: int = 512,
     min_prompt_chars: int | None = None,
     config_name: str = "longbench_materialize.yaml",
+    prompt_template: str | None = None,
 ) -> Path:
     config = {
         "name": f"longbench_{profile}",
@@ -823,7 +853,7 @@ def _write_longbench_config(
         "tokenization": {"tokenizer": "character"},
         "filtering": {
             "min_prompt_tokens": min_prompt_tokens,
-            "max_prompt_tokens": 512,
+            "max_prompt_tokens": max_prompt_tokens,
             "min_target_tokens": 1,
             "max_target_tokens": 64,
         },
@@ -856,6 +886,8 @@ def _write_longbench_config(
         config["sampling"]["external_samples_per_dataset"] = external_samples_per_dataset
     if max_external_group_reuse is not None:
         config["sampling"]["max_external_group_reuse"] = max_external_group_reuse
+    if prompt_template is not None:
+        config["dataset"]["prompt_template"] = prompt_template
     config_path = tmp_path / config_name
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     return config_path

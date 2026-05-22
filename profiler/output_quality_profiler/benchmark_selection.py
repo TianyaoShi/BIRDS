@@ -20,7 +20,14 @@ BENCHMARK_TARGETS: dict[str, dict[str, Any]] = {
         "workload_group": "supergpqa_reasoning",
         "selection_policy": "workbook_missing",
         "is_full_benchmark": True,
-        "decoding": {"temperature": 0.0, "top_p": 1.0, "top_k": 20, "min_p": 0.0, "max_tokens": 4096},
+        "decoding": {
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "top_k": 20,
+            "min_p": 0.0,
+            "max_tokens": 4096,
+            "max_tokens_policy": "workload_expected_output_len",
+        },
     },
     "SuperGPQA-hard": {
         "category": "Problem Solving",
@@ -365,19 +372,19 @@ def resolve_workload_group(benchmark: str, *, repo_root: str | Path | None = Non
         directories = (
             Path(
                 "experiments/longbench_workloads/benchmark_original/"
-                "longbench_long_output_summarization_original_qwen3_8b/workload_yamls"
+                "longbench_long_output_summarization_original_official_qwen3_8b/workload_yamls"
             ),
             Path(
                 "experiments/longbench_workloads/benchmark_original/"
-                "longbench_medium_output_summarization_original_qwen3_8b/workload_yamls"
+                "longbench_medium_output_summarization_original_official_qwen3_8b/workload_yamls"
             ),
             Path(
                 "experiments/longbench_workloads/benchmark_original/"
-                "longbench_medium_answer_rag_qa_original_qwen3_8b/workload_yamls"
+                "longbench_medium_answer_rag_qa_original_official_qwen3_8b/workload_yamls"
             ),
             Path(
                 "experiments/longbench_workloads/benchmark_original/"
-                "longbench_short_answer_document_qa_original_qwen3_8b/workload_yamls"
+                "longbench_short_answer_document_qa_original_official_qwen3_8b/workload_yamls"
             ),
         )
         paths = tuple(path for directory in directories for path in _validated_longbench_paths(repo / directory))
@@ -522,6 +529,13 @@ def _validated_longbench_paths(workload_dir: Path) -> tuple[Path, ...]:
     rows = report.get("rows") if isinstance(report, dict) else None
     if not isinstance(sampling, dict) or not isinstance(rows, dict):
         raise ValueError(f"LongBench materialization report is missing rows/sampling: {report_path}")
+    prompt_template = report.get("prompt_template")
+    if prompt_template != "longbench_official":
+        raise ValueError(
+            "LongBench benchmark target requires official LongBench prompts; "
+            f"got prompt_template={prompt_template!r} in {report_path}. "
+            "Rematerialize experiments/longbench_workloads/benchmark_original/*.yaml first."
+        )
     repeat_policy = sampling.get("repeat_policy")
     materialized = int(rows.get("materialized", -1))
     expanded = int(sampling.get("expanded_sample_count", -2))
@@ -600,7 +614,7 @@ def _merge_benchmark_generation(base_generation: Any, decoding_overrides: dict[s
     decoding = dict(generation.get("decoding") or {})
     decoding.update({key: value for key, value in decoding_overrides.items() if key != "extra_body"})
     decoding["n"] = 1
-    decoding["max_tokens_policy"] = "model_context_minus_prompt_buffer"
+    decoding.setdefault("max_tokens_policy", "model_context_minus_prompt_buffer")
     decoding.setdefault("prompt_token_buffer", 128)
     extra_body = dict(decoding.get("extra_body") or {})
     extra_body.update(dict(decoding_overrides.get("extra_body") or {}))

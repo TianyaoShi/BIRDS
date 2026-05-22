@@ -104,10 +104,13 @@ class QualityDecodingConfig:
         if self.n != 1:
             raise ValueError("generation.decoding.n must be 1 for quality profiling")
         _require_positive_int("generation.decoding.max_tokens", self.max_tokens)
-        if self.max_tokens_policy != "model_context_minus_prompt_buffer":
+        if self.max_tokens_policy not in {
+            "model_context_minus_prompt_buffer",
+            "workload_expected_output_len",
+        }:
             raise ValueError(
                 "generation.decoding.max_tokens_policy must be "
-                "'model_context_minus_prompt_buffer'"
+                "'model_context_minus_prompt_buffer' or 'workload_expected_output_len'"
             )
         _require_non_negative_int("generation.decoding.prompt_token_buffer", self.prompt_token_buffer)
         if not isinstance(self.extra_body, dict):

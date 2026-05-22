@@ -393,7 +393,10 @@ def _sample_with_quality_decoding(
     decoding: QualityDecodingConfig,
     serving_max_model_len: int | None,
 ) -> SampleRequest:
-    max_tokens = decoding.max_tokens
+    if decoding.max_tokens_policy == "workload_expected_output_len":
+        max_tokens = min(decoding.max_tokens, max(1, int(sample.expected_output_len)))
+    else:
+        max_tokens = decoding.max_tokens
     if serving_max_model_len is not None:
         max_tokens = min(
             max_tokens,

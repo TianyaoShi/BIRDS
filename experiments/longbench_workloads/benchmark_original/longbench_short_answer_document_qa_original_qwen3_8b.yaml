@@ -1,9 +1,10 @@
-name: longbench_short_answer_document_qa_original_qwen3_8b
+name: longbench_short_answer_document_qa_original_official_qwen3_8b
 dataset:
   name: longbench
   raw_path: ../../../data/raw/longbench
   split: test
   profile: short_answer_document_qa
+  prompt_template: longbench_official
   configs:
   - multifieldqa_en
   - multifieldqa_en_e
@@ -30,7 +31,7 @@ request:
   stream: true
   ignore_eos: false
 sharding:
-  output_dir: longbench_short_answer_document_qa_original_qwen3_8b
+  output_dir: longbench_short_answer_document_qa_original_official_qwen3_8b
   samples_per_shard: 2048
 workload_yaml:
   context_policy:

@@ -100,6 +100,70 @@ EXTERNAL_DOCUMENT_QA_PROMPT = (
     "Answer the question based on the document.\n\n"
     "Question:\n{question}\n\nDocument:\n{document}"
 )
+LONGBENCH_OFFICIAL_PROMPTS: dict[str, str] = {
+    "qasper": (
+        "You are given a scientific article and a question.\n"
+        "Answer the question as concisely as you can, using a single phrase or sentence if possible. "
+        'If the question cannot be answered based on the information in the article, write "unanswerable". '
+        'If the question is a yes/no question, answer "yes", "no", or "unanswerable". '
+        "Do not provide any explanation.\n\n"
+        "Article: {context}\n\n"
+        " Answer the question based on the above article as concisely as you can, using a single phrase "
+        "or sentence if possible.\n"
+        'If the question cannot be answered based on the information in the article, write "unanswerable". '
+        'If the question is a yes/no question, answer "yes", "no", or "unanswerable".\n'
+        "Do not provide any explanation.\n\n"
+        "Question: {input}\n\n"
+        "Answer:"
+    ),
+    "multifieldqa_en": (
+        "Read the following text and answer briefly.\n\n"
+        "{context}\n\n"
+        "Now, answer the following question based on the above text, only give me the answer "
+        "and do not output any other words.\n\n"
+        "Question: {input}\n"
+        "Answer:"
+    ),
+    "multifieldqa_zh": (
+        "阅读以下文字并用中文简短回答：\n\n"
+        "{context}\n\n"
+        "现在请基于上面的文章回答下面的问题，只告诉我答案，不要输出任何其他字词。\n\n"
+        "问题：{input}\n"
+        "回答："
+    ),
+    "dureader": "请基于给定的文章回答下述问题。\n\n文章：{context}\n\n请基于上述文章回答下面的问题。\n\n问题：{input}\n回答：",
+    "gov_report": (
+        "You are given a report by a government agency. Write a one-page summary of the report.\n\n"
+        "Report:\n{context}\n\n"
+        "Now, write a one-page summary of the report.\n\n"
+        "Summary:"
+    ),
+    "qmsum": (
+        "You are given a meeting transcript and a query containing a question or instruction. "
+        "Answer the query in one or more sentences.\n\n"
+        "Transcript:\n{context}\n\n"
+        "Now, answer the query based on the above meeting transcript in one or more sentences.\n\n"
+        "Query: {input}\n"
+        "Answer:"
+    ),
+    "multi_news": (
+        "You are given several news passages. Write a one-page summary of all news. \n\n"
+        "News:\n{context}\n\n"
+        "Now, write a one-page summary of all the news.\n\n"
+        "Summary:"
+    ),
+    "vcsum": "下面有一段会议记录，请你阅读后，写一段总结，总结会议的内容。\n会议记录：\n{context}\n\n会议总结：",
+}
+LONGBENCH_OFFICIAL_MAX_NEW_TOKENS: dict[str, int] = {
+    "qasper": 128,
+    "multifieldqa_en": 64,
+    "multifieldqa_zh": 64,
+    "dureader": 128,
+    "gov_report": 512,
+    "qmsum": 512,
+    "multi_news": 512,
+    "vcsum": 512,
+}
 
 
 def load_longbench_dataset(dataset: dict[str, Any], ctx: MaterializationContext) -> DatasetLoadResult:
@@ -109,6 +173,12 @@ def load_longbench_dataset(dataset: dict[str, Any], ctx: MaterializationContext)
     if effective_policy != "task_uniform":
         raise ValueError("longbench materialization only supports sampling.policy=task_uniform")
     profile, profile_spec, selected_tasks = longbench_selection(dataset)
+    prompt_template = optional_string(dataset.get("prompt_template"), "dataset.prompt_template")
+    if prompt_template is not None and prompt_template not in {"longbench_context_task", "longbench_official"}:
+        raise ValueError(
+            "dataset.prompt_template must be one of: longbench_context_task, longbench_official"
+        )
+    prompt_template = prompt_template or "longbench_context_task"
     external_sources = longbench_external_sources(dataset, base_dir=ctx.base_dir, profile=profile)
     if ctx.sampling.samples_per_task is None and not external_sources:
         raise ValueError("longbench materialization requires sampling.samples_per_task")
@@ -128,6 +198,7 @@ def load_longbench_dataset(dataset: dict[str, Any], ctx: MaterializationContext)
                 counters=ctx.counters,
                 seed=ctx.sampling.seed,
                 samples_per_task=ctx.sampling.samples_per_task,
+                prompt_template=prompt_template,
             )
         )
     elif selected_tasks:
@@ -153,13 +224,13 @@ def load_longbench_dataset(dataset: dict[str, Any], ctx: MaterializationContext)
     ctx.counters.materialized_rows = len(samples)
     selected_external = [source["name"] for source in external_sources]
     selected = selected_tasks + selected_external
-    prompt_template = (
-        "longbench_context_task_plus_external_sources" if external_sources else "longbench_context_task"
+    report_prompt_template = (
+        f"{prompt_template}_plus_external_sources" if external_sources else prompt_template
     )
     return DatasetLoadResult(
         samples=samples,
         task=profile,
-        prompt_template=prompt_template,
+        prompt_template=report_prompt_template,
         profile=profile,
         selected_tasks=selected,
     )
@@ -179,6 +250,7 @@ def load_longbench_samples(
     counters,
     seed: int,
     samples_per_task: int,
+    prompt_template: str,
 ) -> list[MaterializedSample]:
     samples: list[MaterializedSample] = []
     for task_name in selected_tasks:
@@ -201,6 +273,7 @@ def load_longbench_samples(
                 seen_content_hashes=seen_content_hashes,
                 counters=counters,
                 source=source,
+                prompt_template=prompt_template,
             )
             if sample is not None:
                 task_samples.append(sample)
@@ -443,6 +516,7 @@ def longbench_row_to_sample(
     seen_content_hashes: set[str],
     counters,
     source: str,
+    prompt_template: str,
 ) -> MaterializedSample | None:
     raw_task_input = row.get("input")
     if not isinstance(raw_task_input, str):
@@ -456,11 +530,14 @@ def longbench_row_to_sample(
     if task_input is None:
         counters.drops["missing_empty_task_input"] += 1
         return None
-    prompt = render_longbench_prompt(row, task_input=task_input)
+    prompt = render_longbench_prompt(row, task_input=task_input, prompt_template=prompt_template)
     if prompt_fails_char_filter(prompt, filtering=filtering, counters=counters):
         return None
     prompt_token_count = len(tokenizer.encode(prompt))
     target_token_count = len(tokenizer.encode(target))
+    expected_output_len = (
+        official_longbench_max_new_tokens(task) if prompt_template == "longbench_official" else max(1, target_token_count)
+    )
     if prompt_token_count < filtering.min_prompt_tokens:
         counters.drops["prompt_too_short"] += 1
         return None
@@ -490,7 +567,7 @@ def longbench_row_to_sample(
         "profile": profile,
         "workload_type": profile_spec.workload_type,
         "output_regime": profile_spec.output_regime,
-        "prompt_template": "longbench_context_task",
+        "prompt_template": prompt_template,
         "split": split,
         "language": language,
         "file_path": f"data/{task}.jsonl",
@@ -502,6 +579,7 @@ def longbench_row_to_sample(
         "target_hash": hash_text(target),
         "prompt_token_count": prompt_token_count,
         "target_token_count": target_token_count,
+        "benchmark_max_new_tokens": official_longbench_max_new_tokens(task),
         "longbench_id": row.get("_id"),
         "longbench_row_index": row_index,
         "longbench_length": row.get("length"),
@@ -512,7 +590,7 @@ def longbench_row_to_sample(
         sample_id=sample_id,
         prompt=prompt,
         target=target,
-        expected_output_len=max(1, target_token_count),
+        expected_output_len=expected_output_len,
         metadata=metadata,
     )
 
@@ -806,12 +884,22 @@ def normalize_qasper_external_rows(row: dict[str, Any], *, row_index: int) -> li
     return normalized
 
 
-def render_longbench_prompt(row: dict[str, Any], *, task_input: str | None = None) -> str:
+def render_longbench_prompt(
+    row: dict[str, Any],
+    *,
+    task_input: str | None = None,
+    prompt_template: str = "longbench_context_task",
+) -> str:
     context = expect_string(row.get("context"), "longbench row.context")
     resolved_task_input = task_input if task_input is not None else expect_string(
         row.get("input"),
         "longbench row.input",
     )
+    if prompt_template == "longbench_official":
+        task = expect_string(row.get("dataset"), "longbench row.dataset")
+        return official_longbench_prompt(task).format(context=context, input=resolved_task_input)
+    if prompt_template != "longbench_context_task":
+        raise ValueError(f"unsupported LongBench prompt template: {prompt_template}")
     all_classes = row.get("all_classes")
     class_text = ""
     if isinstance(all_classes, list) and all_classes:
@@ -829,6 +917,26 @@ def render_longbench_prompt(row: dict[str, Any], *, task_input: str | None = Non
         f"{language_text}\n\n"
         "Answer:"
     )
+
+
+def official_longbench_prompt(task: str) -> str:
+    base_task = metric_longbench_task(task)
+    try:
+        return LONGBENCH_OFFICIAL_PROMPTS[base_task]
+    except KeyError as exc:
+        raise ValueError(f"unsupported LongBench official prompt task: {task}") from exc
+
+
+def official_longbench_max_new_tokens(task: str) -> int:
+    base_task = metric_longbench_task(task)
+    try:
+        return LONGBENCH_OFFICIAL_MAX_NEW_TOKENS[base_task]
+    except KeyError as exc:
+        raise ValueError(f"unsupported LongBench official max-new-tokens task: {task}") from exc
+
+
+def metric_longbench_task(task: str) -> str:
+    return task[:-2] if task.endswith("_e") else task
 
 
 def resolved_longbench_task_input(

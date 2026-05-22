@@ -120,6 +120,7 @@ def _write_materialization_report(directory: Path, *, materialized: int = 1, rep
                     "unique_sample_ids": materialized,
                 },
                 "selected_tasks": ["task"],
+                "prompt_template": "longbench_official",
             }
         ),
         encoding="utf-8",
@@ -138,10 +139,10 @@ def _write_registry_dirs(repo: Path) -> None:
         "experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls",
     )
     for profile in (
-        "longbench_long_output_summarization_original_qwen3_8b",
-        "longbench_medium_output_summarization_original_qwen3_8b",
-        "longbench_medium_answer_rag_qa_original_qwen3_8b",
-        "longbench_short_answer_document_qa_original_qwen3_8b",
+        "longbench_long_output_summarization_original_official_qwen3_8b",
+        "longbench_medium_output_summarization_original_official_qwen3_8b",
+        "longbench_medium_answer_rag_qa_original_official_qwen3_8b",
+        "longbench_short_answer_document_qa_original_official_qwen3_8b",
     ):
         base = repo / f"experiments/longbench_workloads/benchmark_original/{profile}"
         _write_workload_group(
@@ -237,7 +238,7 @@ def test_resolve_longbench_group_rejects_repeat_materialization(tmp_path: Path) 
     report_dir = (
         repo
         / "experiments/longbench_workloads/benchmark_original/"
-        / "longbench_long_output_summarization_original_qwen3_8b"
+        / "longbench_long_output_summarization_original_official_qwen3_8b"
     )
     _write_materialization_report(report_dir, materialized=2, repeat_policy="epoch_shuffle")
 
