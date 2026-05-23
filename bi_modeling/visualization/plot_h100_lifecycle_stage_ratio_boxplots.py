@@ -55,7 +55,7 @@ def plot_stage_ratio_boxplot(rows: pd.DataFrame, output_path: Path) -> None:
         patch.set_facecolor(color)
         patch.set_alpha(0.72)
 
-    ax.set_ylabel("Contribution ratio (%)", fontsize=FONTSIZE)
+    ax.set_ylabel("Contribution Ratio (%)", fontsize=FONTSIZE)
     ax.set_yscale("log")
     ax.set_ylim(0.001, 110)
     ax.yaxis.set_major_locator(FixedLocator([0.01, 0.1, 1, 10, 100]))
