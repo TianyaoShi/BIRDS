@@ -85,6 +85,42 @@ def test_crosscodeeval_like_materialization_from_jsonl_directory(tmp_path: Path)
     assert manifest["shards"][0]["num_samples"] == 2
 
 
+def test_crosscodeeval_chat_completion_materialization_emits_system_prompt(tmp_path: Path) -> None:
+    raw_path = tmp_path / "raw.jsonl"
+    raw_path.write_text(
+        json.dumps(
+            {
+                "current_file_prefix": "def alpha():\n    return",
+                "completion": " 1",
+                "language": "python",
+                "repo_name": "owner/repo",
+                "path": "src/a.py",
+                "retrieved_context": "def helper():\n    return 1",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "out"
+    config_path = _write_config(
+        tmp_path,
+        raw_path=raw_path,
+        output_dir=output_dir,
+        prompt_template="code_chat_completion",
+        max_prompt_tokens=512,
+    )
+
+    materialize_from_config(config_path)
+
+    shard_row = json.loads(
+        (output_dir / "shards" / "shard_000.runner.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert shard_row["metadata"]["prompt_template"] == "code_chat_completion"
+    assert shard_row["metadata"]["system_prompt"].startswith("You are a code completion engine.")
+    assert "<CURSOR>" in shard_row["prompt"]
+    assert "<TARGET_FILE" in shard_row["prompt"]
+
+
 def test_generated_workload_yaml_loads_through_llm_mst_finder(tmp_path: Path) -> None:
     raw_path = tmp_path / "raw.jsonl"
     raw_path.write_text(
@@ -788,7 +824,14 @@ def test_longbench_epoch_shuffle_expansion_preserves_unique_corpus_metadata(tmp_
     assert manifest["repeat_policy"] == "epoch_shuffle"
 
 
-def _write_config(tmp_path: Path, *, raw_path: Path, output_dir: Path) -> Path:
+def _write_config(
+    tmp_path: Path,
+    *,
+    raw_path: Path,
+    output_dir: Path,
+    prompt_template: str = "plain_prefix",
+    max_prompt_tokens: int = 128,
+) -> Path:
     config = {
         "name": "crosscodeeval_tiny",
         "dataset": {
@@ -796,12 +839,12 @@ def _write_config(tmp_path: Path, *, raw_path: Path, output_dir: Path) -> Path:
             "raw_path": str(raw_path),
             "split": "test",
             "mode": "cross_file_materialized",
-            "prompt_template": "plain_prefix",
+            "prompt_template": prompt_template,
         },
         "tokenization": {"tokenizer": "character"},
         "filtering": {
             "min_prompt_tokens": 1,
-            "max_prompt_tokens": 128,
+            "max_prompt_tokens": max_prompt_tokens,
             "min_target_tokens": 1,
             "max_target_tokens": 8,
         },

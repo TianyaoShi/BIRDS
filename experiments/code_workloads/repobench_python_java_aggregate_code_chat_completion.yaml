@@ -1,0 +1,65 @@
+name: repobench_python_java_aggregate_code_chat_completion
+
+dataset:
+  name: repobench
+  mode: aggregate
+  split: v1.1
+  prompt_template: code_chat_completion
+  raw_paths:
+    java: ../../data/raw/repobench_java_v1.1/data
+    python: ../../data/raw/repobench_python_v1.1/data
+  tasks:
+    - in_file
+    - cross_file_first
+    - cross_file_random
+
+tokenization:
+  tokenizer: Qwen/Qwen3-8B
+
+filtering:
+  min_prompt_tokens: 32
+  max_prompt_tokens: 20000
+  min_target_tokens: 1
+  max_target_tokens: 128
+  dedup:
+    content_hash: true
+
+sampling:
+  seed: 42
+  policy: cache_realistic
+  burst_size: 8
+
+request:
+  endpoint: /v1/chat/completions
+  temperature: 0.0
+  stream: true
+  ignore_eos: false
+  top_p: 0.95
+  extra_body:
+    top_k: 64
+    min_p: 0.0
+    repetition_penalty: 1.05
+    frequency_penalty: 0.05
+    seed: 1
+    stop:
+      - "</TARGET_FILE>"
+      - "</COMPLETION>"
+      - "<|turn>"
+      - "<turn|>"
+      - "<|channel>"
+      - "<channel|>"
+      - "\n\n\n"
+    chat_template_kwargs:
+      enable_thinking: false
+
+sharding:
+  output_dir: repobench_python_java_aggregate_code_chat_completion
+  samples_per_shard: 8000
+
+workload_yaml:
+  context_policy:
+    max_model_len: 32768
+    tokenizer_source: vllm_model_config
+    unsafe_allow_workload_tokenizer_for_real_datasets: true
+    over_limit: truncate_prompt
+    truncation_side: left

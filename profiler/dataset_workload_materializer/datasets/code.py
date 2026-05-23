@@ -217,6 +217,8 @@ def repobench_row_to_sample(
         import_statement=import_statement,
         cropped_code=cropped_code,
         include_cross_file_context=task != "in_file",
+        file_path=file_path,
+        language=language,
         prompt_template=prompt_template,
     )
     prompt_token_count = len(tokenizer.encode(prompt))
@@ -259,11 +261,15 @@ def repobench_row_to_sample(
         "target_hash": hash_text(target),
         "prompt_token_count": prompt_token_count,
         "target_token_count": target_token_count,
+        "current_file_prefix": cropped_code,
         "level": row.get("level"),
         "token_num": row.get("token_num"),
         "gold_snippet_index": row.get("gold_snippet_index"),
         "created_at": row.get("created_at"),
     }
+    system_prompt = code_completion_system_prompt(prompt_template)
+    if system_prompt is not None:
+        metadata["system_prompt"] = system_prompt
     return MaterializedSample(
         sample_id=sample_id,
         prompt=prompt,
@@ -388,7 +394,7 @@ def render_crosscodeeval_prompt(
             parts.append("Relevant repository context:\n" + cross_file_context.strip())
         parts.append(current_file_prefix.rstrip())
         return "\n\n".join(parts)
-    if prompt_template == "gemma_chat_completion":
+    if prompt_template in {"gemma_chat_completion", "code_chat_completion"}:
         parts = [
             "Complete the code at <CURSOR>.",
         ]
@@ -426,7 +432,11 @@ def render_crosscodeeval_prompt(
 
 
 def crosscodeeval_system_prompt(prompt_template: str) -> str | None:
-    if prompt_template != "gemma_chat_completion":
+    return code_completion_system_prompt(prompt_template)
+
+
+def code_completion_system_prompt(prompt_template: str) -> str | None:
+    if prompt_template not in {"gemma_chat_completion", "code_chat_completion"}:
         return None
     return (
         "You are a code completion engine.\n"
@@ -445,6 +455,8 @@ def render_repobench_prompt(
     import_statement: str,
     cropped_code: str,
     include_cross_file_context: bool,
+    file_path: str = "unknown",
+    language: str = "unknown",
     prompt_template: str,
 ) -> str:
     context_blocks = repobench_context_blocks(context) if include_cross_file_context and context else []
@@ -455,6 +467,23 @@ def render_repobench_prompt(
         if import_statement:
             parts.append(import_statement.strip())
         parts.append(cropped_code.rstrip())
+        return "\n\n".join(parts)
+    if prompt_template in {"gemma_chat_completion", "code_chat_completion"}:
+        parts = ["Complete the next line of code at <CURSOR>."]
+        if context_blocks:
+            parts.append(
+                "<REPOSITORY_CONTEXT>\n"
+                + "\n\n".join(context_blocks)
+                + "\n</REPOSITORY_CONTEXT>"
+            )
+        if import_statement:
+            parts.append(f"<IMPORTS>\n{import_statement.strip()}\n</IMPORTS>")
+        parts.append(
+            f'<TARGET_FILE path="{file_path}" language="{language}">\n'
+            f"{cropped_code.rstrip()}<CURSOR>\n"
+            "</TARGET_FILE>"
+        )
+        parts.append("Return only the next line after <CURSOR>.")
         return "\n\n".join(parts)
     if prompt_template != "xml_tags":
         raise ValueError(f"unsupported prompt_template: {prompt_template}")
