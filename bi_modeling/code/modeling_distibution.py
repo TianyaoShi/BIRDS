@@ -1010,6 +1010,8 @@ def _build_cpu_die_midpoint_records(
     spatial_awareness: bool,
     calculate_upstream_materials: bool,
     include_logic_fab_scope3: Optional[bool],
+    use_reference_logic_fab_carbon: bool,
+    use_reference_logic_fab_water: bool,
     bom_template: Optional[Dict[str, float]],
     fallbacks: List[str],
     **upstream_transportation_kwargs: Any,
@@ -1147,6 +1149,7 @@ def _build_cpu_die_midpoint_records(
         cpu_specs,
         production_yield=production_yield,
         include_scope3=include_logic_fab_scope3,
+        use_reference_carbon=use_reference_logic_fab_carbon,
     )
     for scope_name, midpoint_value in carbon_scope_split.items():
         if abs(midpoint_value) <= EPSILON:
@@ -1186,12 +1189,16 @@ def _build_cpu_die_midpoint_records(
             notes=notes,
         )
 
-    direct_water = cpu_specs.get("manufacturing_water_m3", 0.0) or (
-        cpu_specs.get("die_size_mm2", 0)
-        * data.embodied_carbon_and_water["water_consumption_cmos_L_per_cm2_by_node"].get(str(cpu_specs["technology_node_nm"]), 0)
-        / production_yield
-        / 100000
-    )
+    direct_water = 0.0
+    if use_reference_logic_fab_water:
+        direct_water = cpu_specs.get("manufacturing_water_m3", 0.0) or 0.0
+    if direct_water == 0.0:
+        direct_water = (
+            cpu_specs.get("die_size_mm2", 0)
+            * data.embodied_carbon_and_water["water_consumption_cmos_L_per_cm2_by_node"].get(str(cpu_specs["technology_node_nm"]), 0)
+            / production_yield
+            / 100000
+        )
     _append_midpoint_record(
         records,
         stage="manufacturing",
@@ -1410,6 +1417,8 @@ def _build_manufacturing_midpoint_records(
     spatial_awareness: bool,
     calculate_upstream_materials: bool,
     include_logic_fab_scope3: Optional[bool],
+    use_reference_logic_fab_carbon: bool,
+    use_reference_logic_fab_water: bool,
     bom_template: Optional[Dict[str, float]],
     fallbacks: List[str],
     **transportation_kwargs: Any,
@@ -1425,6 +1434,8 @@ def _build_manufacturing_midpoint_records(
             spatial_awareness=spatial_awareness,
             calculate_upstream_materials=calculate_upstream_materials,
             include_logic_fab_scope3=include_logic_fab_scope3,
+            use_reference_logic_fab_carbon=use_reference_logic_fab_carbon,
+            use_reference_logic_fab_water=use_reference_logic_fab_water,
             bom_template=bom_template,
             fallbacks=fallbacks,
             **transportation_kwargs,
@@ -1437,6 +1448,8 @@ def _build_manufacturing_midpoint_records(
             spatial_awareness=spatial_awareness,
             calculate_upstream_materials=calculate_upstream_materials,
             include_logic_fab_scope3=include_logic_fab_scope3,
+            use_reference_logic_fab_carbon=use_reference_logic_fab_carbon,
+            use_reference_logic_fab_water=use_reference_logic_fab_water,
             bom_template=None,
             fallbacks=fallbacks,
             **transportation_kwargs,
@@ -2057,6 +2070,8 @@ def calculate_manufacturing_distribution(
     spatial_awareness: bool = True,
     calculate_upstream_materials: bool = True,
     include_logic_fab_scope3: Optional[bool] = None,
+    use_reference_logic_fab_carbon: bool = False,
+    use_reference_logic_fab_water: bool = False,
     bom_template: Optional[Dict[str, float]] = None,
     perspective: str = data.DEFAULT_RECIPE_PERSPECTIVE,
     bii_weighting: bool = False,
@@ -2069,6 +2084,8 @@ def calculate_manufacturing_distribution(
         spatial_awareness=spatial_awareness,
         calculate_upstream_materials=calculate_upstream_materials,
         include_logic_fab_scope3=include_logic_fab_scope3,
+        use_reference_logic_fab_carbon=use_reference_logic_fab_carbon,
+        use_reference_logic_fab_water=use_reference_logic_fab_water,
         bom_template=bom_template,
         fallbacks=fallbacks,
         **transportation_kwargs,
@@ -2184,6 +2201,8 @@ def calculate_total_impact_distribution(
     spatial_awareness: bool = True,
     calculate_upstream_materials: bool = True,
     include_logic_fab_scope3: Optional[bool] = None,
+    use_reference_logic_fab_carbon: bool = False,
+    use_reference_logic_fab_water: bool = False,
     bom_template: Optional[Dict[str, float]] = None,
     use_region: Optional[str] = None,
     eol_region: Optional[str] = None,
@@ -2200,6 +2219,8 @@ def calculate_total_impact_distribution(
         spatial_awareness=spatial_awareness,
         calculate_upstream_materials=calculate_upstream_materials,
         include_logic_fab_scope3=include_logic_fab_scope3,
+        use_reference_logic_fab_carbon=use_reference_logic_fab_carbon,
+        use_reference_logic_fab_water=use_reference_logic_fab_water,
         bom_template=bom_template,
         fallbacks=fallbacks,
         **transportation_kwargs,

@@ -424,7 +424,12 @@ def _get_logic_total_density(node_nm):
     return 0.0 if density is None else float(density)
 
 
-def _estimate_logic_fab_carbon_scope_split(cpu_specs, production_yield=0.875, include_scope3=True):
+def _estimate_logic_fab_carbon_scope_split(
+    cpu_specs,
+    production_yield=0.875,
+    include_scope3=True,
+    use_reference_carbon=False,
+):
     scope_totals = {scope_name: 0.0 for scope_name in MANUFACTURING_SCOPE_KEYS}
     estimated_total = 0.0
     die_regions = (
@@ -456,7 +461,7 @@ def _estimate_logic_fab_carbon_scope_split(cpu_specs, production_yield=0.875, in
         if include_scope3:
             estimated_total += area_mm2 * total_density / production_yield / 100
 
-    if include_scope3:
+    if include_scope3 and use_reference_carbon:
         legacy_total = cpu_specs.get('manufacturing_carbon_kgCO2e', 0.0) or 0.0
         if legacy_total == 0.0:
             legacy_total = (
@@ -667,6 +672,8 @@ def calculate_cpu_manufacturing_impact_breakdown(
     spatial_awareness=False,
     calculate_upstream_materials=True,
     include_logic_fab_scope3=None,
+    use_reference_logic_fab_carbon=False,
+    use_reference_logic_fab_water=False,
     bom_template=None,
     assembly_transportation_distance=None,
     electricity_location='Taiwan',
@@ -745,11 +752,14 @@ def calculate_cpu_manufacturing_impact_breakdown(
         cpu_specs,
         production_yield=production_yield,
         include_scope3=include_logic_fab_scope3,
+        use_reference_carbon=use_reference_logic_fab_carbon,
     )
     for scope_name in MANUFACTURING_SCOPE_KEYS:
         breakdown[scope_name]['GWP'] += carbon_scope_split[scope_name]
 
-    direct_fab_water = cpu_specs['manufacturing_water_m3'] if 'manufacturing_water_m3' in cpu_specs else 0.0
+    direct_fab_water = 0.0
+    if use_reference_logic_fab_water:
+        direct_fab_water = cpu_specs.get('manufacturing_water_m3', 0.0) or 0.0
     if direct_fab_water == 0.0 or direct_fab_water is None:
         direct_fab_water = cpu_specs.get('die_size_mm2', 0) * embodied_carbon_and_water['water_consumption_cmos_L_per_cm2_by_node'].get(str(cpu_specs['technology_node_nm']), 0) / production_yield / 100000 # L/cm^2 with mm^2 -> cm^2 and L -> m^3 conversion
     breakdown['scope1']['WC'] += direct_fab_water
@@ -783,7 +793,7 @@ def calculate_cpu_manufacturing_impact_breakdown(
     return breakdown
 
 
-def calculate_cpu_manufacturing_impacts(cpu_specs, production_yield=0.875, spatial_awareness=False, calculate_upstream_materials=True, include_logic_fab_scope3=None, bom_template=None, assembly_transportation_distance=None, **upstream_transportation_kwargs):
+def calculate_cpu_manufacturing_impacts(cpu_specs, production_yield=0.875, spatial_awareness=False, calculate_upstream_materials=True, include_logic_fab_scope3=None, use_reference_logic_fab_carbon=False, use_reference_logic_fab_water=False, bom_template=None, assembly_transportation_distance=None, **upstream_transportation_kwargs):
     return _sum_manufacturing_scope_breakdown(
         calculate_cpu_manufacturing_impact_breakdown(
             cpu_specs,
@@ -791,6 +801,8 @@ def calculate_cpu_manufacturing_impacts(cpu_specs, production_yield=0.875, spati
             spatial_awareness=spatial_awareness,
             calculate_upstream_materials=calculate_upstream_materials,
             include_logic_fab_scope3=include_logic_fab_scope3,
+            use_reference_logic_fab_carbon=use_reference_logic_fab_carbon,
+            use_reference_logic_fab_water=use_reference_logic_fab_water,
             bom_template=bom_template,
             assembly_transportation_distance=assembly_transportation_distance,
             **upstream_transportation_kwargs,
@@ -1084,7 +1096,7 @@ def calculate_storage_manufacturing_pollutants(storage_type, production_year, ca
 
     return pollutants
 
-def calculate_gpu_manufacturing_impact_breakdown(gpu_specs, memory_production_yield=0.875, spatial_awareness=False, calculate_upstream_materials=True, include_logic_fab_scope3=None, bom_template=None, assembly_transportation_distance=None, **upstream_transportation_kwargs):
+def calculate_gpu_manufacturing_impact_breakdown(gpu_specs, memory_production_yield=0.875, spatial_awareness=False, calculate_upstream_materials=True, include_logic_fab_scope3=None, use_reference_logic_fab_carbon=False, use_reference_logic_fab_water=False, bom_template=None, assembly_transportation_distance=None, **upstream_transportation_kwargs):
     """
     Calculate the GPU manufacturing impacts split into scope 1/2/3 buckets.
     
@@ -1104,6 +1116,8 @@ def calculate_gpu_manufacturing_impact_breakdown(gpu_specs, memory_production_yi
         spatial_awareness=spatial_awareness,
         calculate_upstream_materials=calculate_upstream_materials,
         include_logic_fab_scope3=include_logic_fab_scope3,
+        use_reference_logic_fab_carbon=use_reference_logic_fab_carbon,
+        use_reference_logic_fab_water=use_reference_logic_fab_water,
         assembly_transportation_distance=None,
         **upstream_transportation_kwargs,
     )
@@ -1133,7 +1147,7 @@ def calculate_gpu_manufacturing_impact_breakdown(gpu_specs, memory_production_yi
     return breakdown
 
 
-def calculate_gpu_manufacturing_impacts(gpu_specs, memory_production_yield=0.875, spatial_awareness=False, calculate_upstream_materials=True, include_logic_fab_scope3=None, bom_template=None, assembly_transportation_distance=None, **upstream_transportation_kwargs):
+def calculate_gpu_manufacturing_impacts(gpu_specs, memory_production_yield=0.875, spatial_awareness=False, calculate_upstream_materials=True, include_logic_fab_scope3=None, use_reference_logic_fab_carbon=False, use_reference_logic_fab_water=False, bom_template=None, assembly_transportation_distance=None, **upstream_transportation_kwargs):
     return _sum_manufacturing_scope_breakdown(
         calculate_gpu_manufacturing_impact_breakdown(
             gpu_specs,
@@ -1141,6 +1155,8 @@ def calculate_gpu_manufacturing_impacts(gpu_specs, memory_production_yield=0.875
             spatial_awareness=spatial_awareness,
             calculate_upstream_materials=calculate_upstream_materials,
             include_logic_fab_scope3=include_logic_fab_scope3,
+            use_reference_logic_fab_carbon=use_reference_logic_fab_carbon,
+            use_reference_logic_fab_water=use_reference_logic_fab_water,
             bom_template=bom_template,
             assembly_transportation_distance=assembly_transportation_distance,
             **upstream_transportation_kwargs,
@@ -1169,7 +1185,7 @@ def calculate_gpu_manufacturing_pollutants(gpu_specs, memory_production_yield=0.
     return pollutants
 
 
-def calculate_manufacturing_impact_breakdown(device_specs, spatial_awareness=False, calculate_upstream_materials=True, include_logic_fab_scope3=None, bom_template=None, **manufacturing_kwargs):
+def calculate_manufacturing_impact_breakdown(device_specs, spatial_awareness=False, calculate_upstream_materials=True, include_logic_fab_scope3=None, use_reference_logic_fab_carbon=False, use_reference_logic_fab_water=False, bom_template=None, **manufacturing_kwargs):
     """
     Return scope 1/2/3 manufacturing midpoint impacts for a device without
     changing the legacy aggregated manufacturing totals.
@@ -1182,6 +1198,8 @@ def calculate_manufacturing_impact_breakdown(device_specs, spatial_awareness=Fal
             spatial_awareness=spatial_awareness,
             calculate_upstream_materials=calculate_upstream_materials,
             include_logic_fab_scope3=include_logic_fab_scope3,
+            use_reference_logic_fab_carbon=use_reference_logic_fab_carbon,
+            use_reference_logic_fab_water=use_reference_logic_fab_water,
             bom_template=bom_template,
             **manufacturing_kwargs,
         )
@@ -1192,6 +1210,8 @@ def calculate_manufacturing_impact_breakdown(device_specs, spatial_awareness=Fal
             spatial_awareness=spatial_awareness,
             calculate_upstream_materials=calculate_upstream_materials,
             include_logic_fab_scope3=include_logic_fab_scope3,
+            use_reference_logic_fab_carbon=use_reference_logic_fab_carbon,
+            use_reference_logic_fab_water=use_reference_logic_fab_water,
             bom_template=bom_template,
             **manufacturing_kwargs,
         )
@@ -1859,7 +1879,7 @@ def midpoint_to_endpoint(
     
     return endpoint_impact
 
-def calculate_total_impact(device_specs, occupy_ratio=1.0, manufacturing_only=False, spatial_awareness=False, calculate_upstream_materials=True, include_logic_fab_scope3=None, bom_template=None, use_region=None, eol_region=None, transport_region=None, **transportation_kwargs):
+def calculate_total_impact(device_specs, occupy_ratio=1.0, manufacturing_only=False, spatial_awareness=False, calculate_upstream_materials=True, include_logic_fab_scope3=None, use_reference_logic_fab_carbon=False, use_reference_logic_fab_water=False, bom_template=None, use_region=None, eol_region=None, transport_region=None, **transportation_kwargs):
     """
     Calculate the total embodied impact of a device based on its specifications.
     
@@ -1891,6 +1911,8 @@ def calculate_total_impact(device_specs, occupy_ratio=1.0, manufacturing_only=Fa
         spatial_awareness=spatial_awareness,
         calculate_upstream_materials=calculate_upstream_materials,
         include_logic_fab_scope3=include_logic_fab_scope3,
+        use_reference_logic_fab_carbon=use_reference_logic_fab_carbon,
+        use_reference_logic_fab_water=use_reference_logic_fab_water,
         bom_template=bom_template,
         **transportation_kwargs,
     )

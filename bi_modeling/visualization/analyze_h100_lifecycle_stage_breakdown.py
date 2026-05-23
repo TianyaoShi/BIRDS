@@ -1,4 +1,4 @@
-"""Analyze H100 BI-per-request lifecycle-stage breakdowns."""
+"""Analyze GPU BI-per-request lifecycle-stage breakdowns."""
 
 from __future__ import annotations
 
@@ -23,11 +23,15 @@ from bi_modeling.visualization.energy_bi_calculator import (  # noqa: E402
 
 STAGES = ("operational", "manufacturing", "transportation", "recycling")
 PERCENTILES = (0.01, 0.05, 0.25, 0.50, 0.75, 0.95, 0.99)
+ACCELERATOR_SPECS = {
+    "H100": modeling.h100_specs,
+    "A100": modeling.a100_40g_specs,
+}
 
 
-def _h100_stage_bi_per_accelerator(config: EnergyBiConfig) -> dict[str, float]:
+def _stage_bi_per_accelerator(accelerator: str, config: EnergyBiConfig) -> dict[str, float]:
     impacts = modeling.calculate_total_impact(
-        modeling.h100_specs,
+        ACCELERATOR_SPECS[accelerator],
         manufacturing_only=False,
         calculate_upstream_materials=config.calculate_upstream_materials,
         include_logic_fab_scope3=config.include_logic_fab_scope3,
@@ -38,10 +42,18 @@ def _h100_stage_bi_per_accelerator(config: EnergyBiConfig) -> dict[str, float]:
     }
 
 
-def build_h100_lifecycle_breakdown(results_dir: Path, *, config: EnergyBiConfig) -> pd.DataFrame:
+def build_lifecycle_breakdown(
+    results_dir: Path,
+    *,
+    config: EnergyBiConfig,
+    accelerators: tuple[str, ...],
+) -> pd.DataFrame:
     rows = build_energy_bi_dataset(results_dir, config=config)
-    rows = rows[rows["accelerator"] == "H100"].copy()
-    stage_bi = _h100_stage_bi_per_accelerator(config)
+    rows = rows[rows["accelerator"].isin(accelerators)].copy()
+    stage_bi = {
+        accelerator: _stage_bi_per_accelerator(accelerator, config)
+        for accelerator in accelerators
+    }
     lifetime_seconds = config.lifetime_years * SECONDS_PER_YEAR
 
     rows["operational_bi_per_request"] = rows["incremental_energy_per_total_request_j"].apply(
@@ -49,7 +61,13 @@ def build_h100_lifecycle_breakdown(results_dir: Path, *, config: EnergyBiConfig)
     )
     for stage in ("manufacturing", "transportation", "recycling"):
         rows[f"{stage}_bi_per_request"] = (
-            rows["gpu_count"] * stage_bi[stage] / lifetime_seconds / rows["request_rate"]
+            rows.apply(
+                lambda row: row["gpu_count"]
+                * stage_bi[row["accelerator"]][stage]
+                / lifetime_seconds
+                / row["request_rate"],
+                axis=1,
+            )
         )
 
     stage_columns = [f"{stage}_bi_per_request" for stage in STAGES]
@@ -123,20 +141,22 @@ def write_report(
     *,
     config: EnergyBiConfig,
     selection_note: str,
+    title: str,
+    accelerator_note: str,
 ) -> None:
     report_path.parent.mkdir(parents=True, exist_ok=True)
     operational_ratio = ratio_summary.loc[ratio_summary["stage"] == "operational"].iloc[0]
-    text = f"""# H100 Lifecycle-Stage BI Per Request Breakdown
+    text = f"""# {title}
 
 Rows analyzed: {len(rows)}
 
 Scope and assumptions:
-- Accelerator: H100 records only from `results/energy/**/summary_compact.csv`.
+- Accelerators: {accelerator_note}.
 - Selection: {selection_note}
 - Operational BI uses incremental energy per total request.
 - Operational year/location: {config.operational_year}, {config.location}.
 - Datacenter WUE/PUE: {config.datacenter_wue_l_per_kwh} L/kWh, {config.datacenter_pue}.
-- Embodied lifecycle stages use H100 total-impact endpoint BI allocated uniformly across a {config.lifetime_years}-year lifetime, then scaled by `gpu_count / request_rate`.
+- Embodied lifecycle stages use accelerator-specific total-impact endpoint BI allocated uniformly across a {config.lifetime_years}-year lifetime, then scaled by `gpu_count / request_rate`.
 - Upstream material shortcut: `calculate_upstream_materials={config.calculate_upstream_materials}`, `include_logic_fab_scope3={config.include_logic_fab_scope3}`.
 
 Operational stage contribution range:
@@ -182,6 +202,7 @@ def write_low_operational_ratio_audit(
     output_md: Path,
     *,
     threshold: float = 0.95,
+    title: str = "H100 Configs With Operational BI Ratio Below 95%",
 ) -> None:
     audit = rows[rows["operational_ratio"] < threshold].copy()
     audit = audit.sort_values(["operational_ratio", "model", "workload", "request_rate"])
@@ -253,7 +274,7 @@ def write_low_operational_ratio_audit(
         "recycle %",
     ]
     lines = [
-        "# H100 Configs With Operational BI Ratio Below 95%",
+        f"# {title}",
         "",
         f"Rows: {len(audit)}",
         "",
@@ -299,52 +320,77 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     config = EnergyBiConfig()
-    rows = build_h100_lifecycle_breakdown(args.results_dir, config=config)
     args.derived_dir.mkdir(parents=True, exist_ok=True)
-
-    output_sets = [
+    analysis_sets = [
         (
-            "",
-            rows,
+            "h100",
+            ("H100",),
+            "H100 Lifecycle-Stage BI Per Request Breakdown",
+            "H100 records only from `results/energy/**/summary_compact.csv`",
+            "H100 Configs With Operational BI Ratio Below 95%",
             "all H100 succeeded energy-summary rows",
         ),
         (
-            "_best_energy_per_model",
-            select_most_energy_efficient_config_per_model(rows),
-            "one row per model, selected by minimum incremental energy per total request",
+            "combined_h100_a100",
+            ("H100", "A100"),
+            "Combined H100+A100 Lifecycle-Stage BI Per Request Breakdown",
+            "H100 and A100 records from `results/energy/**/summary_compact.csv`",
+            "Combined H100+A100 Configs With Operational BI Ratio Below 95%",
+            "all succeeded H100 and A100 energy-summary rows",
         ),
     ]
+    for prefix, accelerators, title, accelerator_note, audit_title, all_rows_note in analysis_sets:
+        rows = build_lifecycle_breakdown(args.results_dir, config=config, accelerators=accelerators)
+        output_sets = [
+            (
+                "",
+                rows,
+                all_rows_note,
+            ),
+            (
+                "_best_energy_per_model",
+                select_most_energy_efficient_config_per_model(rows),
+                "one row per model, selected by minimum incremental energy per total request",
+            ),
+        ]
 
-    for suffix, selected_rows, selection_note in output_sets:
-        ratio_summary = summarize_stage_ratios(selected_rows)
-        bi_summary = summarize_stage_bi_per_request(selected_rows)
+        for suffix, selected_rows, selection_note in output_sets:
+            ratio_summary = summarize_stage_ratios(selected_rows)
+            bi_summary = summarize_stage_bi_per_request(selected_rows)
 
-        row_path = args.derived_dir / f"h100_lifecycle_stage_bi_per_request{suffix}.csv"
-        ratio_path = args.derived_dir / f"h100_lifecycle_stage_ratio_summary{suffix}.csv"
-        bi_path = args.derived_dir / f"h100_lifecycle_stage_bi_per_request_summary{suffix}.csv"
-        report_path = args.derived_dir / f"h100_lifecycle_stage_breakdown_report{suffix}.md"
-        low_ratio_csv = args.derived_dir / f"h100_lifecycle_stage_low_operational_ratio_audit{suffix}.csv"
-        low_ratio_md = args.derived_dir / f"h100_lifecycle_stage_low_operational_ratio_audit{suffix}.md"
+            row_path = args.derived_dir / f"{prefix}_lifecycle_stage_bi_per_request{suffix}.csv"
+            ratio_path = args.derived_dir / f"{prefix}_lifecycle_stage_ratio_summary{suffix}.csv"
+            bi_path = args.derived_dir / f"{prefix}_lifecycle_stage_bi_per_request_summary{suffix}.csv"
+            report_path = args.derived_dir / f"{prefix}_lifecycle_stage_breakdown_report{suffix}.md"
+            low_ratio_csv = args.derived_dir / f"{prefix}_lifecycle_stage_low_operational_ratio_audit{suffix}.csv"
+            low_ratio_md = args.derived_dir / f"{prefix}_lifecycle_stage_low_operational_ratio_audit{suffix}.md"
 
-        selected_rows.to_csv(row_path, index=False)
-        ratio_summary.to_csv(ratio_path, index=False)
-        bi_summary.to_csv(bi_path, index=False)
-        write_report(
-            selected_rows,
-            ratio_summary,
-            bi_summary,
-            report_path,
-            config=config,
-            selection_note=selection_note,
-        )
-        write_low_operational_ratio_audit(selected_rows, low_ratio_csv, low_ratio_md)
+            selected_rows.to_csv(row_path, index=False)
+            ratio_summary.to_csv(ratio_path, index=False)
+            bi_summary.to_csv(bi_path, index=False)
+            write_report(
+                selected_rows,
+                ratio_summary,
+                bi_summary,
+                report_path,
+                config=config,
+                selection_note=selection_note,
+                title=title,
+                accelerator_note=accelerator_note,
+            )
+            write_low_operational_ratio_audit(
+                selected_rows,
+                low_ratio_csv,
+                low_ratio_md,
+                title=audit_title,
+            )
 
-        print(f"Wrote {row_path}")
-        print(f"Wrote {ratio_path}")
-        print(f"Wrote {bi_path}")
-        print(f"Wrote {report_path}")
-        print(f"Wrote {low_ratio_csv}")
-        print(f"Wrote {low_ratio_md}")
+            print(f"Wrote {row_path}")
+            print(f"Wrote {ratio_path}")
+            print(f"Wrote {bi_path}")
+            print(f"Wrote {report_path}")
+            print(f"Wrote {low_ratio_csv}")
+            print(f"Wrote {low_ratio_md}")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Plot H100 lifecycle-stage contribution ratio box plots."""
+"""Plot GPU lifecycle-stage contribution ratio box plots."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def plot_stage_ratio_boxplot(rows: pd.DataFrame, output_path: Path) -> None:
 
     ax.set_ylabel("Contribution ratio (%)", fontsize=FONTSIZE)
     ax.set_yscale("log")
-    ax.set_ylim(0.002, 110)
+    ax.set_ylim(0.001, 110)
     ax.yaxis.set_major_locator(FixedLocator([0.01, 0.1, 1, 10, 100]))
     def _format_func(y, _: int) -> str:
         if y < 0.1:
@@ -96,6 +96,26 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=figures_dir / "h100_lifecycle_stage_ratio_boxplot_best_energy_per_model.pdf",
     )
+    parser.add_argument(
+        "--combined-all-rows-csv",
+        type=Path,
+        default=derived_dir / "combined_h100_a100_lifecycle_stage_bi_per_request.csv",
+    )
+    parser.add_argument(
+        "--combined-best-per-model-csv",
+        type=Path,
+        default=derived_dir / "combined_h100_a100_lifecycle_stage_bi_per_request_best_energy_per_model.csv",
+    )
+    parser.add_argument(
+        "--combined-all-output",
+        type=Path,
+        default=figures_dir / "combined_h100_a100_lifecycle_stage_ratio_boxplot_all.pdf",
+    )
+    parser.add_argument(
+        "--combined-best-output",
+        type=Path,
+        default=figures_dir / "combined_h100_a100_lifecycle_stage_ratio_boxplot_best_energy_per_model.pdf",
+    )
     return parser.parse_args()
 
 
@@ -103,8 +123,12 @@ def main() -> None:
     args = parse_args()
     plot_stage_ratio_boxplot(pd.read_csv(args.all_rows_csv), args.all_output)
     plot_stage_ratio_boxplot(pd.read_csv(args.best_per_model_csv), args.best_output)
+    plot_stage_ratio_boxplot(pd.read_csv(args.combined_all_rows_csv), args.combined_all_output)
+    plot_stage_ratio_boxplot(pd.read_csv(args.combined_best_per_model_csv), args.combined_best_output)
     print(f"Wrote {args.all_output}")
     print(f"Wrote {args.best_output}")
+    print(f"Wrote {args.combined_all_output}")
+    print(f"Wrote {args.combined_best_output}")
 
 
 if __name__ == "__main__":
