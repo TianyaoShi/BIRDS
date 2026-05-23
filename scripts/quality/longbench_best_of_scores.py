@@ -28,6 +28,15 @@ def main() -> int:
         help="Score root as LABEL=PATH. May be repeated; immediate child directories are scanned for score.json.",
     )
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--selection-mode",
+        choices=("overall", "bucketwise"),
+        default="overall",
+        help=(
+            "overall: select one run per model by overall_score; "
+            "bucketwise: select the best run independently for each bucket, then average buckets."
+        ),
+    )
     args = parser.parse_args()
 
     roots = [_parse_labeled_path(raw) for raw in args.score_root]
@@ -48,23 +57,10 @@ def main() -> int:
 
     rows = []
     for model, by_label in grouped.items():
-        selected = max(by_label.values(), key=lambda item: float(item["overall_score"]))
-        row = {
-            "model": model,
-            "selected_run": selected["source_label"],
-            "overall_score": selected["overall_score"],
-            "item_weighted_score": selected["item_weighted_score"],
-            "scored_items": selected["scored_items"],
-            "failed_generations": selected["failed_generations"],
-            "invalid_items": selected["invalid_items"],
-            "raw_reference_mismatches": selected["raw_reference_mismatches"],
-            "score_dir": selected["score_dir"],
-        }
-        for bucket in BUCKET_COLUMNS:
-            row[bucket] = selected.get(bucket)
-        for label in labels:
-            candidate = by_label.get(label)
-            row[f"{label}_overall_score"] = None if candidate is None else candidate["overall_score"]
+        if args.selection_mode == "bucketwise":
+            row = _bucketwise_row(model=model, by_label=by_label, labels=labels)
+        else:
+            row = _overall_row(model=model, by_label=by_label, labels=labels)
         rows.append(row)
 
     rows.sort(key=lambda item: _sort_score(item["overall_score"]), reverse=True)
@@ -78,6 +74,7 @@ def main() -> int:
         "overall_score",
         "item_weighted_score",
         *BUCKET_COLUMNS,
+        *[f"{bucket}_selected_run" for bucket in BUCKET_COLUMNS],
         "scored_items",
         "failed_generations",
         "invalid_items",
@@ -120,8 +117,85 @@ def _record_from_score(*, label: str, score_path: Path, payload: dict[str, Any])
         "score_dir": str(score_path.parent),
     }
     for bucket in BUCKET_COLUMNS:
-        record[bucket] = _format_float((by_bucket.get(bucket) or {}).get("score"))
+        bucket_payload = by_bucket.get(bucket) or {}
+        record[bucket] = _format_float(bucket_payload.get("score"))
+        record[f"{bucket}_item_weighted_score"] = _format_float(bucket_payload.get("item_weighted_score"))
     return record
+
+
+def _overall_row(*, model: str, by_label: dict[str, dict[str, Any]], labels: list[str]) -> dict[str, Any]:
+    selected = max(by_label.values(), key=lambda item: float(item["overall_score"]))
+    row = {
+        "model": model,
+        "selected_run": selected["source_label"],
+        "overall_score": selected["overall_score"],
+        "item_weighted_score": selected["item_weighted_score"],
+        "scored_items": selected["scored_items"],
+        "failed_generations": selected["failed_generations"],
+        "invalid_items": selected["invalid_items"],
+        "raw_reference_mismatches": selected["raw_reference_mismatches"],
+        "score_dir": selected["score_dir"],
+    }
+    for bucket in BUCKET_COLUMNS:
+        row[bucket] = selected.get(bucket)
+        row[f"{bucket}_selected_run"] = selected["source_label"]
+    for label in labels:
+        candidate = by_label.get(label)
+        row[f"{label}_overall_score"] = None if candidate is None else candidate["overall_score"]
+    return row
+
+
+def _bucketwise_row(*, model: str, by_label: dict[str, dict[str, Any]], labels: list[str]) -> dict[str, Any]:
+    selected_by_bucket: dict[str, dict[str, Any]] = {}
+    bucket_scores: list[float] = []
+    bucket_weighted_scores: list[float] = []
+    score_dirs: list[str] = []
+    selected_labels: list[str] = []
+    scored_items = failed_generations = invalid_items = raw_reference_mismatches = None
+    for bucket in BUCKET_COLUMNS:
+        candidates = [
+            candidate
+            for candidate in by_label.values()
+            if _as_float(candidate.get(bucket)) is not None
+        ]
+        if not candidates:
+            continue
+        selected = max(candidates, key=lambda item: float(item[bucket]))
+        selected_by_bucket[bucket] = selected
+        bucket_scores.append(float(selected[bucket]))
+        selected_labels.append(f"{bucket}:{selected['source_label']}")
+        score_dirs.append(f"{bucket}:{selected['score_dir']}")
+        row_score = _as_float(selected.get(f"{bucket}_item_weighted_score"))
+        if row_score is not None:
+            bucket_weighted_scores.append(row_score)
+        if scored_items is None:
+            scored_items = selected.get("scored_items")
+            failed_generations = selected.get("failed_generations")
+            invalid_items = selected.get("invalid_items")
+            raw_reference_mismatches = selected.get("raw_reference_mismatches")
+    row = {
+        "model": model,
+        "selected_run": ";".join(selected_labels),
+        "overall_score": _format_float(sum(bucket_scores) / len(bucket_scores)) if bucket_scores else None,
+        "item_weighted_score": (
+            _format_float(sum(bucket_weighted_scores) / len(bucket_weighted_scores))
+            if bucket_weighted_scores
+            else None
+        ),
+        "scored_items": scored_items,
+        "failed_generations": failed_generations,
+        "invalid_items": invalid_items,
+        "raw_reference_mismatches": raw_reference_mismatches,
+        "score_dir": ";".join(score_dirs),
+    }
+    for bucket in BUCKET_COLUMNS:
+        selected = selected_by_bucket.get(bucket)
+        row[bucket] = None if selected is None else selected.get(bucket)
+        row[f"{bucket}_selected_run"] = None if selected is None else selected["source_label"]
+    for label in labels:
+        candidate = by_label.get(label)
+        row[f"{label}_overall_score"] = None if candidate is None else candidate["overall_score"]
+    return row
 
 
 def _as_float(value: Any) -> float | None:
