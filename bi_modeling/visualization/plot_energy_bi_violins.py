@@ -67,8 +67,8 @@ def _plot_violin(ax, data, *, column: str, ylabel: str, color: str) -> None:
     ax.set_xticks([1])
     ax.set_xticklabels([ylabel])
     ax.set_yscale("log")
-    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE+2, width=LINEWIDTH * 0.45, length=12)
-    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE+4, width=0, length=0)
+    ax.tick_params(axis="both", labelsize=TICK_FONTSIZE+4, width=LINEWIDTH * 0.45, length=12)
+    # ax.tick_params(axis="x", labelsize=TICK_FONTSIZE+4, width=0, length=0)
     for spine in ax.spines.values():
         spine.set_linewidth(LINEWIDTH * 0.45)
 
@@ -153,7 +153,7 @@ def _annotate_may_token_rates(
             textcoords="offset points",
             ha="left" if x_offset > 0 else "right" if x_offset < 0 else "center",
             va="bottom" if y_offset > 0 else "top",
-            fontsize=TICK_FONTSIZE - 3,
+            fontsize=TICK_FONTSIZE,
             color=color,
             arrowprops={"arrowstyle": "-", "linestyle": "--", "color": color, "lw": LINEWIDTH * 0.5},
         )
@@ -192,21 +192,22 @@ def _plot_platform_trends(ax, data) -> None:
         google,
         label="Google",
         color=TREND_COLORS["google"],
-        y_multiplier=35,
-        year_y_offsets={2024: 125},
+        y_multiplier=20,
+        year_y_offsets={2024: 110, 2025:-40},
     )
     _annotate_may_token_rates(
         ax,
         openrouter,
         label="OR",
         color=TREND_COLORS["openrouter"],
-        y_multiplier=-50,
-        year_y_offsets={2026: -99.8},
+        y_multiplier=-35,
+        year_y_offsets={2026: -99.8, 2025: -65},
     )
 
     ax.set_ylabel(r"Daily BI (species·yr/day)", fontsize=FONTSIZE+2)
     ax.set_yscale("log")
-    ax.xaxis.set_major_locator(mdates.MonthLocator(interval=8))
+    ax.set_yticks([1e-8,1e-6,1e-4,1e-2])
+    ax.xaxis.set_major_locator(mdates.MonthLocator(interval=12))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
     ax.set_xlim(google["date"].min(), google["date"].max())
     ax.margins(x=0)
@@ -217,7 +218,7 @@ def _plot_platform_trends(ax, data) -> None:
             label.set_ha("right")
     for spine in ax.spines.values():
         spine.set_linewidth(LINEWIDTH * 0.45)
-    ax.legend(frameon=False, fontsize=LEGEND_FONTSIZE+4, loc="upper left")
+    ax.legend(frameon=False, fontsize=LEGEND_FONTSIZE+4, loc="upper left", bbox_to_anchor=(-0.02, 1.04))
 
 
 def plot_energy_bi_violins(data, output_path: Path) -> None:
@@ -233,15 +234,15 @@ def plot_energy_bi_violins(data, output_path: Path) -> None:
         axes[0],
         data,
         column="bi_per_request",
-        ylabel="BI per req",
+        ylabel="BI$_{\\text{fu}}$",
         color=VIOLIN_COLORS["request"],
     )
-    axes[0].set_ylabel(r"BI (species·yr)", fontsize=FONTSIZE+2)
+    axes[0].set_ylabel(r"BI (species·yr)", fontsize=FONTSIZE+3)
     _plot_violin(
         axes[1],
         data,
         column="bi_per_token",
-        ylabel="BI per token",
+        ylabel="BI$_{\\text{tok}}$",
         color=VIOLIN_COLORS["token"],
     )
     axes[1].set_ylabel("")

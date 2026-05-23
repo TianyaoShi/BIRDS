@@ -7,9 +7,9 @@ from matplotlib import font_manager
 
 LINEWIDTH = 5
 MARKERSIZE = 14
-FONTSIZE = 40
-LEGEND_FONTSIZE = 30
-TICK_FONTSIZE = FONTSIZE - 8
+FONTSIZE = 46
+LEGEND_FONTSIZE = 36
+TICK_FONTSIZE = FONTSIZE - 6
 SERIF_FONT_FAMILY = [
     "Times New Roman",
     "TeX Gyre Termes",
