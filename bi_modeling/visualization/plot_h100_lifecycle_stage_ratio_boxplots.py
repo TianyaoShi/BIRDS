@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FixedLocator, FuncFormatter
 import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -21,7 +22,7 @@ from bi_modeling.visualization.plot_style import (  # noqa: E402
 )
 
 STAGES = ("operational", "manufacturing", "transportation", "recycling")
-STAGE_LABELS = ("Operational", "Manufacturing", "Transport", "Recycling")
+STAGE_LABELS = ("Operation", "Manufacturing", "Transportation", "End of Life")
 STAGE_COLORS = ("#1F77B4", "#5B8C5A", "#C44E52", "#7B5EA7")
 
 
@@ -56,11 +57,21 @@ def plot_stage_ratio_boxplot(rows: pd.DataFrame, output_path: Path) -> None:
 
     ax.set_ylabel("Contribution ratio (%)", fontsize=FONTSIZE)
     ax.set_yscale("log")
+    ax.set_ylim(0.002, 110)
+    ax.yaxis.set_major_locator(FixedLocator([0.01, 0.1, 1, 10, 100]))
+    def _format_func(y, _: int) -> str:
+        if y < 0.1:
+            return f"{y:.2f}"
+        elif y < 1:
+            return f"{y:.1f}"
+        else:
+            return f"{y:.0f}"
+    ax.yaxis.set_major_formatter(FuncFormatter(_format_func))
     ax.tick_params(axis="y", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=12)
     ax.tick_params(axis="x", labelsize=TICK_FONTSIZE - 2, width=0, length=0)
     for label in ax.get_xticklabels():
-        label.set_rotation(20)
-        label.set_ha("right")
+        label.set_rotation(10)
+        label.set_ha("center")
     for spine in ax.spines.values():
         spine.set_linewidth(LINEWIDTH * 0.45)
 
