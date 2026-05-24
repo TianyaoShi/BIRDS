@@ -98,7 +98,7 @@ def _plot_lifecycle_boxplot(ax: plt.Axes, rows: pd.DataFrame) -> None:
         label.set_ha("center")
 
 
-def _plot_perspective_stackedbars(ax: plt.Axes, summary: pd.DataFrame) -> None:
+def _plot_perspective_stackedbars(ax: plt.Axes, summary: pd.DataFrame):
     summary = summary[summary["bucket"].isin(MIDPOINT_BUCKETS)].copy()
     pivot = (
         summary.pivot(index="time_horizon_years", columns="bucket", values="mean")
@@ -194,15 +194,17 @@ def _plot_perspective_stackedbars(ax: plt.Axes, summary: pd.DataFrame) -> None:
     # ax.set_ylabel("Contribution Ratio (%)", fontsize=FONTSIZE+2)
     ax.set_ylim(0, 100)
     ax.tick_params(axis="both", labelsize=TICK_FONTSIZE+4, width=LINEWIDTH * 0.45, length=10)
-    ax.legend(
+    legend = ax.legend(
         loc="upper center",
-        bbox_to_anchor=(0.35, 1.2),
+        bbox_to_anchor=(0.4, 1.17),
         ncol=4,
         frameon=False,
         fontsize=LEGEND_FONTSIZE+4,
         handlelength=1.2,
         columnspacing=1.1,
     )
+    legend.set_in_layout(False)
+    return legend
 
 
 def plot_combined_figure(lifecycle_rows: pd.DataFrame, midpoint_summary: pd.DataFrame, output_path: Path) -> None:
@@ -214,14 +216,15 @@ def plot_combined_figure(lifecycle_rows: pd.DataFrame, midpoint_summary: pd.Data
         constrained_layout=True,
         gridspec_kw={"width_ratios": [1.45, 1.0]},
     )
+    fig.set_constrained_layout_pads(wspace=0.01)
     _plot_lifecycle_boxplot(axes[0], lifecycle_rows)
-    _plot_perspective_stackedbars(axes[1], midpoint_summary)
+    legend = _plot_perspective_stackedbars(axes[1], midpoint_summary)
     for ax in axes:
         for spine in ax.spines.values():
             spine.set_linewidth(LINEWIDTH * 0.45)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, bbox_inches="tight")
+    fig.savefig(output_path, bbox_inches="tight", bbox_extra_artists=(legend,))
     plt.close(fig)
 
 
