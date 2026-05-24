@@ -48,6 +48,9 @@ GROUP_DISPLAY = {
 }
 DEFAULT_SUPPLEMENT_GPU = "a100"
 SUPPLEMENT_MAX_SIZE_B = 3.0
+BAR_WIDTH = 0.72
+BAR_STEP = 1.12
+GROUP_GAP = 0.42
 
 
 def _summary_files_for_gpu(results_dir: Path, gpu: str) -> list[Path]:
@@ -172,7 +175,7 @@ def _scientific_tick(value: float, _: int) -> str:
 
 def plot_model_bars(rows: pd.DataFrame, output_path: Path) -> None:
     apply_academic_style()
-    fig, ax = plt.subplots(figsize=(28, 8.5), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(28, 6.5), constrained_layout=True)
 
     positions = []
     colors = []
@@ -189,13 +192,14 @@ def plot_model_bars(rows: pd.DataFrame, output_path: Path) -> None:
         for _ in range(len(group_rows)):
             positions.append(current_x)
             colors.append(GROUP_COLORS[family])
-            current_x += 1.0
-        end = current_x - 1.0
+            current_x += BAR_STEP
+        end = current_x - BAR_STEP
         group_starts[family] = start
         group_ends[family] = end
         group_centers[family] = (start + end) / 2.0
-        separator_positions.append(current_x - 0.5)
-        current_x += 0.9
+        next_group_start = current_x + GROUP_GAP
+        separator_positions.append((end + next_group_start) / 2.0)
+        current_x = next_group_start
 
     plot_rows = rows.copy()
     plot_rows["x"] = positions
@@ -203,7 +207,7 @@ def plot_model_bars(rows: pd.DataFrame, output_path: Path) -> None:
         plot_rows["x"],
         plot_rows["bi_per_request"],
         color=colors,
-        width=0.72,
+        width=BAR_WIDTH,
         edgecolor="black",
         linewidth=LINEWIDTH * 0.25,
     )
@@ -212,16 +216,17 @@ def plot_model_bars(rows: pd.DataFrame, output_path: Path) -> None:
     ymin = float(plot_rows["bi_per_request"].min()) * 0.75
     ymax = float(plot_rows["bi_per_request"].max()) * 2.6
     ax.set_ylim(ymin, ymax)
-    ax.set_ylabel("BI per req (species$\\cdot$yr)", fontsize=FONTSIZE)
+    ax.set_ylabel("BI$_\\text{fu}$ (species$\\cdot$yr)", fontsize=FONTSIZE)
     ax.yaxis.set_major_formatter(FuncFormatter(_scientific_tick))
     ax.set_xticks(plot_rows["x"], plot_rows["display_label"])
     ax.tick_params(axis="x", labelsize=TICK_FONTSIZE - 2, width=0, length=0, pad=12)
     ax.tick_params(axis="y", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=10)
+    ax.set_xlim(plot_rows["x"].min() - BAR_WIDTH * 1, plot_rows["x"].max() + BAR_WIDTH * 1)
 
     for family, center in group_centers.items():
         ax.text(
             center,
-            -0.18,
+            -0.25,
             GROUP_DISPLAY[family],
             ha="center",
             va="top",
@@ -230,7 +235,13 @@ def plot_model_bars(rows: pd.DataFrame, output_path: Path) -> None:
         )
 
     for separator in separator_positions[:-1]:
-        ax.axvline(separator, color="#444444", linewidth=LINEWIDTH * 0.2, alpha=0.55)
+        ax.axvline(
+            separator,
+            color="#444444",
+            linewidth=LINEWIDTH * 0.2,
+            alpha=0.55,
+            linestyle=(0, (6, 6)),
+        )
 
     for spine in ax.spines.values():
         spine.set_linewidth(LINEWIDTH * 0.45)
