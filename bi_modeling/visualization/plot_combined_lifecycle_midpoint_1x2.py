@@ -40,6 +40,7 @@ MIDPOINT_COLORS = {
     "POFP": "#7B5EA7",
 }
 HORIZONS = (20, 100, 1000)
+ANNOTATION_FONTSIZE = TICK_FONTSIZE - 6
 
 
 def _stage_ratio_values(rows: pd.DataFrame) -> list[pd.Series]:
@@ -52,6 +53,14 @@ def _format_log_percent(value: float, _: int) -> str:
     if value < 1:
         return f"{value:.1f}"
     return f"{value:.0f}"
+
+
+def _format_ratio(value: float) -> str:
+    if value < 0.1:
+        return f"{value:.2f}%"
+    if value < 100:
+        return f"{value:.1f}%"
+    return f"{value:.0f}%"
 
 
 def _plot_lifecycle_boxplot(ax: plt.Axes, rows: pd.DataFrame) -> None:
@@ -80,11 +89,12 @@ def _plot_lifecycle_boxplot(ax: plt.Axes, rows: pd.DataFrame) -> None:
 
     ax.set_xlabel("Contribution Ratio (%)", fontsize=FONTSIZE)
     ax.set_xscale("log")
-    ax.set_xlim(0.001, 110)
+    ax.set_xlim(0.0015, 110)
     ax.xaxis.set_major_locator(FixedLocator([0.01, 0.1, 1, 10, 100]))
     ax.xaxis.set_major_formatter(FuncFormatter(_format_log_percent))
     ax.tick_params(axis="x", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=12)
     ax.tick_params(axis="y", labelsize=TICK_FONTSIZE - 4, width=0, length=0)
+    ax.invert_yaxis()
 
 
 def _plot_perspective_stackedbars(ax: plt.Axes, summary: pd.DataFrame) -> None:
@@ -111,11 +121,79 @@ def _plot_perspective_stackedbars(ax: plt.Axes, summary: pd.DataFrame) -> None:
         )
         left = [curr + width for curr, width in zip(left, widths)]
 
+    carbon_widths = (pivot["GWP"] * 100.0).tolist()
+    for y_pos, carbon_width in zip(y_positions, carbon_widths):
+        ax.text(
+            carbon_width * 0.5,
+            y_pos,
+            f"{_format_ratio(carbon_width)}",
+            ha="center",
+            va="center",
+            fontsize=ANNOTATION_FONTSIZE,
+            color="white",
+        )
+
+    horizon_to_y = {horizon: idx for idx, horizon in enumerate(HORIZONS)}
+    starts = pivot[list(MIDPOINT_BUCKETS)].cumsum(axis=1).shift(axis=1, fill_value=0.0) * 100.0
+    widths = pivot[list(MIDPOINT_BUCKETS)] * 100.0
+
+    for bucket in ("AP", "POFP"):
+        y_pos = horizon_to_y[20]
+        center = starts.loc[20, bucket] + widths.loc[20, bucket] * 0.5
+        ax.text(
+            center,
+            y_pos,
+            f"{_format_ratio(widths.loc[20, bucket])}",
+            ha="center",
+            va="center",
+            fontsize=ANNOTATION_FONTSIZE - 2,
+            color="white",
+        )
+
+    arrow_props = {
+        "arrowstyle": "->",
+        "linewidth": LINEWIDTH * 0.25,
+        "color": "black",
+        "shrinkA": 0,
+        "shrinkB": 4,
+    }
+    for bucket, text_xy in {
+        "WC": (70, 0.55),
+        "AP": (82, 0.55),
+        "POFP": (94, 0.55),
+    }.items():
+        y_pos = horizon_to_y[100]
+        target = starts.loc[100, bucket] + widths.loc[100, bucket] * 0.5
+        ax.annotate(
+            f"{_format_ratio(widths.loc[100, bucket])}",
+            xy=(target, y_pos),
+            xytext=text_xy,
+            fontsize=ANNOTATION_FONTSIZE,
+            ha="center",
+            va="center",
+            arrowprops=arrow_props,
+        )
+
+    y_pos = horizon_to_y[1000]
+    aggregate_buckets = ("WC", "AP", "POFP")
+    aggregate_width = sum(widths.loc[1000, bucket] for bucket in aggregate_buckets)
+    aggregate_start = starts.loc[1000, "WC"]
+    ax.annotate(
+        f"WC+TA+POF {_format_ratio(aggregate_width)}",
+        xy=(aggregate_start + aggregate_width * 0.5, y_pos),
+        xytext=(77.5, 1.55),
+        fontsize=ANNOTATION_FONTSIZE,
+        ha="center",
+        va="center",
+        arrowprops=arrow_props,
+    )
+
     ax.set_yticks(y_positions, [str(horizon) for horizon in HORIZONS])
     ax.set_xlabel("Contribution Ratio (%)", fontsize=FONTSIZE)
     ax.set_ylabel("Time Horizon (years)", fontsize=FONTSIZE)
     ax.set_xlim(0, 100)
     ax.tick_params(axis="both", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=10)
+    ax.invert_yaxis()
     ax.legend(
         loc="upper center",
         bbox_to_anchor=(0.5, 1.23),
@@ -132,7 +210,7 @@ def plot_combined_figure(lifecycle_rows: pd.DataFrame, midpoint_summary: pd.Data
     fig, axes = plt.subplots(
         1,
         2,
-        figsize=(24, 8.5),
+        figsize=(24, 6.5),
         constrained_layout=True,
         gridspec_kw={"width_ratios": [1.08, 1.0]},
     )
