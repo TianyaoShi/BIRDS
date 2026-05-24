@@ -83,15 +83,6 @@ PYTHONPATH=profiler:. python -m energy_profiler.cli dry-run \
 
 ## Running A Managed Plan
 
-Run a reviewed plan serially:
-
-```bash
-PYTHONPATH=profiler:. python -m energy_profiler.cli run \
-  --plan experiments/energy/<plan_id>.yaml \
-  --allowed-gpu-ids 0 1 \
-  --max-active-gpus 1
-```
-
 Run a reviewed plan locally with GPU-aware parallel scheduling:
 
 ```bash
@@ -122,9 +113,10 @@ Managed plan execution reuses the same launch and resource primitives as
 `local_orchestrator`: it leases the requested number of GPUs for each job,
 allocates ports, starts or reuses a vLLM server for matching server signatures,
 waits for readiness, runs fixed-rate open-loop trials, and releases resources at
-the end. The `energy_profiler.cli run` command is serial; use
-`local_orchestrator.cli energy-run` when local bin-packing across multiple GPUs is
-desired.
+the end. The legacy `energy_profiler.cli run` and `energy_profiler.cli resume`
+commands are disabled because they execute managed plans serially. Use
+`local_orchestrator.cli energy-run` and `local_orchestrator.cli energy-resume`
+for managed local execution.
 
 Managed trials first measure an idle baseline, then run an unmeasured traffic
 warmup at the target request rate, then start GPU power monitoring for the

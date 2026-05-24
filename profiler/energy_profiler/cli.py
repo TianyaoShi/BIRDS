@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Sequence
 
-from .executor import EnergyExecutor, EnergyExecutorConfig
+from .executor import EnergyExecutor
 from .models import (
-    EnergyPlanExecution,
     EnergyPlanMode,
     EnergyPlanRounding,
     EnergyPlanSelection,
@@ -43,10 +43,13 @@ def build_parser() -> argparse.ArgumentParser:
     dry_run.add_argument("--plan", type=Path, required=True)
     dry_run.set_defaults(handler=_dry_run_command)
 
-    run = subparsers.add_parser("run")
+    run = subparsers.add_parser(
+        "run",
+        help="disabled; use local_orchestrator.cli energy-run for managed local execution",
+    )
     run.add_argument("--plan", type=Path, required=True)
     _add_executor_args(run)
-    run.set_defaults(handler=_run_command)
+    run.set_defaults(handler=_disabled_managed_run_command)
 
     live_trial = subparsers.add_parser("run-live-trial")
     live_trial.add_argument("--trial-id", required=True)
@@ -74,11 +77,14 @@ def build_parser() -> argparse.ArgumentParser:
     live_trial.add_argument("--force", action="store_true")
     live_trial.set_defaults(handler=_run_live_trial_command)
 
-    resume = subparsers.add_parser("resume")
+    resume = subparsers.add_parser(
+        "resume",
+        help="disabled; use local_orchestrator.cli energy-resume for managed local execution",
+    )
     resume.add_argument("--run-root", type=Path, required=True)
     resume.add_argument("--force", action="store_true")
     _add_executor_args(resume)
-    resume.set_defaults(handler=_resume_command)
+    resume.set_defaults(handler=_disabled_managed_run_command)
 
     status = subparsers.add_parser("status")
     status.add_argument("--run-root", type=Path, required=True)
@@ -134,20 +140,16 @@ def _dry_run_command(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_command(args: argparse.Namespace) -> int:
-    plan = load_energy_plan(args.plan)
-    executor = EnergyExecutor(config=_executor_config_from_args(args, plan.execution))
-    summary = executor.run_plan(args.plan)
+def _disabled_managed_run_command(args: argparse.Namespace) -> int:
+    del args
     print(
-        json.dumps(
-            {
-                "run_root": str(plan.plan.output_root / plan.plan.plan_id),
-                "summary": summary,
-            },
-            sort_keys=True,
-        )
+        "energy_profiler.cli run/resume are disabled because they use the legacy "
+        "serial executor. Use `python -m local_orchestrator.cli energy-run --plan "
+        "<plan.yaml>` or `python -m local_orchestrator.cli energy-resume --run-root "
+        "<run_root>` for managed local energy execution.",
+        file=sys.stderr,
     )
-    return 0
+    return 2
 
 
 def _run_live_trial_command(args: argparse.Namespace) -> int:
@@ -178,14 +180,6 @@ def _run_live_trial_command(args: argparse.Namespace) -> int:
         force=bool(args.force),
     )
     print(json.dumps(summary, sort_keys=True))
-    return 0
-
-
-def _resume_command(args: argparse.Namespace) -> int:
-    plan = load_energy_plan(args.run_root / "plan.yaml")
-    executor = EnergyExecutor(config=_executor_config_from_args(args, plan.execution))
-    summary = executor.resume_run(args.run_root, force=bool(args.force))
-    print(json.dumps({"run_root": str(args.run_root), "summary": summary}, sort_keys=True))
     return 0
 
 
@@ -239,28 +233,6 @@ def _add_executor_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--base-port-start", type=int, default=None)
     parser.add_argument("--base-port-end", type=int, default=None)
     parser.add_argument("--metrics-port-offset", type=int, default=None)
-
-
-def _executor_config_from_args(
-    args: argparse.Namespace,
-    plan_execution: EnergyPlanExecution,
-) -> EnergyExecutorConfig:
-    allowed_gpu_ids = tuple(args.allowed_gpu_ids) if args.allowed_gpu_ids is not None else plan_execution.allowed_gpu_ids
-    max_active_gpus = args.max_active_gpus if args.max_active_gpus is not None else plan_execution.max_active_gpus
-    base_port_start = args.base_port_start if args.base_port_start is not None else plan_execution.base_port_start
-    base_port_end = args.base_port_end if args.base_port_end is not None else plan_execution.base_port_end
-    metrics_port_offset = (
-        args.metrics_port_offset
-        if args.metrics_port_offset is not None
-        else plan_execution.metrics_port_offset
-    )
-    return EnergyExecutorConfig(
-        allowed_gpu_ids=allowed_gpu_ids,
-        max_active_gpus=max_active_gpus,
-        base_port_start=base_port_start,
-        base_port_end=base_port_end,
-        metrics_port_offset=metrics_port_offset,
-    )
 
 
 def _load_and_merge_selection(args: argparse.Namespace) -> EnergyPlanSelection:

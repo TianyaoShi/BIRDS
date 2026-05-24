@@ -356,7 +356,7 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
   --mode mst-rounded
 
 PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m energy_profiler.cli run \
+/local/scratch/a/shi676/.venv/bin/python -m local_orchestrator.cli energy-run \
   --plan experiments/energy/sharegpt_l40_energy_000.yaml
 ```
 
@@ -622,9 +622,9 @@ Execution commands:
 
 ```bash
 python -m energy_profiler.cli dry-run --plan experiments/energy/<plan_id>.yaml
-python -m energy_profiler.cli run --plan experiments/energy/<plan_id>.yaml
-python -m energy_profiler.cli resume --run-root results/energy/<plan_id>
-python -m energy_profiler.cli status --run-root results/energy/<plan_id>
+python -m local_orchestrator.cli energy-run --plan experiments/energy/<plan_id>.yaml --run-id <run_id>
+python -m local_orchestrator.cli energy-resume --run-root results/energy/<plan_id>/<run_id>
+python -m local_orchestrator.cli energy-status --run-root results/energy/<plan_id>/<run_id>
 ```
 
 ## Implementation Phases
