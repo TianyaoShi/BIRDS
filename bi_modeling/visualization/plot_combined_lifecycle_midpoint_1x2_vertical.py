@@ -86,13 +86,13 @@ def _plot_lifecycle_boxplot(ax: plt.Axes, rows: pd.DataFrame) -> None:
         patch.set_facecolor(color)
         patch.set_alpha(0.72)
 
-    ax.set_ylabel("Contribution Ratio (%)", fontsize=FONTSIZE+2)
+    ax.set_ylabel("Contribution Ratio (%)", fontsize=FONTSIZE+4)
     ax.set_yscale("log")
     ax.set_ylim(0.0015, 110)
     ax.yaxis.set_major_locator(FixedLocator([0.01, 0.1, 1, 10, 100]))
     ax.yaxis.set_major_formatter(FuncFormatter(_format_log_percent))
-    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE+4, width=LINEWIDTH * 0.45, length=12)
-    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE+4, width=0, length=0)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE+5, width=LINEWIDTH * 0.45, length=12)
+    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE+5, width=0, length=0)
     for label in ax.get_xticklabels():
         label.set_rotation(15)
         label.set_ha("center")
@@ -193,7 +193,7 @@ def _plot_perspective_stackedbars(ax: plt.Axes, summary: pd.DataFrame):
     ax.set_xlabel("Time Horizon (years)", fontsize=FONTSIZE+4)
     # ax.set_ylabel("Contribution Ratio (%)", fontsize=FONTSIZE+2)
     ax.set_ylim(0, 100)
-    ax.tick_params(axis="both", labelsize=TICK_FONTSIZE+4, width=LINEWIDTH * 0.45, length=10)
+    ax.tick_params(axis="both", labelsize=TICK_FONTSIZE+5, width=LINEWIDTH * 0.45, length=10)
     legend = ax.legend(
         loc="upper center",
         bbox_to_anchor=(0.4, 1.17),

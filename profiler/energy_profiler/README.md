@@ -106,11 +106,15 @@ PYTHONPATH=profiler:. python -m energy_profiler.cli status \
   --run-root results/energy/<plan_id>
 ```
 
-Managed plan execution reuses the same lifecycle machinery as
-`local_orchestrator`: it leases GPUs, allocates ports, starts or reuses vLLM
-servers for matching server signatures, waits for readiness, runs fixed-rate
-open-loop trials, and releases resources at the end. This is the intended path
-for full energy profiling experiments.
+Managed plan execution reuses the same launch and resource primitives as
+`local_orchestrator`: it leases the requested number of GPUs for each job,
+allocates ports, starts or reuses a vLLM server for matching server signatures,
+waits for readiness, runs fixed-rate open-loop trials, and releases resources at
+the end. The current local energy executor is serial: it runs one energy job at a
+time even when `local_execution.max_active_gpus` is greater than one. Multi-GPU
+jobs are supported through each job's `launch.gpu_count` and
+`launch.tensor_parallel_size`, but local orchestrator-style parallel bin-packing
+is not implemented for managed energy runs.
 
 Managed trials first measure an idle baseline, then run an unmeasured traffic
 warmup at the target request rate, then start GPU power monitoring for the
