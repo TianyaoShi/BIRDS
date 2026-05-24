@@ -51,6 +51,20 @@ SUPPLEMENT_MAX_SIZE_B = 3.0
 BAR_WIDTH = 0.72
 BAR_STEP = 1.12
 GROUP_GAP = 0.42
+QUALITY_SCORES_PATH = REPO_ROOT / "results" / "quality_scores" / "quality_scores_compiled.csv"
+QUALITY_METRIC_BY_WORKLOAD = (
+    ("sharegpt", "chat_q"),
+    ("wildchat", "chat_q"),
+    ("mmlu-pro", "mmlu_pro"),
+    ("supergpqa", "supergpqa"),
+    ("crosscodeeval", "cceval_f1"),
+    ("cceval", "cceval_f1"),
+    ("repobench", "repobench_em"),
+    ("longbench_long_output_summarization", "longbench_long_output_summarization"),
+    ("longbench_medium_output_summarization", "longbench_medium_output_summarization"),
+    ("longbench_medium_answer_rag_qa", "longbench_medium_answer_rag_qa"),
+    ("longbench_short_answer_document_qa", "longbench_short_answer_document_qa"),
+)
 
 
 def _summary_files_for_gpu(results_dir: Path, gpu: str) -> list[Path]:
@@ -117,6 +131,21 @@ def _load_filtered_rows(
     return rows
 
 
+def _quality_metric_for_workload(workload_substring: str) -> str:
+    workload_key = workload_substring.lower()
+    for pattern, metric in QUALITY_METRIC_BY_WORKLOAD:
+        if pattern in workload_key:
+            return metric
+    raise ValueError(f"No quality-score mapping is defined for workload {workload_substring!r}.")
+
+
+def _load_quality_scores(metric: str) -> pd.DataFrame:
+    quality_rows = pd.read_csv(QUALITY_SCORES_PATH)
+    if metric not in quality_rows.columns:
+        raise ValueError(f"Quality metric column {metric!r} is unavailable in {QUALITY_SCORES_PATH}.")
+    return quality_rows[["model", metric]].rename(columns={metric: "quality_score"})
+
+
 def build_selected_model_rows(
     results_dir: Path,
     *,
@@ -125,6 +154,7 @@ def build_selected_model_rows(
     config: EnergyBiConfig,
     supplement_gpu: str | None = DEFAULT_SUPPLEMENT_GPU,
 ) -> pd.DataFrame:
+    quality_metric = _quality_metric_for_workload(workload_substring)
     primary_rows = _load_filtered_rows(
         results_dir,
         gpu=gpu,
@@ -159,6 +189,8 @@ def build_selected_model_rows(
         best = pd.concat([best, supplement_best], ignore_index=True)
 
     best["group_order"] = best["family"].map({name: idx for idx, name in enumerate(GROUP_ORDER)})
+    best = best.merge(_load_quality_scores(quality_metric), on="model", how="left")
+    best["quality_metric"] = quality_metric
     best = (
         best.sort_values(
             ["group_order", "size_b", "model"],
@@ -175,7 +207,8 @@ def _scientific_tick(value: float, _: int) -> str:
 
 def plot_model_bars(rows: pd.DataFrame, output_path: Path) -> None:
     apply_academic_style()
-    fig, ax = plt.subplots(figsize=(28, 6.5), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(30, 6.5), constrained_layout=True)
+    quality_ax = ax.twinx()
 
     positions = []
     colors = []
@@ -209,7 +242,7 @@ def plot_model_bars(rows: pd.DataFrame, output_path: Path) -> None:
         color=colors,
         width=BAR_WIDTH,
         edgecolor="black",
-        linewidth=LINEWIDTH * 0.25,
+        linewidth=LINEWIDTH * 0.45,
     )
 
     ax.set_yscale("log")
@@ -243,7 +276,41 @@ def plot_model_bars(rows: pd.DataFrame, output_path: Path) -> None:
             linestyle=(0, (6, 6)),
         )
 
+    quality_values = plot_rows["quality_score"].dropna()
+    if not quality_values.empty:
+        quality_min = float(quality_values.min())
+        quality_max = float(quality_values.max())
+        ymin_q = max(0.0, quality_min - 0.06)
+        ymax_q = min(1.0, quality_max + 0.06)
+        if ymax_q - ymin_q < 0.18:
+            center_q = (ymin_q + ymax_q) / 2.0
+            ymin_q = max(0.0, center_q - 0.09)
+            ymax_q = min(1.0, center_q + 0.09)
+        quality_ax.set_ylim(ymin_q, ymax_q)
+    quality_ax.set_ylabel("Q($\\theta$)", fontsize=FONTSIZE)
+    quality_ax.tick_params(axis="y", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=10)
+    quality_ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:.1f}"))
+
+    for family in GROUP_ORDER:
+        group_rows = plot_rows[(plot_rows["family"] == family) & (plot_rows["quality_score"].notna())]
+        if group_rows.empty:
+            continue
+        quality_ax.plot(
+            group_rows["x"],
+            group_rows["quality_score"],
+            color="#222222",
+            linewidth=LINEWIDTH * 0.8,
+            marker="o",
+            markersize=14,
+            markerfacecolor="white",
+            markeredgewidth=LINEWIDTH * 0.3,
+            markeredgecolor="#222222",
+            zorder=5,
+        )
+
     for spine in ax.spines.values():
+        spine.set_linewidth(LINEWIDTH * 0.45)
+    for spine in quality_ax.spines.values():
         spine.set_linewidth(LINEWIDTH * 0.45)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
