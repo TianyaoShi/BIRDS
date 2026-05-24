@@ -7,7 +7,7 @@ slurm:
   partition: ai
   account: yiding
   qos: normal
-  time: '12:00:00'
+  time: '24:00:00'
   cpus_per_gpu: 14
   modules:
   - modtree/gpu
@@ -36,14 +36,14 @@ launch:
   gpu_memory_utilization: 0.9
   max_model_len: 32768
   max_num_seqs: 256
-  max_num_batched_tokens: 4096
+  max_num_batched_tokens: 16384
   readiness_timeout_s: 1200
 generation:
   request_timeout_s: 36000
   concurrency_source: explicit
   max_concurrency: 128
   preserve_request_order: true
-  response_text_max_chars: 262144
+  response_text_max_chars: 1048576
   include_prompt_text: true
   load_mode: open_loop
   decoding:
@@ -52,7 +52,7 @@ generation:
     top_k: 20
     min_p: 0.0
     n: 1
-    max_tokens: 4096
+    max_tokens: 16384
     max_tokens_policy: model_context_minus_prompt_buffer
     prompt_token_buffer: 128
     extra_body: {}
@@ -68,13 +68,13 @@ experiments:
     max_concurrency: 224
     preserve_request_order: true
     include_prompt_text: true
-    response_text_max_chars: 262144
+    response_text_max_chars: 1048576
     decoding:
       temperature: 0.0
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 4096
+      max_tokens: 16384
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -99,13 +99,13 @@ experiments:
     max_concurrency: 124
     preserve_request_order: true
     include_prompt_text: true
-    response_text_max_chars: 262144
+    response_text_max_chars: 1048576
     decoding:
       temperature: 0.0
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 4096
+      max_tokens: 16384
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -122,13 +122,13 @@ experiments:
     max_concurrency: 512
     preserve_request_order: true
     include_prompt_text: true
-    response_text_max_chars: 262144
+    response_text_max_chars: 1048576
     decoding:
       temperature: 0.0
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 4096
+      max_tokens: 16384
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -145,13 +145,13 @@ experiments:
     max_concurrency: 512
     preserve_request_order: true
     include_prompt_text: true
-    response_text_max_chars: 262144
+    response_text_max_chars: 1048576
     decoding:
       temperature: 0.0
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 4096
+      max_tokens: 16384
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -170,7 +170,7 @@ experiments:
     max_concurrency: 512
     preserve_request_order: true
     include_prompt_text: true
-    response_text_max_chars: 262144
+    response_text_max_chars: 1048576
     decoding:
       temperature: 0.0
       top_p: 1.0
@@ -197,7 +197,7 @@ experiments:
     max_concurrency: 512
     preserve_request_order: true
     include_prompt_text: true
-    response_text_max_chars: 262144
+    response_text_max_chars: 1048576
     decoding:
       temperature: 0.0
       top_p: 1.0
@@ -222,7 +222,7 @@ experiments:
     max_concurrency: 512
     preserve_request_order: true
     include_prompt_text: true
-    response_text_max_chars: 262144
+    response_text_max_chars: 1048576
     decoding:
       temperature: 0.0
       top_p: 1.0
@@ -248,13 +248,13 @@ experiments:
     max_concurrency: 384
     preserve_request_order: true
     include_prompt_text: true
-    response_text_max_chars: 262144
+    response_text_max_chars: 1048576
     decoding:
       temperature: 0.0
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 4096
+      max_tokens: 16384
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -271,13 +271,13 @@ experiments:
     max_concurrency: 186
     preserve_request_order: true
     include_prompt_text: true
-    response_text_max_chars: 262144
+    response_text_max_chars: 1048576
     decoding:
       temperature: 0.0
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 4096
+      max_tokens: 16384
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -294,13 +294,13 @@ experiments:
     max_concurrency: 512
     preserve_request_order: true
     include_prompt_text: true
-    response_text_max_chars: 262144
+    response_text_max_chars: 1048576
     decoding:
       temperature: 0.0
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 4096
+      max_tokens: 16384
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
@@ -317,13 +317,13 @@ experiments:
     max_concurrency: 425
     preserve_request_order: true
     include_prompt_text: true
-    response_text_max_chars: 262144
+    response_text_max_chars: 1048576
     decoding:
       temperature: 0.0
       top_p: 1.0
       top_k: 20
       min_p: 0.0
-      max_tokens: 4096
+      max_tokens: 16384
       n: 1
       max_tokens_policy: model_context_minus_prompt_buffer
       prompt_token_buffer: 128
