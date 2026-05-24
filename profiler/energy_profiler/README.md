@@ -83,7 +83,7 @@ PYTHONPATH=profiler:. python -m energy_profiler.cli dry-run \
 
 ## Running A Managed Plan
 
-Run a reviewed plan:
+Run a reviewed plan serially:
 
 ```bash
 PYTHONPATH=profiler:. python -m energy_profiler.cli run \
@@ -92,29 +92,39 @@ PYTHONPATH=profiler:. python -m energy_profiler.cli run \
   --max-active-gpus 1
 ```
 
+Run a reviewed plan locally with GPU-aware parallel scheduling:
+
+```bash
+PYTHONPATH=profiler:. python -m local_orchestrator.cli energy-run \
+  --plan experiments/energy/<plan_id>.yaml \
+  --run-id <local_energy_run_id>
+```
+
+This path reuses the local orchestrator scheduler. It bin-packs energy jobs by
+`launch.gpu_count`, starts TP2/TP4 vLLM servers with the leased physical GPU IDs,
+and passes those same physical GPU IDs to the power monitors.
+
 Resume an interrupted run:
 
 ```bash
-PYTHONPATH=profiler:. python -m energy_profiler.cli resume \
-  --run-root results/energy/<plan_id>
+PYTHONPATH=profiler:. python -m local_orchestrator.cli energy-resume \
+  --run-root results/energy/<plan_id>/<local_energy_run_id>
 ```
 
 Check run status:
 
 ```bash
-PYTHONPATH=profiler:. python -m energy_profiler.cli status \
-  --run-root results/energy/<plan_id>
+PYTHONPATH=profiler:. python -m local_orchestrator.cli energy-status \
+  --run-root results/energy/<plan_id>/<local_energy_run_id>
 ```
 
 Managed plan execution reuses the same launch and resource primitives as
 `local_orchestrator`: it leases the requested number of GPUs for each job,
 allocates ports, starts or reuses a vLLM server for matching server signatures,
 waits for readiness, runs fixed-rate open-loop trials, and releases resources at
-the end. The current local energy executor is serial: it runs one energy job at a
-time even when `local_execution.max_active_gpus` is greater than one. Multi-GPU
-jobs are supported through each job's `launch.gpu_count` and
-`launch.tensor_parallel_size`, but local orchestrator-style parallel bin-packing
-is not implemented for managed energy runs.
+the end. The `energy_profiler.cli run` command is serial; use
+`local_orchestrator.cli energy-run` when local bin-packing across multiple GPUs is
+desired.
 
 Managed trials first measure an idle baseline, then run an unmeasured traffic
 warmup at the target request rate, then start GPU power monitoring for the

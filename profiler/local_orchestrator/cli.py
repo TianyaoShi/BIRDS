@@ -45,6 +45,24 @@ def build_parser() -> argparse.ArgumentParser:
     progress = subparsers.add_parser("progress")
     _add_run_root_arg(progress)
     progress.set_defaults(handler=_status_command)
+
+    energy_run = subparsers.add_parser("energy-run")
+    energy_run.add_argument("--plan", type=Path, required=True)
+    energy_run.add_argument("--run-id", default=None)
+    energy_run.set_defaults(handler=_energy_run_command)
+
+    energy_resume = subparsers.add_parser("energy-resume")
+    energy_resume.add_argument("--run-root", type=Path, required=True)
+    energy_resume.add_argument(
+        "--force",
+        action="store_true",
+        help="rerun all energy jobs, including previously succeeded ones",
+    )
+    energy_resume.set_defaults(handler=_energy_resume_command)
+
+    energy_status = subparsers.add_parser("energy-status")
+    energy_status.add_argument("--run-root", type=Path, required=True)
+    energy_status.set_defaults(handler=_energy_status_command)
     return parser
 
 
@@ -151,6 +169,82 @@ def _status_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _energy_run_command(args: argparse.Namespace) -> int:
+    from energy_profiler.local_scheduler import (
+        EnergyProfilingAdapter,
+        SchedulerEnergyStateStore,
+        default_local_energy_run_id,
+        expand_energy_plan_for_local_scheduler,
+        local_energy_run_root,
+        run_config_from_energy_plan,
+    )
+    from energy_profiler.planning import load_energy_plan
+    from energy_profiler.reporting import EnergyRunStateStore
+
+    plan = load_energy_plan(args.plan)
+    run_id = args.run_id or default_local_energy_run_id()
+    run_root = local_energy_run_root(plan, run_id)
+    jobs = expand_energy_plan_for_local_scheduler(plan, run_root=run_root)
+    state_store = SchedulerEnergyStateStore(EnergyRunStateStore(run_root), plan=plan)
+    state = state_store.initialize_new(plan_path=args.plan)
+    scheduler = _build_energy_scheduler(
+        run_config=run_config_from_energy_plan(plan, run_id=run_id),
+        state_store=state_store,
+        adapter=EnergyProfilingAdapter(plan=plan),
+    )
+    summary = scheduler.run(jobs=jobs, state=state, resume=False, force=False)
+    print(json.dumps({"run_root": str(run_root), "summary": summary}, sort_keys=True))
+    return 0
+
+
+def _energy_resume_command(args: argparse.Namespace) -> int:
+    from energy_profiler.local_scheduler import (
+        EnergyProfilingAdapter,
+        SchedulerEnergyStateStore,
+        expand_energy_plan_for_local_scheduler,
+        run_config_from_energy_plan,
+    )
+    from energy_profiler.planning import load_energy_plan
+    from energy_profiler.reporting import EnergyRunStateStore
+
+    run_root = args.run_root.resolve()
+    delegate = EnergyRunStateStore(run_root)
+    state = delegate.load()
+    plan = load_energy_plan(delegate.plan_copy_path)
+    run_id = run_root.name
+    jobs = expand_energy_plan_for_local_scheduler(plan, run_root=run_root)
+    state_store = SchedulerEnergyStateStore(delegate, plan=plan)
+    state_job_ids = {str(job["job_id"]) for job in state.get("jobs", [])}
+    plan_job_ids = {job.experiment_id for job in jobs}
+    if plan_job_ids != state_job_ids:
+        missing = sorted(plan_job_ids - state_job_ids)
+        extra = sorted(state_job_ids - plan_job_ids)
+        raise ValueError(
+            "resume energy plan/job mismatch: "
+            f"missing_in_state={missing}, extra_in_state={extra}"
+        )
+    scheduler = _build_energy_scheduler(
+        run_config=run_config_from_energy_plan(plan, run_id=run_id),
+        state_store=state_store,
+        adapter=EnergyProfilingAdapter(plan=plan),
+    )
+    summary = scheduler.run(jobs=jobs, state=state, resume=True, force=bool(args.force))
+    print(json.dumps({"run_root": str(run_root), "summary": summary}, sort_keys=True))
+    return 0
+
+
+def _energy_status_command(args: argparse.Namespace) -> int:
+    from energy_profiler.reporting import EnergyRunStateStore
+
+    run_root = args.run_root.resolve()
+    state_store = EnergyRunStateStore(run_root)
+    state = state_store.load()
+    state_store.reconcile_jobs(state)
+    summary = state_store.write_summary_files(state)
+    print(json.dumps({"run_root": str(run_root), "summary": summary}, sort_keys=True))
+    return 0
+
+
 def _add_run_root_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--run-root", "--runroot", dest="run_root", type=Path, required=True)
 
@@ -171,6 +265,28 @@ def _build_scheduler(*, state_store: RunStateStore, manifest) -> OrchestratorSch
     )
     return OrchestratorScheduler(
         run_config=manifest.run,
+        gpu_manager=gpu_manager,
+        port_allocator=port_allocator,
+        lifecycle=lifecycle,
+        adapter=adapter,
+        state_store=state_store,
+        lifecycle_factory=VLLMLifecycleManager,
+    )
+
+
+def _build_energy_scheduler(*, run_config, state_store, adapter) -> OrchestratorScheduler:
+    gpu_manager = GPULeaseManager(
+        allowed_gpu_ids=run_config.allowed_gpu_ids,
+        max_active_gpus=run_config.max_active_gpus,
+    )
+    port_allocator = PortAllocator(
+        base_port_start=run_config.base_port_start,
+        base_port_end=run_config.base_port_end,
+        metrics_port_offset=run_config.metrics_port_offset,
+    )
+    lifecycle = VLLMLifecycleManager()
+    return OrchestratorScheduler(
+        run_config=run_config,
         gpu_manager=gpu_manager,
         port_allocator=port_allocator,
         lifecycle=lifecycle,
