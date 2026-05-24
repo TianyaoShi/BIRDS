@@ -1,0 +1,193 @@
+run:
+  run_id: cached-models-l40-wildchat-000
+  output_root: ../results/orchestrator
+  allowed_gpu_ids: [0, 1, 2, 3]
+  max_active_gpus: 4
+  keep_one_gpu_spare: false
+  default_endpoint: /v1/chat/completions
+  base_port_start: 8700
+  base_port_end: 8799
+  metrics_port_offset: 1000
+  python_executable: /local/scratch/a/shi676/.venv/bin/python
+
+hardware:
+  name: l40-48gb
+  gpu_memory_gb: 48
+  gpu_memory_utilization: 0.90
+
+probe:
+  enabled: true
+  auto_gpu_count: false
+  default_context_tokens: 4096
+  activation_memory_gb: 2.0
+  memory_safety_factor: 1.20
+  kv_cache_request_count: 1
+  model_size_overrides_b:
+    openai/gpt-oss-120b: 30.0
+
+launch:
+  executable: vllm
+  tensor_parallel_size: 1
+  gpu_count: 1
+  dtype: float16
+  gpu_memory_utilization: 0.90
+  max_model_len: 32768
+  max_num_seqs: 256
+  max_num_batched_tokens: 2048
+  readiness_timeout_s: 1200
+
+search:
+  search_mode: hybrid
+  trial_min_duration_s: 180
+  trial_max_duration_s: 360
+  final_confirmation_duration_s: 360
+  rate_precision: 0.05
+  initial_request_rate: 1
+  max_request_rate: 12
+  max_binary_steps: 10
+  max_bracket_trials: 18
+  metrics_interval_s: 1.0
+  window_s: 10.0
+  ttft_slo_ms: 1000
+  tpot_slo_ms: 150
+  ttft_slo_field: ttft_p90_ms
+  tpot_slo_field: tpot_p90_ms
+  request_reuse_policy: unique-then-cycle
+  closed_loop_min_trials: 3
+  max_closed_loop_concurrency: 128
+  closed_loop_plateau_relative_gain: 0.05
+  max_num_seqs: 256
+  max_num_batched_tokens: 2048
+
+overrides:
+  - match:
+      models:
+        - Qwen/Qwen3-30B-A3B-Instruct-2507
+        - Qwen/Qwen3-30B-A3B-Thinking-2507
+        - Qwen/Qwen3-32B
+        - google/gemma-4-26B-A4B-it
+        - google/gemma-4-31B-it
+    reason: 30B-class WildChat TP2 runs should keep the full chat context but avoid rate caps becoming the next failure mode.
+    search:
+      initial_request_rate: 2
+      max_request_rate: 60
+      max_binary_steps: 10
+      max_bracket_trials: 18
+
+  - match:
+      model: meta-llama/CodeLlama-34b-Instruct-hf
+    reason: CodeLlama model configs derive a 16384-token maximum context; keep launch and workload validation aligned.
+    launch:
+      max_model_len: 16384
+    search:
+      initial_request_rate: 0.5
+      max_request_rate: 24
+      max_binary_steps: 10
+      max_bracket_trials: 18
+
+  - match:
+      models:
+        - meta-llama/Llama-2-70b-chat-hf
+    reason: Llama 2 context length is 4096 tokens; keep launch and workload validation aligned.
+    launch:
+      max_model_len: 4096
+    search:
+      initial_request_rate: 0.25
+      max_request_rate: 12
+      max_binary_steps: 9
+      max_bracket_trials: 16
+
+  - match:
+      model: meta-llama/Llama-3.1-70B-Instruct
+    reason: 70B WildChat TP4 runs need conservative starts but enough ceiling to avoid a capped search.
+    search:
+      initial_request_rate: 0.5
+      max_request_rate: 40
+      max_binary_steps: 10
+      max_bracket_trials: 18
+      max_closed_loop_concurrency: 64
+
+  - match:
+      model: openai/gpt-oss-120b
+    reason: gpt-oss checkpoints should let vLLM select dtype from checkpoint metadata.
+    launch:
+      dtype: auto
+
+experiments:
+  - id: wildchat-30b-tp2
+    models:
+      - Qwen/Qwen3-30B-A3B-Instruct-2507
+      - Qwen/Qwen3-30B-A3B-Thinking-2507
+      - Qwen/Qwen3-32B
+      - google/gemma-4-26B-A4B-it
+      - google/gemma-4-31B-it
+      - meta-llama/CodeLlama-34b-Instruct-hf
+    workloads:
+      - ./workloads/wildchat_hf.yaml
+    launch:
+      gpu_count: 2
+      tensor_parallel_size: 2
+
+  - id: wildchat-30b-tp4
+    models:
+      - Qwen/Qwen3-30B-A3B-Instruct-2507
+      - Qwen/Qwen3-30B-A3B-Thinking-2507
+      - Qwen/Qwen3-32B
+      - google/gemma-4-26B-A4B-it
+      - google/gemma-4-31B-it
+      - meta-llama/CodeLlama-34b-Instruct-hf
+    workloads:
+      - ./workloads/wildchat_hf.yaml
+    launch:
+      gpu_count: 4
+      tensor_parallel_size: 4
+    search:
+      initial_request_rate: 3
+      max_request_rate: 80
+      max_binary_steps: 11
+      max_bracket_trials: 20
+
+  - id: wildchat-70b-tp4
+    models:
+      - meta-llama/Llama-2-70b-chat-hf
+      - meta-llama/Llama-3.1-70B-Instruct
+    workloads:
+      - ./workloads/wildchat_hf.yaml
+    launch:
+      gpu_count: 4
+      tensor_parallel_size: 4
+
+  - id: wildchat-gpt-oss-120b-tp2
+    model: openai/gpt-oss-120b
+    workloads:
+      - ./workloads/wildchat_hf_16k.yaml
+    launch:
+      gpu_count: 2
+      tensor_parallel_size: 2
+      gpu_memory_utilization: 0.90
+      max_model_len: 16384
+      max_num_seqs: 128
+      max_num_batched_tokens: 1024
+    search:
+      search_mode: open-loop
+      initial_request_rate: 1
+      max_request_rate: 40
+      max_binary_steps: 10
+      max_bracket_trials: 18
+
+  - id: wildchat-gpt-oss-120b-tp4
+    model: openai/gpt-oss-120b
+    workloads:
+      - ./workloads/wildchat_hf.yaml
+    launch:
+      gpu_count: 4
+      tensor_parallel_size: 4
+      gpu_memory_utilization: 0.90
+      max_num_seqs: 128
+      max_num_batched_tokens: 2048
+    search:
+      search_mode: open-loop
+      initial_request_rate: 2
+      max_request_rate: 80
+      max_binary_steps: 11
+      max_bracket_trials: 20
