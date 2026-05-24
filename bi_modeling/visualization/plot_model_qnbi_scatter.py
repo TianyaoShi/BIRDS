@@ -95,7 +95,7 @@ def _size_tick(value: float, _: int) -> str:
     return f"{value:g}"
 
 
-def _find_linear_separator(rows: pd.DataFrame) -> tuple[np.ndarray, bool]:
+def _scaled_log_features(rows: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     features = np.column_stack(
         [
             np.log10(rows["size_b"].to_numpy(dtype=float)),
@@ -105,7 +105,11 @@ def _find_linear_separator(rows: pd.DataFrame) -> tuple[np.ndarray, bool]:
     means = features.mean(axis=0)
     stds = features.std(axis=0)
     stds[stds == 0] = 1.0
-    scaled_features = (features - means) / stds
+    return (features - means) / stds, means, stds
+
+
+def _find_linear_separator(rows: pd.DataFrame) -> tuple[np.ndarray, bool]:
+    scaled_features, _, _ = _scaled_log_features(rows)
     augmented_features = np.column_stack([scaled_features, np.ones(len(rows), dtype=float)])
     labels = np.where(rows["is_moe"].to_numpy(dtype=bool), 1.0, -1.0)
     weights = np.zeros(augmented_features.shape[1], dtype=float)
@@ -121,6 +125,47 @@ def _find_linear_separator(rows: pd.DataFrame) -> tuple[np.ndarray, bool]:
     return weights, False
 
 
+def _optimize_separator(rows: pd.DataFrame, weights: np.ndarray) -> tuple[np.ndarray, float]:
+    scaled_features, _, _ = _scaled_log_features(rows)
+    labels = np.where(rows["is_moe"].to_numpy(dtype=bool), 1.0, -1.0)
+    positive = scaled_features[labels > 0]
+    negative = scaled_features[labels < 0]
+    base_theta = float(np.arctan2(weights[1], weights[0]))
+
+    best_normal: np.ndarray | None = None
+    best_intercept: float | None = None
+    best_margin = -np.inf
+    best_angle_delta = np.inf
+
+    for theta in np.linspace(base_theta - np.deg2rad(25), base_theta + np.deg2rad(25), 401):
+        normal = np.array([np.cos(theta), np.sin(theta)], dtype=float)
+        lower_bound = float(np.max(-positive @ normal))
+        upper_bound = float(np.min(-negative @ normal))
+        if lower_bound >= upper_bound:
+            continue
+        intercept = 0.5 * (lower_bound + upper_bound)
+        margin = 0.5 * (upper_bound - lower_bound)
+        angle_delta = abs(theta - base_theta)
+        if margin > best_margin + 1e-12 or (
+            abs(margin - best_margin) <= 1e-12 and angle_delta < best_angle_delta
+        ):
+            best_normal = normal
+            best_intercept = intercept
+            best_margin = margin
+            best_angle_delta = angle_delta
+
+    if best_normal is not None and best_intercept is not None:
+        return best_normal, best_intercept
+
+    fallback_normal = weights[:2].astype(float)
+    fallback_norm = np.linalg.norm(fallback_normal)
+    if fallback_norm == 0:
+        fallback_normal = np.array([1.0, 0.0], dtype=float)
+    else:
+        fallback_normal /= fallback_norm
+    return fallback_normal, float(weights[2] / max(fallback_norm, 1.0))
+
+
 def _plot_separator_if_separable(ax: plt.Axes, rows: pd.DataFrame) -> None:
     if rows["is_moe"].nunique() < 2:
         return
@@ -128,22 +173,20 @@ def _plot_separator_if_separable(ax: plt.Axes, rows: pd.DataFrame) -> None:
     weights, separable = _find_linear_separator(rows)
     if not separable:
         return
+    normal, intercept = _optimize_separator(rows, weights)
 
     x_min = float(rows["size_b"].min())
     x_max = float(rows["size_b"].max())
     y_min = float(rows["qnbi_per_request"].min())
     y_max = float(rows["qnbi_per_request"].max())
     x_values = np.logspace(np.log10(x_min), np.log10(x_max), 256)
+    _, means, stds = _scaled_log_features(rows)
 
-    if abs(weights[1]) < 1e-12:
-        if abs(weights[0]) < 1e-12:
+    if abs(normal[1]) < 1e-12:
+        if abs(normal[0]) < 1e-12:
             return
-        log_x_values = np.log10(rows["size_b"].to_numpy(dtype=float))
-        log_y_values = np.log10(rows["qnbi_per_request"].to_numpy(dtype=float))
-        x_mean = log_x_values.mean()
-        x_std = log_x_values.std() or 1.0
-        x_boundary_scaled = -weights[2] / weights[0]
-        x_boundary = 10 ** (x_boundary_scaled * x_std + x_mean)
+        x_boundary_scaled = -intercept / normal[0]
+        x_boundary = 10 ** (x_boundary_scaled * stds[0] + means[0])
         ax.axvline(
             x_boundary,
             color="black",
@@ -154,16 +197,9 @@ def _plot_separator_if_separable(ax: plt.Axes, rows: pd.DataFrame) -> None:
         )
         return
 
-    log_x_data = np.log10(rows["size_b"].to_numpy(dtype=float))
-    log_y_data = np.log10(rows["qnbi_per_request"].to_numpy(dtype=float))
-    x_mean = log_x_data.mean()
-    x_std = log_x_data.std() or 1.0
-    y_mean = log_y_data.mean()
-    y_std = log_y_data.std() or 1.0
-
-    scaled_log_x = (np.log10(x_values) - x_mean) / x_std
-    scaled_log_y = -(weights[0] * scaled_log_x + weights[2]) / weights[1]
-    log_y = scaled_log_y * y_std + y_mean
+    scaled_log_x = (np.log10(x_values) - means[0]) / stds[0]
+    scaled_log_y = -(normal[0] * scaled_log_x + intercept) / normal[1]
+    log_y = scaled_log_y * stds[1] + means[1]
     y_values = 10 ** log_y
     in_range = (y_values >= y_min) & (y_values <= y_max)
     if not np.any(in_range):
@@ -211,7 +247,7 @@ def plot_qnbi_scatter(rows: pd.DataFrame, output_path: Path) -> None:
     ax.set_yscale("log")
     ax.set_xlabel("Model size (B params)", fontsize=FONTSIZE)
     ax.set_ylabel("QNBI($\\theta$) (species$\\cdot$yr)", fontsize=FONTSIZE)
-    ax.set_ylim(y_min / 1.15, y_max * 1.15)
+    ax.set_ylim(y_min / 1.25, y_max * 1.25)
     ax.xaxis.set_major_formatter(FuncFormatter(_size_tick))
     ax.yaxis.set_major_formatter(FuncFormatter(_scientific_tick))
     ax.tick_params(axis="both", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=10)
