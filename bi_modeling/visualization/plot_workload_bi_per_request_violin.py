@@ -114,6 +114,9 @@ REQUEST_LENGTHS_CSV = (
 CHAT_REQUEST_LENGTHS_CSV = (
     REPO_ROOT / "results" / "workload_length_distributions" / "chat_quality_request_lengths.csv"
 )
+MMLU_PRO_OUTPUT_JSONL = (
+    REPO_ROOT / "results" / "workload_length_distributions" / "mmlu_pro_output_lengths_by_request.jsonl"
+)
 SUPERGPQA_HARD_OUTPUT_JSONL = (
     REPO_ROOT / "results" / "workload_length_distributions" / "supergpqa_hard_real_output_lengths_by_request.jsonl"
 )
@@ -256,9 +259,9 @@ def _load_request_length_rows() -> pd.DataFrame:
     return combined[combined["dataset"].notna()].copy()
 
 
-def _load_supergpqa_hard_output_lengths() -> np.ndarray:
+def _load_output_lengths_from_jsonl(path: Path) -> np.ndarray:
     lengths: list[int] = []
-    with SUPERGPQA_HARD_OUTPUT_JSONL.open() as handle:
+    with path.open() as handle:
         for line in handle:
             record = json.loads(line)
             for output in record.get("outputs", []):
@@ -271,6 +274,14 @@ def _load_supergpqa_hard_output_lengths() -> np.ndarray:
     return np.asarray(lengths, dtype=float)
 
 
+def _load_mmlu_pro_output_lengths() -> np.ndarray:
+    return _load_output_lengths_from_jsonl(MMLU_PRO_OUTPUT_JSONL)
+
+
+def _load_supergpqa_hard_output_lengths() -> np.ndarray:
+    return _load_output_lengths_from_jsonl(SUPERGPQA_HARD_OUTPUT_JSONL)
+
+
 def _build_length_distributions() -> dict[str, dict[str, np.ndarray]]:
     rows = _load_request_length_rows()
     distributions: dict[str, dict[str, np.ndarray]] = {}
@@ -280,7 +291,7 @@ def _build_length_distributions() -> dict[str, dict[str, np.ndarray]]:
             dataset_rows = dataset_rows[dataset_rows["raw_workload_name"] == "supergpqa_hard_reasoning"]
         input_values = dataset_rows["input_tokens"].dropna().to_numpy(dtype=float)
         if spec["dataset"] == "mmlu-pro":
-            output_values = np.asarray([], dtype=float)
+            output_values = _load_mmlu_pro_output_lengths()
         elif spec["dataset"] == "supergpqa":
             output_values = _load_supergpqa_hard_output_lengths()
         else:
