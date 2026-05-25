@@ -37,10 +37,12 @@ def discover_summary_files(results_dir: Path) -> list[Path]:
 
 def accelerator_from_path(path: Path) -> str:
     parts = {part.lower() for part in path.parts}
-    if "a100" in parts:
+    if any("a100" in part for part in parts):
         return "A100"
-    if "h100" in parts:
+    if any("h100" in part for part in parts):
         return "H100"
+    if any("l40" in part for part in parts):
+        return "L40"
     raise ValueError(f"Could not infer accelerator type from {path}.")
 
 
@@ -50,6 +52,8 @@ def accelerator_specs(accelerator: str) -> dict:
         return dict(modeling.a100_40g_specs)
     if key == "H100":
         return dict(modeling.h100_specs)
+    if key == "L40":
+        return dict(modeling.l40_specs)
     raise ValueError(f"Unsupported accelerator {accelerator!r}.")
 
 
