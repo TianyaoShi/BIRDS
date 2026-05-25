@@ -8,6 +8,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
+from matplotlib.ticker import FuncFormatter
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -42,6 +43,16 @@ from bi_modeling.visualization.plot_workload_bi_per_request_violin import (  # n
 VIOLIN_WIDTH = 0.78
 BOX_WIDTH = 0.28
 BOX_GROUP_GAP = 0.15
+BI_AXIS_SCALE = 1e-14
+
+
+def _log_power_tick(value: float, _: int) -> str:
+    if value <= 0:
+        return ""
+    exponent = int(round(np.log10(value)))
+    if not np.isclose(value, 10**exponent):
+        return ""
+    return rf"$10^{{{exponent}}}$"
 
 
 def _build_compact_layout_positions(rows):
@@ -91,7 +102,7 @@ def plot_violin_with_length_boxes(rows, output_path: Path) -> None:
     fig, axes = plt.subplots(
         2,
         1,
-        figsize=(25, 13),
+        figsize=(22, 13),
         constrained_layout=True,
         sharex=True,
         gridspec_kw={"height_ratios": [1.0, 1.0]},
@@ -99,7 +110,10 @@ def plot_violin_with_length_boxes(rows, output_path: Path) -> None:
     bi_ax, length_ax = axes
 
     positions, tick_labels, datasets, group_centers, separator_positions = _build_compact_layout_positions(rows)
-    bi_data = [rows.loc[rows["dataset"] == dataset, "bi_per_request"].dropna().to_numpy() for dataset in datasets]
+    bi_data = [
+        rows.loc[rows["dataset"] == dataset, "bi_per_request"].dropna().to_numpy() / BI_AXIS_SCALE
+        for dataset in datasets
+    ]
     bi_colors = [
         next(spec["color"] for spec in WORKLOAD_SPECS if spec["dataset"] == dataset)
         for dataset in datasets
@@ -114,10 +128,22 @@ def plot_violin_with_length_boxes(rows, output_path: Path) -> None:
     )
     _style_violin_parts(bi_parts, facecolors=bi_colors, alpha=0.82)
 
-    all_bi_values = rows["bi_per_request"].dropna().to_numpy()
+    all_bi_values = rows["bi_per_request"].dropna().to_numpy() / BI_AXIS_SCALE
     bi_ax.set_yscale("log")
     bi_ax.set_ylim(all_bi_values.min() * 0.75, all_bi_values.max() * 1.6)
+    bi_ax.set_yticks([1, 10, 100])
+    bi_ax.yaxis.set_major_formatter(FuncFormatter(_log_power_tick))
     bi_ax.set_ylabel(r"BI$_{\mathrm{fu}}$ (species$\cdot$yr)", fontsize=FONTSIZE+2)
+    bi_ax.text(
+        0.0,
+        1.01,
+        r"$\times 10^{-14}$",
+        transform=bi_ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=TICK_FONTSIZE - 4,
+        zorder=6,
+    )
     bi_ax.tick_params(axis="x", labelbottom=False, width=0, length=0)
     bi_ax.set_xlim(min(positions) - 0.7, max(positions) + 0.7)
     _draw_group_separators(bi_ax, separator_positions)
@@ -167,9 +193,9 @@ def plot_violin_with_length_boxes(rows, output_path: Path) -> None:
             Patch(facecolor=OUTPUT_COLOR, edgecolor="black", alpha=0.45, label="Output"),
         ],
         frameon=False,
-        fontsize=TICK_FONTSIZE+3,
+        fontsize=TICK_FONTSIZE+2,
         loc="upper left",
-        bbox_to_anchor=(0.0, 1.05),
+        bbox_to_anchor=(-0.01, 1.06),
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
