@@ -50,6 +50,10 @@ def analyze_rows_with_diagnostics(
         if same_family_hit is not None:
             hits.append(same_family_hit)
 
+        tp_hit = _tensor_parallel_regression(row=row, rows=rows, settings=resolved_settings)
+        if tp_hit is not None:
+            hits.append(tp_hit)
+
         rate_cap_hit = _search_rate_cap_hit(row, settings=resolved_settings)
         if rate_cap_hit is not None:
             hits.append(rate_cap_hit)
@@ -304,6 +308,95 @@ def _same_family_non_monotonicity(
             comparators=[comparator_evidence],
         )
     return None
+
+
+def _tensor_parallel_regression(
+    *,
+    row: MSTRow,
+    rows: Sequence[MSTRow],
+    settings: AnalyzerSettings,
+) -> _FindingHit | None:
+    if _family_disabled("tensor_parallel_regression", settings=settings):
+        return None
+    if row.mst_rps is None or row.tensor_parallel_size is None or row.tensor_parallel_size <= 1:
+        return None
+    if row.mst_rps < settings.tensor_parallel_min_rate:
+        return None
+
+    direct_candidates = [
+        candidate
+        for candidate in rows
+        if candidate.experiment_id != row.experiment_id
+        and candidate.model == row.model
+        and candidate.mst_rps is not None
+        and candidate.tensor_parallel_size is not None
+        and candidate.tensor_parallel_size < row.tensor_parallel_size
+        and candidate.mst_rps >= settings.tensor_parallel_min_rate
+        and _same_tp_regression_scope(row, candidate)
+        and _same_slo(row, candidate)
+        and _same_workload_family(row.workload_name, candidate.workload_name)
+    ]
+    comparison_label = "direct"
+    lower_tp_candidates = direct_candidates
+    if not lower_tp_candidates:
+        comparison_label = "contextual"
+        lower_tp_candidates = [
+            candidate
+            for candidate in rows
+            if candidate.experiment_id != row.experiment_id
+            and candidate.model == row.model
+            and candidate.mst_rps is not None
+            and candidate.tensor_parallel_size is not None
+            and candidate.tensor_parallel_size < row.tensor_parallel_size
+            and candidate.mst_rps >= settings.tensor_parallel_min_rate
+            and _same_tp_contextual_scope(row, candidate)
+            and _same_slo(row, candidate)
+            and _same_workload_family(row.workload_name, candidate.workload_name)
+        ]
+        if not lower_tp_candidates:
+            return None
+    comparator = max(
+        lower_tp_candidates,
+        key=lambda candidate: (candidate.mst_rps or 0.0, candidate.tensor_parallel_size or 0),
+    )
+    assert comparator.mst_rps is not None
+    absolute_delta = comparator.mst_rps - row.mst_rps
+    relative_rate = row.mst_rps / comparator.mst_rps if comparator.mst_rps > 0 else 0.0
+    if absolute_delta < settings.tensor_parallel_min_absolute_delta_rps:
+        return None
+    if relative_rate > settings.tensor_parallel_max_relative_rate:
+        return None
+
+    if comparison_label == "direct" and row.workload_name != comparator.workload_name:
+        comparison_label = "contextual"
+    comparator_evidence = _comparator_from_rows(
+        relation="lower_tensor_parallel_same_model",
+        row=row,
+        comparator=comparator,
+        comparison_label=comparison_label,
+        reason=(
+            "same model under a lower tensor-parallel degree; "
+            f"workloads: {row.workload_name} vs {comparator.workload_name}; "
+            f"server config comparison: {_tp_config_comparison(row, comparator)}"
+        ),
+    )
+    return _FindingHit(
+        family="tensor_parallel_regression",
+        weight=settings.severity_weight_tensor_parallel_regression,
+        summary=(
+            f"{row.model} tp={row.tensor_parallel_size} MST {row.mst_rps:.2f} rps is below "
+            f"tp={comparator.tensor_parallel_size} at {comparator.mst_rps:.2f} rps."
+        ),
+        reasons=[
+            f"same model lower-TP comparator: {comparator.experiment_id}",
+            f"lower TP: {comparator.tensor_parallel_size}; higher TP: {row.tensor_parallel_size}",
+            f"relative rate versus lower TP: {relative_rate:.2f}x",
+            f"absolute delta versus lower TP: {absolute_delta:.2f} rps",
+            f"workload comparison: {row.workload_name} vs {comparator.workload_name}",
+            f"server config comparison: {_tp_config_comparison(row, comparator)}",
+        ],
+        comparators=[comparator_evidence],
+    )
 
 
 def _trace_instability_hit(row: MSTRow, *, settings: AnalyzerSettings) -> _FindingHit | None:
@@ -736,6 +829,72 @@ def _scope_key(row: MSTRow) -> tuple[object, ...]:
         (row.dtype or "").lower(),
         (row.quantization or "").lower(),
     )
+
+
+def _same_tp_regression_scope(left: MSTRow, right: MSTRow) -> bool:
+    return (
+        left.hardware,
+        left.endpoint_type,
+        left.max_num_seqs,
+        left.max_num_batched_tokens,
+        left.max_model_len,
+        (left.dtype or "").lower(),
+        (left.quantization or "").lower(),
+    ) == (
+        right.hardware,
+        right.endpoint_type,
+        right.max_num_seqs,
+        right.max_num_batched_tokens,
+        right.max_model_len,
+        (right.dtype or "").lower(),
+        (right.quantization or "").lower(),
+    )
+
+
+def _same_tp_contextual_scope(left: MSTRow, right: MSTRow) -> bool:
+    return (
+        left.hardware,
+        left.endpoint_type,
+        (left.dtype or "").lower(),
+        (left.quantization or "").lower(),
+    ) == (
+        right.hardware,
+        right.endpoint_type,
+        (right.dtype or "").lower(),
+        (right.quantization or "").lower(),
+    )
+
+
+def _tp_config_comparison(left: MSTRow, right: MSTRow) -> str:
+    fields = (
+        ("max_model_len", left.max_model_len, right.max_model_len),
+        ("max_num_seqs", left.max_num_seqs, right.max_num_seqs),
+        ("max_num_batched_tokens", left.max_num_batched_tokens, right.max_num_batched_tokens),
+    )
+    mismatches = [
+        f"{name}={left_value} vs {right_value}"
+        for name, left_value, right_value in fields
+        if left_value != right_value
+    ]
+    if not mismatches:
+        return "matched"
+    return "; ".join(mismatches)
+
+
+def _same_workload_family(left: str, right: str) -> bool:
+    return _workload_family_key(left) == _workload_family_key(right)
+
+
+def _workload_family_key(value: str) -> str:
+    normalized = value.strip().lower().replace("_", "-")
+    for suffix in ("-mst-anomaly-rerun", "-anomaly-rerun", "-rerun"):
+        if normalized.endswith(suffix):
+            normalized = normalized[: -len(suffix)]
+    for suffix in ("-32k", "-32768", "-16k", "-16384", "-12k", "-12288", "-8k", "-8192", "-4k", "-4096"):
+        if normalized.endswith(suffix):
+            normalized = normalized[: -len(suffix)]
+            break
+    return normalized
 
 
 def _scope_label(row: MSTRow) -> str:

@@ -398,7 +398,7 @@ def test_generate_plan_from_multiple_roots_preserves_tensor_parallel_variants(
     ]
 
 
-def test_generate_plan_from_multiple_roots_matches_rerun_workload_aliases_and_ignores_mixed_workloads(
+def test_generate_plan_from_multiple_roots_matches_rerun_workload_aliases_and_includes_distinct_workloads(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -439,10 +439,13 @@ def test_generate_plan_from_multiple_roots_matches_rerun_workload_aliases_and_ig
         output_plan=tmp_path / "experiments" / "energy" / "merged.yaml",
     )
 
-    assert len(plan.jobs) == 1
-    assert plan.jobs[0].mst_rate == pytest.approx(8.0)
-    assert plan.jobs[0].metadata["source_orchestrator_run_id"] == "rerun"
-    assert plan.jobs[0].workload.name == "wildchat_hf_8k_mst_anomaly_rerun.yaml"
+    jobs_by_source_id = {job.source_experiment_id: job for job in plan.jobs}
+    assert sorted(jobs_by_source_id) == ["qwen30-rerun", "sharegpt-rerun"]
+    assert jobs_by_source_id["qwen30-rerun"].mst_rate == pytest.approx(8.0)
+    assert jobs_by_source_id["qwen30-rerun"].metadata["source_orchestrator_run_id"] == "rerun"
+    assert jobs_by_source_id["qwen30-rerun"].workload.name == "wildchat_hf_8k_mst_anomaly_rerun.yaml"
+    assert jobs_by_source_id["sharegpt-rerun"].mst_rate == pytest.approx(11.0)
+    assert jobs_by_source_id["sharegpt-rerun"].workload.name == "sharegpt.yaml"
 
 
 def test_generate_plan_from_multiple_roots_matches_multi_shard_rerun_to_original_shard_zero(

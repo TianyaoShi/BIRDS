@@ -185,16 +185,8 @@ def render_dry_run(plan: EnergyPlan) -> dict[str, Any]:
 def _load_orchestrator_jobs_from_roots(run_roots: tuple[Path, ...]) -> list[OrchestratorJobRecord]:
     selected_by_key: dict[tuple[str, str, str, str], OrchestratorJobRecord] = {}
     all_jobs: list[OrchestratorJobRecord] = []
-    base_workload_keys: set[str] | None = None
     for run_root in run_roots:
         run_jobs = _load_orchestrator_jobs(run_root)
-        if base_workload_keys is None:
-            base_workload_keys = {_logical_workload_key(job.workload) for job in run_jobs}
-        run_jobs = [
-            job
-            for job in run_jobs
-            if _logical_workload_key(job.workload) in base_workload_keys
-        ]
         all_jobs.extend(run_jobs)
         for job in run_jobs:
             if job.status != "succeeded":

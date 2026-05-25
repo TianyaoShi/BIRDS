@@ -16,6 +16,7 @@ AnomalyFamily = Literal[
     "missing_confirmed_mst_rate",
     "trace_instability_suspect",
     "slo_driven_disagreement",
+    "tensor_parallel_regression",
 ]
 
 

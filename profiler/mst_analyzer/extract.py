@@ -154,17 +154,13 @@ def extract_runs(
     selected_by_key: dict[tuple[str, str, str, str | None], MSTRow] = {}
     all_rows: list[MSTRow] = []
     expanded_jobs: dict[str, ExpandedExperimentJob] = {}
-    base_workload_keys: set[str] | None = None
     for extracted in extracted_runs:
         expanded_jobs.update(extracted.expanded_jobs)
         rows = tuple(extracted.rows)
-        if base_workload_keys is None:
-            base_workload_keys = {_logical_workload_key(row) for row in rows}
         rows = tuple(
             row
             for row in rows
-            if _logical_workload_key(row) in base_workload_keys
-            and not _is_excluded_row(
+            if not _is_excluded_row(
                 row,
                 exclude_models=exclude_models,
                 exclude_experiment_ids=exclude_experiment_ids,

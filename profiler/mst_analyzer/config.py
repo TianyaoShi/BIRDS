@@ -15,6 +15,7 @@ _KNOWN_FAMILIES = {
     "missing_confirmed_mst_rate",
     "trace_instability_suspect",
     "slo_driven_disagreement",
+    "tensor_parallel_regression",
 }
 
 
@@ -108,12 +109,16 @@ class AnalyzerSettings:
     larger_model_min_absolute_delta_rps: float = 1.0
     same_family_max_relative_rate: float = 0.8
     same_family_min_rate: float = 2.0
+    tensor_parallel_max_relative_rate: float = 0.9
+    tensor_parallel_min_absolute_delta_rps: float = 0.5
+    tensor_parallel_min_rate: float = 1.0
     trace_instability_min_uncertain_retries: int = 2
     trace_instability_require_low_confidence_uncertain_retries: int = 1
     include_trace_only_findings: bool = False
     severity_weight_within_size_outlier: int = 30
     severity_weight_larger_model_inversion: int = 25
     severity_weight_same_family_non_monotonicity: int = 20
+    severity_weight_tensor_parallel_regression: int = 35
     severity_weight_trace_instability_suspect: int = 15
     severity_weight_search_rate_cap_reached: int = 60
     severity_weight_missing_confirmed_mst_rate: int = 60
@@ -185,6 +190,24 @@ class AnalyzerSettings:
                 payload.get("same_family_min_rate", cls().same_family_min_rate),
                 "same_family_min_rate",
             ),
+            tensor_parallel_max_relative_rate=_expect_float(
+                payload.get(
+                    "tensor_parallel_max_relative_rate",
+                    cls().tensor_parallel_max_relative_rate,
+                ),
+                "tensor_parallel_max_relative_rate",
+            ),
+            tensor_parallel_min_absolute_delta_rps=_expect_float(
+                payload.get(
+                    "tensor_parallel_min_absolute_delta_rps",
+                    cls().tensor_parallel_min_absolute_delta_rps,
+                ),
+                "tensor_parallel_min_absolute_delta_rps",
+            ),
+            tensor_parallel_min_rate=_expect_float(
+                payload.get("tensor_parallel_min_rate", cls().tensor_parallel_min_rate),
+                "tensor_parallel_min_rate",
+            ),
             trace_instability_min_uncertain_retries=_expect_int(
                 payload.get(
                     "trace_instability_min_uncertain_retries",
@@ -223,6 +246,13 @@ class AnalyzerSettings:
                     cls().severity_weight_same_family_non_monotonicity,
                 ),
                 "severity_weight_same_family_non_monotonicity",
+            ),
+            severity_weight_tensor_parallel_regression=_expect_int(
+                payload.get(
+                    "severity_weight_tensor_parallel_regression",
+                    cls().severity_weight_tensor_parallel_regression,
+                ),
+                "severity_weight_tensor_parallel_regression",
             ),
             severity_weight_trace_instability_suspect=_expect_int(
                 payload.get(

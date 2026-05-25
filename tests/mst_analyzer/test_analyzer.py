@@ -421,6 +421,7 @@ def _row(
     trace_instability: TraceInstabilityEvidence | None = None,
     tensor_parallel_size: int = 1,
     gpu_count: int = 1,
+    workload_name: str = "live_sharegpt_workload_context",
 ) -> MSTRow:
     result_dir = tmp_path / "results" / experiment_id
     result_dir.mkdir(parents=True, exist_ok=True)
@@ -436,7 +437,7 @@ def _row(
         model_size_b=size_b,
         size_bucket=bucket,
         hardware="l40-48gb",
-        workload_name="live_sharegpt_workload_context",
+        workload_name=workload_name,
         workload_path=tmp_path / "workload.yaml",
         endpoint="/v1/chat/completions",
         endpoint_type="chat_completions",
@@ -665,7 +666,7 @@ def test_extract_runs_matches_multi_shard_rerun_to_original_shard_zero(
     assert extracted.rows[0].mst_rps == pytest.approx(39.375)
 
 
-def test_extract_runs_ignores_later_roots_for_unrelated_workloads(
+def test_extract_runs_includes_later_roots_for_distinct_workloads(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -708,8 +709,10 @@ def test_extract_runs_ignores_later_roots_for_unrelated_workloads(
 
     extracted = extract_runs((main_run, combined_rerun))
 
-    assert [row.model for row in extracted.rows] == ["Qwen/Qwen3-8B"]
-    assert extracted.rows[0].workload_name == "wildchat-hf"
+    rows_by_model = {row.model: row for row in extracted.rows}
+    assert sorted(rows_by_model) == ["Qwen/Qwen3-14B", "Qwen/Qwen3-8B"]
+    assert rows_by_model["Qwen/Qwen3-8B"].workload_name == "wildchat-hf"
+    assert rows_by_model["Qwen/Qwen3-14B"].workload_name == "live_sharegpt_workload_context"
 
 
 def test_extract_runs_can_filter_by_min_model_size(
@@ -1136,6 +1139,101 @@ def test_rules_keep_tensor_parallel_scopes_separate(tmp_path: Path) -> None:
     assert all("tp=2" in label for label in buckets[0].member_labels)
     assert all("tp=1" not in label for label in buckets[0].member_labels)
     assert not any(anomaly.experiment_id == "qwen32-tp1" for anomaly in anomalies)
+
+
+def test_rules_flag_same_model_tensor_parallel_regression(tmp_path: Path) -> None:
+    gpt_oss_tp2 = _row(
+        tmp_path,
+        experiment_id="gpt-oss-tp2",
+        model="openai/gpt-oss-120b",
+        family="gpt",
+        variant=None,
+        size_b=120.0,
+        bucket="giant",
+        mst_rps=6.0,
+        ttft_slo_ms=1000,
+        tpot_slo_ms=150,
+        max_num_seqs=128,
+        max_num_batched_tokens=1024,
+        tensor_parallel_size=2,
+        gpu_count=2,
+        workload_name="wildchat-hf-16k",
+    )
+    gpt_oss_tp4 = _row(
+        tmp_path,
+        experiment_id="gpt-oss-tp4",
+        model="openai/gpt-oss-120b",
+        family="gpt",
+        variant=None,
+        size_b=120.0,
+        bucket="giant",
+        mst_rps=4.25,
+        ttft_slo_ms=1000,
+        tpot_slo_ms=150,
+        max_num_seqs=128,
+        max_num_batched_tokens=1024,
+        tensor_parallel_size=4,
+        gpu_count=4,
+        workload_name="wildchat-hf",
+    )
+
+    anomalies, _ = analyze_rows([gpt_oss_tp2, gpt_oss_tp4])
+
+    assert len(anomalies) == 1
+    anomaly = anomalies[0]
+    assert anomaly.experiment_id == "gpt-oss-tp4"
+    assert "tensor_parallel_regression" in anomaly.families
+    assert anomaly.comparators[0].experiment_id == "gpt-oss-tp2"
+    assert anomaly.comparators[0].relation == "lower_tensor_parallel_same_model"
+    assert anomaly.comparators[0].comparison_label == "contextual"
+    assert "workload comparison: wildchat-hf vs wildchat-hf-16k" in anomaly.reasons
+
+
+def test_rules_flag_contextual_tensor_parallel_regression_with_config_mismatch(tmp_path: Path) -> None:
+    gpt_oss_tp2 = _row(
+        tmp_path,
+        experiment_id="gpt-oss-tp2",
+        model="openai/gpt-oss-120b",
+        family="gpt",
+        variant=None,
+        size_b=120.0,
+        bucket="giant",
+        mst_rps=6.0,
+        ttft_slo_ms=1000,
+        tpot_slo_ms=150,
+        max_num_seqs=128,
+        max_num_batched_tokens=1024,
+        tensor_parallel_size=2,
+        gpu_count=2,
+        workload_name="wildchat-hf-16k",
+    )
+    gpt_oss_tp4 = _row(
+        tmp_path,
+        experiment_id="gpt-oss-tp4",
+        model="openai/gpt-oss-120b",
+        family="gpt",
+        variant=None,
+        size_b=120.0,
+        bucket="giant",
+        mst_rps=4.25,
+        ttft_slo_ms=1000,
+        tpot_slo_ms=150,
+        max_num_seqs=128,
+        max_num_batched_tokens=2048,
+        tensor_parallel_size=4,
+        gpu_count=4,
+        workload_name="wildchat-hf",
+    )
+
+    anomalies, _ = analyze_rows([gpt_oss_tp2, gpt_oss_tp4])
+
+    assert len(anomalies) == 1
+    anomaly = anomalies[0]
+    assert anomaly.experiment_id == "gpt-oss-tp4"
+    assert "tensor_parallel_regression" in anomaly.families
+    assert anomaly.comparators[0].experiment_id == "gpt-oss-tp2"
+    assert anomaly.comparators[0].comparison_label == "contextual"
+    assert "server config comparison: max_num_batched_tokens=2048.0 vs 1024.0" in anomaly.reasons
 
 
 def test_rules_do_not_flag_moderate_cross_family_larger_model_gap(tmp_path: Path) -> None:
