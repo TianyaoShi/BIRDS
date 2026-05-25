@@ -56,7 +56,7 @@ QUALITY_METRIC_BY_WORKLOAD = (
     ("sharegpt", "chat_q"),
     ("wildchat", "chat_q"),
     ("mmlu-pro", "mmlu_pro"),
-    ("supergpqa", "supergpqa"),
+    ("supergpqa", "supergpqa_all"),
     ("crosscodeeval", "cceval_f1"),
     ("cceval", "cceval_f1"),
     ("repobench", "repobench_em"),
@@ -146,6 +146,13 @@ def _load_quality_scores(metric: str) -> pd.DataFrame:
     return quality_rows[["model", metric]].rename(columns={metric: "quality_score"})
 
 
+def _normalize_quality_score(value: float) -> float:
+    numeric = float(value)
+    if numeric > 1.0:
+        return numeric / 100.0
+    return numeric
+
+
 def build_selected_model_rows(
     results_dir: Path,
     *,
@@ -176,21 +183,23 @@ def build_selected_model_rows(
             config=config,
         )
         supplement_best = select_most_energy_efficient_config_per_model(supplement_rows)
-        supplement_best["family"] = supplement_best["model"].map(_family_for_model)
-        supplement_best[["size_b", "display_label"]] = supplement_best.apply(
-            lambda row: pd.Series(_size_and_label(row["model"], row["family"])),
-            axis=1,
-        )
-        primary_models = set(best["model"])
-        supplement_best = supplement_best[
-            (~supplement_best["model"].isin(primary_models))
-            & (supplement_best["size_b"] <= SUPPLEMENT_MAX_SIZE_B)
-        ].copy()
-        best = pd.concat([best, supplement_best], ignore_index=True)
+        if not supplement_best.empty:
+            supplement_best["family"] = supplement_best["model"].map(_family_for_model)
+            supplement_best[["size_b", "display_label"]] = supplement_best.apply(
+                lambda row: pd.Series(_size_and_label(row["model"], row["family"])),
+                axis=1,
+            )
+            primary_models = set(best["model"])
+            supplement_best = supplement_best[
+                (~supplement_best["model"].isin(primary_models))
+                & (supplement_best["size_b"] <= SUPPLEMENT_MAX_SIZE_B)
+            ].copy()
+            best = pd.concat([best, supplement_best], ignore_index=True)
 
     best["group_order"] = best["family"].map({name: idx for idx, name in enumerate(GROUP_ORDER)})
     best = best.merge(_load_quality_scores(quality_metric), on="model", how="left")
     best["quality_metric"] = quality_metric
+    best["normalized_quality_score"] = best["quality_score"].apply(_normalize_quality_score)
     best = (
         best.sort_values(
             ["group_order", "size_b", "model"],
@@ -276,7 +285,7 @@ def plot_model_bars(rows: pd.DataFrame, output_path: Path) -> None:
             linestyle=(0, (6, 6)),
         )
 
-    quality_values = plot_rows["quality_score"].dropna()
+    quality_values = plot_rows["normalized_quality_score"].dropna()
     if not quality_values.empty:
         quality_min = float(quality_values.min())
         quality_max = float(quality_values.max())
@@ -292,12 +301,14 @@ def plot_model_bars(rows: pd.DataFrame, output_path: Path) -> None:
     quality_ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:.1f}"))
 
     for family in GROUP_ORDER:
-        group_rows = plot_rows[(plot_rows["family"] == family) & (plot_rows["quality_score"].notna())]
+        group_rows = plot_rows[
+            (plot_rows["family"] == family) & (plot_rows["normalized_quality_score"].notna())
+        ]
         if group_rows.empty:
             continue
         quality_ax.plot(
             group_rows["x"],
-            group_rows["quality_score"],
+            group_rows["normalized_quality_score"],
             color="#222222",
             linewidth=LINEWIDTH * 0.8,
             marker="o",

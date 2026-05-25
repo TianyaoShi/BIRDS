@@ -78,7 +78,8 @@ def build_qnbi_rows(
         config=config,
         supplement_gpu=supplement_gpu,
     ).copy()
-    rows["normalized_quality_score"] = rows["quality_score"].apply(_normalize_quality_score)
+    if "normalized_quality_score" not in rows.columns:
+        rows["normalized_quality_score"] = rows["quality_score"].apply(_normalize_quality_score)
     rows = rows[rows["normalized_quality_score"] > 0].copy()
     rows["qnbi_per_request"] = rows["bi_per_request"] / rows["normalized_quality_score"]
     rows["is_moe"] = rows.apply(_classify_is_moe, axis=1)

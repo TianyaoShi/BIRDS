@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Iterable
 
@@ -56,6 +57,82 @@ def biodiversity_total(endpoint_impacts: dict[str, float]) -> float:
     return float(sum(endpoint_impacts.values()))
 
 
+def _normalize_workload_name(raw_name: str) -> str:
+    normalized = raw_name.strip().lower()
+    normalized = normalized.replace("mmlu_pro_reasoning", "mmlu-pro-reasoning")
+    normalized = normalized.replace("supergpqa_hard_reasoning", "supergpqa-hard-reasoning")
+    normalized = normalized.replace(
+        "longbench-medium-output-summarization",
+        "longbench_medium_output_summarization",
+    )
+    normalized = normalized.replace(
+        "longbench-medium-answer-rag-qa",
+        "longbench_medium_answer_rag_qa",
+    )
+    normalized = normalized.replace(
+        "longbench-short-answer-document-qa",
+        "longbench_short_answer_document_qa",
+    )
+    return normalized
+
+
+def _resolve_workload_from_job_summary(experiment_dir: Path, job_id: str) -> str | None:
+    summary_path = experiment_dir / "jobs" / job_id / "summary.json"
+    if not summary_path.exists():
+        return None
+
+    try:
+        with summary_path.open() as handle:
+            payload = json.load(handle)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    workload_meta = (
+        payload.get("config", {})
+        .get("metadata", {})
+        .get("workload", {})
+    )
+    raw_name = workload_meta.get("name")
+    if raw_name:
+        return _normalize_workload_name(str(raw_name))
+
+    source_path = workload_meta.get("source_path")
+    if not source_path:
+        return None
+
+    source = Path(str(source_path))
+    if source.stem and source.stem != "shard_000":
+        return _normalize_workload_name(source.stem)
+    if len(source.parents) >= 2:
+        return _normalize_workload_name(source.parents[1].name)
+    return None
+
+
+def _resolve_generic_workloads(frame: pd.DataFrame, summary_path: Path) -> pd.DataFrame:
+    if "workload" not in frame.columns or "job_id" not in frame.columns:
+        return frame
+
+    generic_mask = frame["workload"].astype(str).str.fullmatch(r"shard_\d+(?:_mst_anomaly_rerun)?")
+    if not generic_mask.any():
+        return frame
+
+    resolved = {}
+    experiment_dir = summary_path.parent
+    for job_id in frame.loc[generic_mask, "job_id"].dropna().unique():
+        workload = _resolve_workload_from_job_summary(experiment_dir, str(job_id))
+        if workload:
+            resolved[str(job_id)] = workload
+
+    if not resolved:
+        return frame
+
+    updated = frame.copy()
+    updated.loc[generic_mask, "workload"] = (
+        updated.loc[generic_mask, "job_id"].astype(str).map(resolved).fillna(updated.loc[generic_mask, "workload"])
+    )
+    return updated
+
+
 def operational_bi_for_energy_joules(
     energy_joules: float,
     *,
@@ -89,6 +166,9 @@ def load_energy_summary_rows(summary_files: Iterable[Path]) -> pd.DataFrame:
     frames = []
     for path in summary_files:
         frame = pd.read_csv(path)
+        if "workload" in frame.columns:
+            frame["workload"] = frame["workload"].astype(str).map(_normalize_workload_name)
+        frame = _resolve_generic_workloads(frame, path)
         frame["summary_path"] = str(path)
         frame["accelerator"] = accelerator_from_path(path)
         frames.append(frame)
