@@ -73,34 +73,34 @@ WORKLOAD_SPECS = [
     {
         "dataset": "longbench_long_output_summarization",
         "label": "L-Sum",
-        "group": "LongBench",
+        "group": "Long Context NLP",
         "patterns": ("longbench_long_output_summarization",),
         "color": "#7B5EA7",
     },
     {
         "dataset": "longbench_medium_output_summarization",
         "label": "M-Sum",
-        "group": "LongBench",
+        "group": "Long Context NLP",
         "patterns": ("longbench_medium_output_summarization",),
         "color": "#7B5EA7",
     },
     {
         "dataset": "longbench_medium_answer_rag_qa",
         "label": "M-RAG\nQA",
-        "group": "LongBench",
+        "group": "Long Context NLP",
         "patterns": ("longbench_medium_answer_rag_qa",),
         "color": "#7B5EA7",
     },
     {
         "dataset": "longbench_short_answer_document_qa",
         "label": "S-Doc\nQA",
-        "group": "LongBench",
+        "group": "Long Context NLP",
         "patterns": ("longbench_short_answer_document_qa",),
         "color": "#7B5EA7",
     },
 ]
 
-GROUP_ORDER = ("Chat", "Reasoning", "Code", "LongBench")
+GROUP_ORDER = ("Chat", "Reasoning", "Code", "Long Context NLP")
 DATASET_STEP = 1.18
 GROUP_GAP = 0.36
 VIOLIN_WIDTH = 0.78
