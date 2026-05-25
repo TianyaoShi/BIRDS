@@ -41,7 +41,7 @@ GROUP_COLORS = {
 }
 GROUP_DISPLAY = {
     "llama-2": "Llama-2",
-    "llama-3": "Llama-3",
+    "llama-3": "Llama-3.1&3.2",
     "gpt-oss": "GPT-OSS",
     "qwen-3": "Qwen-3",
     "gemma-4": "Gemma-4",

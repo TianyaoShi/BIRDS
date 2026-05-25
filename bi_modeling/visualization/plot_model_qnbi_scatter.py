@@ -232,7 +232,7 @@ def plot_qnbi_scatter(rows: pd.DataFrame, output_path: Path) -> None:
             ax.scatter(
                 subset["size_b"],
                 subset["qnbi_per_request"],
-                s=MARKERSIZE ** 2 * 2.2,
+                s=MARKERSIZE ** 2 * 3,
                 marker=marker,
                 facecolor=GROUP_COLORS[family],
                 edgecolor="black",
@@ -286,7 +286,7 @@ def plot_qnbi_scatter(rows: pd.DataFrame, output_path: Path) -> None:
     family_legend = ax.legend(
         handles=family_handles,
         loc="upper left",
-        bbox_to_anchor=(1.01, 1.0),
+        bbox_to_anchor=(0.98, 1.0),
         frameon=False,
         fontsize=LEGEND_FONTSIZE - 4,
     )
@@ -294,7 +294,7 @@ def plot_qnbi_scatter(rows: pd.DataFrame, output_path: Path) -> None:
     ax.legend(
         handles=marker_handles,
         loc="upper left",
-        bbox_to_anchor=(1.01, 0.55),
+        bbox_to_anchor=(0.98, 0.55),
         frameon=False,
         fontsize=LEGEND_FONTSIZE - 4,
     )
