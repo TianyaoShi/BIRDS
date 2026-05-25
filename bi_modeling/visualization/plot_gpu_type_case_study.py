@@ -69,7 +69,7 @@ METRICS = {
     },
     "qnbi": {
         "column": "qnbi_per_request",
-        "ylabel": r"QNBI($\theta$) (species$\cdot$yr)",
+        "ylabel": r"QNBI (species$\cdot$yr)",
         "log_scale": True,
     },
 }
@@ -159,7 +159,7 @@ def plot_gpu_case_study(
     metric = METRICS[metric_key]
     selected_models = MODEL_SELECTIONS[selection_key]
 
-    fig, ax = plt.subplots(figsize=(_figure_width(selection_key), 7.6), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(_figure_width(selection_key), 5.5), constrained_layout=True)
     mst_ax = ax.twinx()
 
     group_centers = list(range(len(selected_models)))
@@ -181,7 +181,7 @@ def plot_gpu_case_study(
             color=GPU_COLORS[gpu],
             alpha=0.72,
             edgecolor="black",
-            linewidth=LINEWIDTH * 0.45,
+            linewidth=LINEWIDTH * 0.55,
             hatch=GPU_HATCHES[gpu],
             label=gpu,
         )
@@ -199,7 +199,7 @@ def plot_gpu_case_study(
             positions,
             subset["mst_value"].to_numpy(dtype=float),
             color=MST_LINE_COLOR,
-            linewidth=LINEWIDTH * 0.45,
+            linewidth=LINEWIDTH * 0.55,
             zorder=4,
             alpha=0.85,
         )
@@ -212,7 +212,7 @@ def plot_gpu_case_study(
                 s=180,
                 facecolor="white",
                 edgecolor=MST_LINE_COLOR,
-                linewidth=LINEWIDTH * 0.35,
+                linewidth=LINEWIDTH * 0.55,
                 zorder=5,
             )
 
@@ -233,36 +233,41 @@ def plot_gpu_case_study(
     for spine in ax.spines.values():
         spine.set_linewidth(LINEWIDTH * 0.45)
 
+    gpu_handles = [
+        Patch(
+            facecolor=GPU_COLORS[gpu],
+            alpha=0.72,
+            edgecolor="black",
+            hatch=GPU_HATCHES[gpu],
+            label=gpu,
+        )
+        for gpu in GPU_SERIES
+    ]
+    tp_handles = [
+        Line2D(
+            [0],
+            [0],
+            color=MST_LINE_COLOR,
+            marker=TP_MARKERS[tp],
+            markerfacecolor="white",
+            markeredgecolor=MST_LINE_COLOR,
+            linewidth=0,
+            markersize=15,
+            label=f"TP{tp}",
+        )
+        for tp in sorted({int(tp) for tp in rows["tensor_parallel_size"].dropna().unique()})
+    ]
+    legend_handles = []
+    for gpu_handle, tp_handle in zip(gpu_handles, tp_handles, strict=True):
+        legend_handles.extend([gpu_handle, tp_handle])
+
     fig.legend(
-        handles=[
-            Patch(
-                facecolor=GPU_COLORS[gpu],
-                alpha=0.72,
-                edgecolor="black",
-                hatch=GPU_HATCHES[gpu],
-                label=gpu,
-            )
-            for gpu in GPU_SERIES
-        ]
-        + [
-            Line2D(
-                [0],
-                [0],
-                color=MST_LINE_COLOR,
-                marker=TP_MARKERS[tp],
-                markerfacecolor="white",
-                markeredgecolor=MST_LINE_COLOR,
-                linewidth=0,
-                markersize=9,
-                label=f"TP{tp}",
-            )
-            for tp in sorted({int(tp) for tp in rows["tensor_parallel_size"].dropna().unique()})
-        ],
+        handles=legend_handles,
         loc="upper center",
         ncol=3,
         frameon=False,
-        fontsize=LEGEND_FONTSIZE,
-        bbox_to_anchor=(0.5, 1.22),
+        fontsize=LEGEND_FONTSIZE-2,
+        bbox_to_anchor=(0.5, 1.3),
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
