@@ -180,6 +180,46 @@ def test_energy_sbatch_honors_slurm_cpu_overrides(tmp_path: Path) -> None:
     assert "#SBATCH --cpus-per-task=64" in gpu2_script
 
 
+def test_sweep_energy_plan_bundles_same_server_rates_into_one_slurm_task(tmp_path: Path) -> None:
+    base_plan = _make_energy_plan(tmp_path)
+    first_job = base_plan.jobs[0]
+    second_rate_same_server = replace(
+        first_job,
+        id="job-a-r2",
+        request_rate=2.0,
+    )
+    plan = replace(
+        base_plan,
+        plan=replace(base_plan.plan, mode="sweep"),
+        jobs=(first_job, second_rate_same_server, base_plan.jobs[1]),
+    )
+    plan_path = write_energy_plan(plan, tmp_path / "plans" / "energy-plan-a.yaml")
+
+    run_plan = materialize_energy_run_plan(
+        plan=plan,
+        plan_path=plan_path,
+        run_id="energy-slurm-run",
+        slurm=SlurmConfig(base_port=8500, array_concurrency_limit=3),
+    )
+
+    assert run_plan["job_count"] == 3
+    assert [group["group_key"] for group in run_plan["groups"]] == ["gpu1", "gpu2"]
+    assert run_plan["groups"][0]["task_count"] == 1
+    assert run_plan["groups"][0]["array_spec"] == "0-0%3"
+
+    gpu1_group = json.loads(Path(run_plan["groups"][0]["plan_path"]).read_text(encoding="utf-8"))
+    assert len(gpu1_group["jobs"]) == 1
+    assert len(gpu1_group["jobs"][0]["jobs"]) == 2
+    assert gpu1_group["jobs"][0]["jobs"][0]["job_id"] == "job-a"
+    assert gpu1_group["jobs"][0]["jobs"][1]["job_id"] == "job-a-r2"
+    assert gpu1_group["jobs"][0]["jobs"][0]["base_port"] == 8500
+    assert gpu1_group["jobs"][0]["jobs"][1]["base_port"] == 8500
+
+    task_shell = render_energy_task_shell(run_plan["groups"][0]["plan_path"], 0)
+    assert "ENERGY_TASK_JOB_COUNT=2" in task_shell
+    assert "job-a-r2" in task_shell
+
+
 def test_materialize_energy_run_plan_uses_plan_slurm_config(tmp_path: Path) -> None:
     plan = replace(
         _make_energy_plan(tmp_path),

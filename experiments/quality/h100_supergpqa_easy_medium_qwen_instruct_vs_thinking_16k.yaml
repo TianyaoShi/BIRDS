@@ -1,0 +1,221 @@
+run:
+  run_id: h100-quality-supergpqa-easy-medium-qwen-instruct-vs-thinking-16k-000
+  output_root: ../../results/quality
+  default_endpoint: /v1/chat/completions
+  python_executable: /scratch/gautschi/shi676/BioLLM/.venv-h100/bin/python
+slurm:
+  partition: ai
+  account: yiding
+  qos: normal
+  time: '24:00:00'
+  cpus_per_gpu: 14
+  modules:
+  - modtree/gpu
+  - cuda/12.9.0
+  setup_commands:
+  - source /scratch/gautschi/shi676/BioLLM/helper_scripts/activate_vllm_h100.sh
+  python_executable: /scratch/gautschi/shi676/BioLLM/.venv-h100/bin/python
+  array_concurrency_limit: 3
+  base_port: 9850
+hardware:
+  name: h100-80gb
+  gpu_memory_gb: 80
+  gpu_memory_utilization: 0.9
+probe:
+  enabled: true
+  auto_gpu_count: false
+  default_context_tokens: 4096
+  activation_memory_gb: 2.0
+  memory_safety_factor: 1.2
+  kv_cache_request_count: 1
+launch:
+  executable: vllm
+  tensor_parallel_size: 1
+  gpu_count: 1
+  dtype: float16
+  gpu_memory_utilization: 0.9
+  max_model_len: 32768
+  max_num_seqs: 256
+  max_num_batched_tokens: 16384
+  readiness_timeout_s: 1200
+generation:
+  request_timeout_s: 36000
+  concurrency_source: explicit
+  max_concurrency: 128
+  preserve_request_order: true
+  response_text_max_chars: 1048576
+  include_prompt_text: true
+  load_mode: open_loop
+  decoding:
+    temperature: 0.0
+    top_p: 1.0
+    top_k: 20
+    min_p: 0.0
+    n: 1
+    max_tokens: 16384
+    max_tokens_policy: model_context_minus_prompt_buffer
+    prompt_token_buffer: 128
+    extra_body: {}
+  request_rate: 0.1
+experiments:
+- id: qwen-qwen3-4b-instruct-2507-supergpqa-easy-medium-responses
+  model: Qwen/Qwen3-4B-Instruct-2507
+  generation:
+    concurrency_source: explicit
+    max_concurrency: 204
+    preserve_request_order: true
+    include_prompt_text: true
+    response_text_max_chars: 1048576
+    decoding:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: 20
+      min_p: 0.0
+      max_tokens: 16384
+      n: 1
+      max_tokens_policy: model_context_minus_prompt_buffer
+      prompt_token_buffer: 128
+      extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.8473
+    request_timeout_s: 36000
+  endpoint: /v1/chat/completions
+  workloads: &qwen_easy_medium_workloads
+  - /scratch/gautschi/shi676/BioLLM/experiments/reasoning_workloads/supergpqa_easy_medium_reasoning/workload_yamls/shard_000.yaml
+  - /scratch/gautschi/shi676/BioLLM/experiments/reasoning_workloads/supergpqa_easy_medium_reasoning/workload_yamls/shard_001.yaml
+  - /scratch/gautschi/shi676/BioLLM/experiments/reasoning_workloads/supergpqa_easy_medium_reasoning/workload_yamls/shard_002.yaml
+  - /scratch/gautschi/shi676/BioLLM/experiments/reasoning_workloads/supergpqa_easy_medium_reasoning/workload_yamls/shard_003.yaml
+  - /scratch/gautschi/shi676/BioLLM/experiments/reasoning_workloads/supergpqa_easy_medium_reasoning/workload_yamls/shard_004.yaml
+- id: qwen-qwen3-4b-thinking-2507-supergpqa-easy-medium-responses
+  model: Qwen/Qwen3-4B-Thinking-2507
+  generation:
+    concurrency_source: explicit
+    max_concurrency: 156
+    preserve_request_order: true
+    include_prompt_text: true
+    response_text_max_chars: 1048576
+    decoding:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: 20
+      min_p: 0.0
+      max_tokens: 16384
+      n: 1
+      max_tokens_policy: model_context_minus_prompt_buffer
+      prompt_token_buffer: 128
+      extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.65
+    request_timeout_s: 36000
+  endpoint: /v1/chat/completions
+  workloads: *qwen_easy_medium_workloads
+- id: qwen-qwen3-30b-a3b-instruct-2507-supergpqa-easy-medium-responses
+  model: Qwen/Qwen3-30B-A3B-Instruct-2507
+  launch:
+    gpu_count: 2
+    tensor_parallel_size: 2
+  generation:
+    concurrency_source: explicit
+    max_concurrency: 246
+    preserve_request_order: true
+    include_prompt_text: true
+    response_text_max_chars: 1048576
+    decoding:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: 20
+      min_p: 0.0
+      max_tokens: 16384
+      n: 1
+      max_tokens_policy: model_context_minus_prompt_buffer
+      prompt_token_buffer: 128
+      extra_body: {}
+    load_mode: open_loop
+    request_rate: 1.02252
+    request_timeout_s: 36000
+  endpoint: /v1/chat/completions
+  workloads: *qwen_easy_medium_workloads
+- id: qwen-qwen3-30b-a3b-thinking-2507-supergpqa-easy-medium-responses
+  model: Qwen/Qwen3-30B-A3B-Thinking-2507
+  launch:
+    gpu_count: 2
+    tensor_parallel_size: 2
+  generation:
+    concurrency_source: explicit
+    max_concurrency: 313
+    preserve_request_order: true
+    include_prompt_text: true
+    response_text_max_chars: 1048576
+    decoding:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: 20
+      min_p: 0.0
+      max_tokens: 16384
+      n: 1
+      max_tokens_policy: model_context_minus_prompt_buffer
+      prompt_token_buffer: 128
+      extra_body: {}
+    load_mode: open_loop
+    request_rate: 1.302621
+    request_timeout_s: 36000
+  endpoint: /v1/chat/completions
+  workloads: *qwen_easy_medium_workloads
+- id: qwen-qwen3-235b-a22b-instruct-2507-supergpqa-easy-medium-responses
+  model: Qwen/Qwen3-235B-A22B-Instruct-2507
+  launch:
+    gpu_count: 8
+    tensor_parallel_size: 8
+    env:
+      VLLM_ENGINE_READY_TIMEOUT_S: '4800'
+    readiness_timeout_s: 5400
+  generation:
+    concurrency_source: explicit
+    max_concurrency: 96
+    preserve_request_order: true
+    include_prompt_text: true
+    response_text_max_chars: 1048576
+    decoding:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: 20
+      min_p: 0.0
+      max_tokens: 16384
+      n: 1
+      max_tokens_policy: model_context_minus_prompt_buffer
+      prompt_token_buffer: 128
+      extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.4
+    request_timeout_s: 36000
+  endpoint: /v1/chat/completions
+  workloads: *qwen_easy_medium_workloads
+- id: qwen-qwen3-235b-a22b-thinking-2507-supergpqa-easy-medium-responses
+  model: Qwen/Qwen3-235B-A22B-Thinking-2507
+  launch:
+    gpu_count: 8
+    tensor_parallel_size: 8
+    env:
+      VLLM_ENGINE_READY_TIMEOUT_S: '4800'
+    readiness_timeout_s: 5400
+  generation:
+    concurrency_source: explicit
+    max_concurrency: 69
+    preserve_request_order: true
+    include_prompt_text: true
+    response_text_max_chars: 1048576
+    decoding:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: 20
+      min_p: 0.0
+      max_tokens: 16384
+      n: 1
+      max_tokens_policy: model_context_minus_prompt_buffer
+      prompt_token_buffer: 128
+      extra_body: {}
+    load_mode: open_loop
+    request_rate: 0.285592
+    request_timeout_s: 36000
+  endpoint: /v1/chat/completions
+  workloads: *qwen_easy_medium_workloads

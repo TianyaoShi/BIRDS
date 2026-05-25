@@ -85,19 +85,54 @@ def materialize_energy_run_plan(
     )
     created_at = now_utc_iso()
     group_entries: dict[str, list[dict[str, Any]]] = {}
+    task_by_bundle_key: dict[tuple[str, str], dict[str, Any]] = {}
     plan_jobs: list[dict[str, Any]] = []
     initial_jobs: list[dict[str, Any]] = []
+    bundle_sweep_jobs = resolved_plan.plan.mode == "sweep"
+    task_counter = 0
 
     for plan_index, job in enumerate(resolved_plan.jobs):
         group_key = _energy_group_key(job)
-        group_task_index = len(group_entries.get(group_key, ()))
-        base_port = resolved_slurm.base_port + plan_index
+        bundle_key = (
+            group_key,
+            job.server_signature_key if bundle_sweep_jobs else f"job-{plan_index}",
+        )
+        task_payload = task_by_bundle_key.get(bundle_key)
+        if task_payload is None:
+            group_task_index = len(group_entries.get(group_key, ()))
+            base_port = resolved_slurm.base_port + task_counter
+            task_counter += 1
+            metrics_port = base_port + resolved_plan.execution.metrics_port_offset
+            base_url = f"http://{job.launch.host}:{base_port}"
+            task_label = f"{group_key}-{group_task_index}"
+            vllm_stdout_log = logs_dir / f"{task_label}.vllm.stdout.log"
+            vllm_stderr_log = logs_dir / f"{task_label}.vllm.stderr.log"
+            task_payload = {
+                "task_id": task_label,
+                "job_id": job.id,
+                "plan_index": plan_index,
+                "group_key": group_key,
+                "group_task_index": group_task_index,
+                "gpu_count": job.launch.gpu_count,
+                "base_port": base_port,
+                "metrics_port": metrics_port,
+                "base_url": base_url,
+                "vllm_stdout_log": str(vllm_stdout_log),
+                "vllm_stderr_log": str(vllm_stderr_log),
+                "server_signature_key": job.server_signature_key,
+                "jobs": [],
+            }
+            group_entries.setdefault(group_key, []).append(task_payload)
+            task_by_bundle_key[bundle_key] = task_payload
+        else:
+            group_task_index = int(task_payload["group_task_index"])
+            base_port = int(task_payload["base_port"])
+            base_url = str(task_payload["base_url"])
+            vllm_stdout_log = Path(str(task_payload["vllm_stdout_log"]))
+            vllm_stderr_log = Path(str(task_payload["vllm_stderr_log"]))
         metrics_port = base_port + resolved_plan.execution.metrics_port_offset
-        base_url = f"http://{job.launch.host}:{base_port}"
         result_dir = jobs_dir / job.id
         status_path = state_jobs_dir / f"{job.id}.json"
-        vllm_stdout_log = logs_dir / f"{job.id}.vllm.stdout.log"
-        vllm_stderr_log = logs_dir / f"{job.id}.vllm.stderr.log"
         profile_stdout_log = logs_dir / f"{job.id}.profile.stdout.log"
         profile_stderr_log = logs_dir / f"{job.id}.profile.stderr.log"
 
@@ -118,7 +153,7 @@ def materialize_energy_run_plan(
         _write_json(status_path, initial_state)
         initial_jobs.append(initial_state)
 
-        task_payload = {
+        job_task_payload = {
             "job_id": job.id,
             "plan_index": plan_index,
             "group_key": group_key,
@@ -136,7 +171,11 @@ def materialize_energy_run_plan(
             "job": job.to_dict(),
             "initial_state": initial_state,
         }
-        group_entries.setdefault(group_key, []).append(task_payload)
+        task_payload["jobs"].append(job_task_payload)
+        if len(task_payload["jobs"]) == 1:
+            for key, value in job_task_payload.items():
+                if key != "jobs":
+                    task_payload.setdefault(key, value)
         plan_jobs.append(
             {
                 "job_id": job.id,
@@ -167,6 +206,10 @@ def materialize_energy_run_plan(
             task["script_path"] = str(script_path)
             task["slurm_stdout_log"] = str(slurm_stdout_log)
             task["slurm_stderr_log"] = str(slurm_stderr_log)
+            for job_task in task.get("jobs", []):
+                job_task["script_path"] = str(script_path)
+                job_task["slurm_stdout_log"] = str(slurm_stdout_log)
+                job_task["slurm_stderr_log"] = str(slurm_stderr_log)
 
         group_payload = {
             "run_id": run_id,
@@ -309,12 +352,33 @@ def read_energy_group_task(group_plan_path: str | Path, task_index: int) -> dict
     return task
 
 
+def _energy_task_jobs(task: dict[str, Any]) -> list[dict[str, Any]]:
+    jobs = task.get("jobs")
+    if isinstance(jobs, list) and jobs:
+        normalized = []
+        for item in jobs:
+            if not isinstance(item, dict):
+                raise RuntimeError(f"energy task contains malformed bundled job: {task.get('task_id')}")
+            normalized.append(item)
+        return normalized
+    return [task]
+
+
+def _energy_task_job(task: dict[str, Any], job_index: int = 0) -> dict[str, Any]:
+    jobs = _energy_task_jobs(task)
+    if job_index < 0 or job_index >= len(jobs):
+        raise IndexError(f"energy task job index out of range: {job_index}")
+    return jobs[job_index]
+
+
 def render_energy_task_shell(group_plan_path: str | Path, task_index: int) -> str:
     group_payload = _read_json_mapping(Path(group_plan_path).resolve())
     if group_payload is None:
         raise RuntimeError(f"energy group plan is missing or malformed: {group_plan_path}")
     task = read_energy_group_task(group_plan_path, task_index)
-    job = EnergyPlanJob.from_dict(task["job"])
+    task_jobs = _energy_task_jobs(task)
+    first_task_job = task_jobs[0]
+    job = EnergyPlanJob.from_dict(first_task_job["job"])
     launch_command = render_launch_command(
         launch=job.launch.to_launch_config(),
         model=job.model,
@@ -322,29 +386,51 @@ def render_energy_task_shell(group_plan_path: str | Path, task_index: int) -> st
         base_port=int(task["base_port"]),
         metrics_port=int(task["metrics_port"]),
     )
-    run_trial_command = _build_energy_live_trial_command(
-        plan=load_energy_plan(group_payload["energy_plan_path"]),
-        job=job,
-        python_executable=str(group_payload["python_executable"]),
-        base_url=str(task["base_url"]),
-        metrics_url=f"{task['base_url']}/metrics",
-        output_dir=Path(str(task["result_dir"])),
-        gpu_count=int(task["gpu_count"]),
-    )
+    energy_plan = load_energy_plan(group_payload["energy_plan_path"])
     lines = [
         _bash_assign("ENERGY_JOB_ID", job.id),
-        _bash_assign("RESULT_DIR", str(task["result_dir"])),
         _bash_assign("BASE_URL", str(task["base_url"])),
-        _bash_assign("STATUS_PATH", str(task["status_path"])),
         _bash_assign("VLLM_STDOUT", str(task["vllm_stdout_log"])),
         _bash_assign("VLLM_STDERR", str(task["vllm_stderr_log"])),
-        _bash_assign("PROFILE_STDOUT", str(task["profile_stdout_log"])),
-        _bash_assign("PROFILE_STDERR", str(task["profile_stderr_log"])),
         _bash_assign("READINESS_PATH", job.launch.readiness_path),
         _bash_assign("READINESS_TIMEOUT_S", _number_text(job.launch.readiness_timeout_s)),
         _bash_assign("READINESS_INTERVAL_S", _number_text(job.launch.readiness_interval_s)),
         _bash_array("VLLM_CMD", launch_command),
-        _bash_array("ENERGY_TRIAL_CMD", run_trial_command),
+        _bash_assign("ENERGY_TASK_JOB_COUNT", str(len(task_jobs))),
+        _bash_array("ENERGY_JOB_IDS", tuple(str(item["job_id"]) for item in task_jobs)),
+        _bash_array("ENERGY_STATUS_PATHS", tuple(str(item["status_path"]) for item in task_jobs)),
+        _bash_array("ENERGY_RESULT_DIRS", tuple(str(item["result_dir"]) for item in task_jobs)),
+        _bash_array("ENERGY_PROFILE_STDOUTS", tuple(str(item["profile_stdout_log"]) for item in task_jobs)),
+        _bash_array("ENERGY_PROFILE_STDERRS", tuple(str(item["profile_stderr_log"]) for item in task_jobs)),
+        _bash_array(
+            "ENERGY_TRIAL_COMMANDS",
+            tuple(
+                shlex.join(
+                    _build_energy_live_trial_command(
+                        plan=energy_plan,
+                        job=EnergyPlanJob.from_dict(item["job"]),
+                        python_executable=str(group_payload["python_executable"]),
+                        base_url=str(task["base_url"]),
+                        metrics_url=f"{task['base_url']}/metrics",
+                        output_dir=Path(str(item["result_dir"])),
+                        gpu_count=int(task["gpu_count"]),
+                    )
+                )
+                for item in task_jobs
+            ),
+        ),
+        _bash_array(
+            "ENERGY_TRIAL_CMD",
+            _build_energy_live_trial_command(
+                plan=energy_plan,
+                job=job,
+                python_executable=str(group_payload["python_executable"]),
+                base_url=str(task["base_url"]),
+                metrics_url=f"{task['base_url']}/metrics",
+                output_dir=Path(str(first_task_job["result_dir"])),
+                gpu_count=int(task["gpu_count"]),
+            ),
+        ),
     ]
     for name, value in sorted(job.launch.env.items()):
         lines.append(_bash_export(name, value))
@@ -409,7 +495,10 @@ def render_energy_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmCo
             'eval "$("$PYTHON_BIN" -m slurm_orchestrator.cli emit-energy-task-shell --group-plan "$GROUP_PLAN" --task-index "$TASK_INDEX")"',
             'export VLLM_ENGINE_READY_TIMEOUT_S="${VLLM_ENGINE_READY_TIMEOUT_S:-$READINESS_TIMEOUT_S}"',
             "",
-            "TRIAL_STARTED=0",
+            "CURRENT_JOB_INDEX=0",
+            "CURRENT_TRIAL_STARTED=0",
+            "CURRENT_JOB_FINALIZED=1",
+            "SERVER_READY=0",
             "",
             "detect_gpu_ids() {",
             '  local raw="${CUDA_VISIBLE_DEVICES:-${SLURM_JOB_GPUS:-}}"',
@@ -471,21 +560,31 @@ def render_energy_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmCo
             "cleanup() {",
             "  local exit_code=$?",
             "  terminate_vllm",
-            '  "$PYTHON_BIN" -m slurm_orchestrator.cli finalize-energy-task \\',
-            '    --group-plan "$GROUP_PLAN" \\',
-            '    --task-index "$TASK_INDEX" \\',
-            '    --exit-code "$exit_code" \\',
-            '    --trial-started "$TRIAL_STARTED"',
+            '  if [[ "${SERVER_READY:-0}" != "1" ]]; then',
+            '    for ((cleanup_job_index=0; cleanup_job_index<ENERGY_TASK_JOB_COUNT; cleanup_job_index++)); do',
+            '      "$PYTHON_BIN" -m slurm_orchestrator.cli finalize-energy-task \\',
+            '        --group-plan "$GROUP_PLAN" \\',
+            '        --task-index "$TASK_INDEX" \\',
+            '        --job-index "$cleanup_job_index" \\',
+            '        --exit-code "$exit_code" \\',
+            '        --trial-started 0 || true',
+            "    done",
+            "    return",
+            "  fi",
+            '  if [[ "${CURRENT_JOB_FINALIZED:-1}" == "0" ]]; then',
+            '    "$PYTHON_BIN" -m slurm_orchestrator.cli finalize-energy-task \\',
+            '      --group-plan "$GROUP_PLAN" \\',
+            '      --task-index "$TASK_INDEX" \\',
+            '      --job-index "$CURRENT_JOB_INDEX" \\',
+            '      --exit-code "$exit_code" \\',
+            '      --trial-started "$CURRENT_TRIAL_STARTED" || true',
+            "  fi",
             "}",
             "trap cleanup EXIT",
             "",
-            'mkdir -p "$(dirname "$STATUS_PATH")" "$(dirname "$VLLM_STDOUT")" "$RESULT_DIR"',
+            'mkdir -p "$(dirname "$VLLM_STDOUT")"',
             ': >"$VLLM_STDOUT"',
             ': >"$VLLM_STDERR"',
-            ': >"$PROFILE_STDOUT"',
-            ': >"$PROFILE_STDERR"',
-            'rm -rf "$RESULT_DIR"',
-            'mkdir -p "$RESULT_DIR"',
             "",
             'log_gpu_diagnostics "before_vllm_start"',
             'setsid "${VLLM_CMD[@]}" >>"$VLLM_STDOUT" 2>>"$VLLM_STDERR" &',
@@ -494,30 +593,63 @@ def render_energy_sbatch_script(*, group_payload: dict[str, Any], slurm: SlurmCo
             "",
             'GPU_IDS=($(detect_gpu_ids))',
             'export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-$(IFS=,; echo "${GPU_IDS[*]}")}"',
-            '  "$PYTHON_BIN" -m slurm_orchestrator.cli mark-energy-task-running --group-plan "$GROUP_PLAN" --task-index "$TASK_INDEX"'.lstrip(),
             '  "$PYTHON_BIN" -m slurm_orchestrator.cli wait-ready \\'.lstrip(),
             '    --base-url "$BASE_URL" \\'.lstrip(),
             '    --path "$READINESS_PATH" \\'.lstrip(),
             '    --timeout-s "$READINESS_TIMEOUT_S" \\'.lstrip(),
             '    --interval-s "$READINESS_INTERVAL_S" \\'.lstrip(),
             '    --pid "$VLLM_PID"'.lstrip(),
+            "SERVER_READY=1",
             "",
-            "TRIAL_STARTED=1",
-            '  "${ENERGY_TRIAL_CMD[@]}" --gpu-ids "${GPU_IDS[@]}" >>"$PROFILE_STDOUT" 2>>"$PROFILE_STDERR"'.lstrip(),
+            'for ((CURRENT_JOB_INDEX=0; CURRENT_JOB_INDEX<ENERGY_TASK_JOB_COUNT; CURRENT_JOB_INDEX++)); do',
+            '  CURRENT_TRIAL_STARTED=0',
+            '  CURRENT_JOB_FINALIZED=0',
+            '  ENERGY_JOB_ID="${ENERGY_JOB_IDS[$CURRENT_JOB_INDEX]}"',
+            '  STATUS_PATH="${ENERGY_STATUS_PATHS[$CURRENT_JOB_INDEX]}"',
+            '  RESULT_DIR="${ENERGY_RESULT_DIRS[$CURRENT_JOB_INDEX]}"',
+            '  PROFILE_STDOUT="${ENERGY_PROFILE_STDOUTS[$CURRENT_JOB_INDEX]}"',
+            '  PROFILE_STDERR="${ENERGY_PROFILE_STDERRS[$CURRENT_JOB_INDEX]}"',
+            '  ENERGY_TRIAL_CMD="${ENERGY_TRIAL_COMMANDS[$CURRENT_JOB_INDEX]}"',
+            '  mkdir -p "$(dirname "$STATUS_PATH")" "$(dirname "$PROFILE_STDOUT")" "$RESULT_DIR"',
+            '  : >"$PROFILE_STDOUT"',
+            '  : >"$PROFILE_STDERR"',
+            '  rm -rf "$RESULT_DIR"',
+            '  mkdir -p "$RESULT_DIR"',
+            '  "$PYTHON_BIN" -m slurm_orchestrator.cli mark-energy-task-running \\',
+            '    --group-plan "$GROUP_PLAN" \\',
+            '    --task-index "$TASK_INDEX" \\',
+            '    --job-index "$CURRENT_JOB_INDEX"',
+            '  CURRENT_TRIAL_STARTED=1',
+            '  set +e',
+            '  eval "$ENERGY_TRIAL_CMD --gpu-ids ${GPU_IDS[*]}" >>"$PROFILE_STDOUT" 2>>"$PROFILE_STDERR"',
+            '  trial_exit_code=$?',
+            '  set -e',
+            '  "$PYTHON_BIN" -m slurm_orchestrator.cli finalize-energy-task \\',
+            '    --group-plan "$GROUP_PLAN" \\',
+            '    --task-index "$TASK_INDEX" \\',
+            '    --job-index "$CURRENT_JOB_INDEX" \\',
+            '    --exit-code "$trial_exit_code" \\',
+            '    --trial-started "$CURRENT_TRIAL_STARTED"',
+            '  CURRENT_JOB_FINALIZED=1',
+            '  if [[ "$trial_exit_code" -ne 0 ]]; then',
+            '    exit "$trial_exit_code"',
+            '  fi',
+            "done",
             "",
         ]
     )
     return "\n".join(lines)
 
 
-def mark_energy_task_running(group_plan_path: str | Path, task_index: int) -> dict[str, Any]:
+def mark_energy_task_running(group_plan_path: str | Path, task_index: int, *, job_index: int = 0) -> dict[str, Any]:
     task = read_energy_group_task(group_plan_path, task_index)
-    state = _load_energy_state_for_task(task)
+    task_job = _energy_task_job(task, job_index)
+    state = _load_energy_state_for_task(task_job)
     state["status"] = "running"
     state["attempts"] = int(state.get("attempts", 0)) + 1
-    _update_energy_slurm_metadata(state, task)
+    _update_energy_slurm_metadata(state, task_job)
     state["updated_at"] = now_utc_iso()
-    _write_json(Path(str(task["status_path"])), state)
+    _write_json(Path(str(task_job["status_path"])), state)
     return state
 
 
@@ -525,20 +657,22 @@ def finalize_energy_task(
     group_plan_path: str | Path,
     task_index: int,
     *,
+    job_index: int = 0,
     exit_code: int,
     trial_started: bool,
 ) -> dict[str, Any]:
     task = read_energy_group_task(group_plan_path, task_index)
-    state = _load_energy_state_for_task(task)
-    result_dir = Path(str(task["result_dir"]))
+    task_job = _energy_task_job(task, job_index)
+    state = _load_energy_state_for_task(task_job)
+    result_dir = Path(str(task_job["result_dir"]))
     artifacts = state.setdefault("artifacts", {})
     _fill_energy_artifacts(
         artifacts=artifacts,
         result_dir=result_dir,
-        profile_stdout_log=Path(str(task["profile_stdout_log"])),
-        profile_stderr_log=Path(str(task["profile_stderr_log"])),
-        vllm_stdout_log=Path(str(task["vllm_stdout_log"])),
-        vllm_stderr_log=Path(str(task["vllm_stderr_log"])),
+        profile_stdout_log=Path(str(task_job["profile_stdout_log"])),
+        profile_stderr_log=Path(str(task_job["profile_stderr_log"])),
+        vllm_stdout_log=Path(str(task_job["vllm_stdout_log"])),
+        vllm_stderr_log=Path(str(task_job["vllm_stderr_log"])),
     )
     if exit_code == 0 and (result_dir / "summary.json").is_file() and (result_dir / "energy_summary.json").is_file():
         state["status"] = "succeeded"
@@ -554,9 +688,9 @@ def finalize_energy_task(
         state["status"] = "failed"
         phase = "trial" if trial_started else "startup"
         state["last_error"] = f"Slurm energy task exited with code {exit_code} during {phase}"
-    _update_energy_slurm_metadata(state, task)
+    _update_energy_slurm_metadata(state, task_job)
     state["updated_at"] = now_utc_iso()
-    _write_json(Path(str(task["status_path"])), state)
+    _write_json(Path(str(task_job["status_path"])), state)
     return state
 
 

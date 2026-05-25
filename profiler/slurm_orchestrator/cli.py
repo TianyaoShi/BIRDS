@@ -145,6 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     mark_energy_running = subparsers.add_parser("mark-energy-task-running", help=argparse.SUPPRESS)
     mark_energy_running.add_argument("--group-plan", type=Path, required=True)
     mark_energy_running.add_argument("--task-index", type=int, required=True)
+    mark_energy_running.add_argument("--job-index", type=int, default=0)
     mark_energy_running.set_defaults(handler=_mark_energy_task_running_command)
 
     mark_quality_running = subparsers.add_parser("mark-quality-task-running", help=argparse.SUPPRESS)
@@ -162,6 +163,7 @@ def build_parser() -> argparse.ArgumentParser:
     finalize_energy = subparsers.add_parser("finalize-energy-task", help=argparse.SUPPRESS)
     finalize_energy.add_argument("--group-plan", type=Path, required=True)
     finalize_energy.add_argument("--task-index", type=int, required=True)
+    finalize_energy.add_argument("--job-index", type=int, default=0)
     finalize_energy.add_argument("--exit-code", type=int, required=True)
     finalize_energy.add_argument("--trial-started", type=int, choices=(0, 1), required=True)
     finalize_energy.set_defaults(handler=_finalize_energy_task_command)
@@ -343,7 +345,7 @@ def _mark_task_running_command(args: argparse.Namespace) -> int:
 
 
 def _mark_energy_task_running_command(args: argparse.Namespace) -> int:
-    payload = mark_energy_task_running(args.group_plan, args.task_index)
+    payload = mark_energy_task_running(args.group_plan, args.task_index, job_index=args.job_index)
     print(json.dumps({"job_id": payload.get("job_id"), "status": payload.get("status")}))
     return 0
 
@@ -369,6 +371,7 @@ def _finalize_energy_task_command(args: argparse.Namespace) -> int:
     payload = finalize_energy_task(
         args.group_plan,
         args.task_index,
+        job_index=args.job_index,
         exit_code=args.exit_code,
         trial_started=bool(args.trial_started),
     )
