@@ -253,6 +253,8 @@ def _load_request_length_rows() -> pd.DataFrame:
         {"sharegpt": "sharegpt", "wildchat": "wildchat"}
     )
     chat_lengths = chat_lengths.rename(columns={"source": "chat_source"})
+    chat_lengths = chat_lengths[chat_lengths["input_tokens"] >= 10].copy()
+    chat_lengths = chat_lengths[chat_lengths["output_tokens"] >= 5].copy()
 
     combined = pd.concat([request_lengths, chat_lengths], ignore_index=True, sort=False)
     return combined[combined["dataset"].notna()].copy()
