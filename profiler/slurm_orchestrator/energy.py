@@ -694,7 +694,7 @@ def finalize_energy_task(
     return state
 
 
-def collect_energy_run(run_root: str | Path) -> dict[str, Any]:
+def collect_energy_run(run_root: str | Path, *, collect_latency: bool = False) -> dict[str, Any]:
     plan = load_energy_run_plan(run_root)
     jobs: list[dict[str, Any]] = []
     latest_update = str(plan.get("created_at", now_utc_iso()))
@@ -720,7 +720,7 @@ def collect_energy_run(run_root: str | Path) -> dict[str, Any]:
     run_root_path = Path(str(plan["run_root"]))
     store = EnergyRunStateStore(run_root_path)
     store.save(aggregate_state)
-    summary = store.write_summary_files(aggregate_state)
+    summary = store.write_summary_files(aggregate_state, collect_latency=collect_latency)
     return {
         "run_root": str(plan["run_root"]),
         "summary": summary,

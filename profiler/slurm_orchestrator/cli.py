@@ -96,6 +96,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     energy_collect = subparsers.add_parser("energy-collect")
     energy_collect.add_argument("--run-root", type=Path, required=True)
+    energy_collect.add_argument(
+        "--collect-latency",
+        action="store_true",
+        help=(
+            "include TTFT, TPOT, and ITL stats from each job's profiler summary.json "
+            "in summary.json and summary_compact.csv"
+        ),
+    )
     _add_sync_results_args(energy_collect, collect_name="energy-collect")
     energy_collect.set_defaults(handler=_energy_collect_command)
 
@@ -273,7 +281,7 @@ def _energy_submit_command(args: argparse.Namespace) -> int:
 
 
 def _energy_collect_command(args: argparse.Namespace) -> int:
-    payload = collect_energy_run(args.run_root)
+    payload = collect_energy_run(args.run_root, collect_latency=bool(args.collect_latency))
     sync_result = _sync_results_after_collect(args)
     payload["result_sync"] = sync_result
     print(json.dumps(payload, indent=2, sort_keys=True))

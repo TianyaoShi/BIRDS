@@ -21,6 +21,30 @@ _COUNTS_TEMPLATE = {
     "skipped": 0,
 }
 
+_LATENCY_COMPACT_FIELDS = [
+    "mean_ttft_ms",
+    "median_ttft_ms",
+    "std_ttft_ms",
+    "ttft_p50_ms",
+    "ttft_p90_ms",
+    "ttft_p95_ms",
+    "ttft_p99_ms",
+    "mean_tpot_ms",
+    "median_tpot_ms",
+    "std_tpot_ms",
+    "tpot_p50_ms",
+    "tpot_p90_ms",
+    "tpot_p95_ms",
+    "tpot_p99_ms",
+    "mean_itl_ms",
+    "median_itl_ms",
+    "std_itl_ms",
+    "itl_p50_ms",
+    "itl_p90_ms",
+    "itl_p95_ms",
+    "itl_p99_ms",
+]
+
 
 class EnergyRunStateStore:
     def __init__(self, run_root: Path) -> None:
@@ -148,7 +172,7 @@ class EnergyRunStateStore:
         job["last_error"] = error
         self.save(state)
 
-    def summarize(self, state: dict[str, Any]) -> dict[str, Any]:
+    def summarize(self, state: dict[str, Any], *, collect_latency: bool = False) -> dict[str, Any]:
         counts = dict(_COUNTS_TEMPLATE)
         total_energy_joules = 0.0
         total_incremental_energy_joules = 0.0
@@ -175,6 +199,7 @@ class EnergyRunStateStore:
             else:
                 total_energy = None
                 total_incremental = None
+            latency_summary = self._load_latency_summary(job) if collect_latency else None
 
             gpu_count = _optional_positive_int(job.get("gpu_count"))
             tensor_parallel_size = _optional_positive_int(job.get("tensor_parallel_size"))
@@ -236,6 +261,8 @@ class EnergyRunStateStore:
                 else _optional_positive_int(energy_summary.get("successful_repeat_count"), allow_zero=True),
                 "artifacts": dict(job.get("artifacts", {})),
             }
+            if collect_latency:
+                job_summary.update(_latency_metrics(latency_summary))
             jobs_summary.append(job_summary)
             if status == "failed":
                 failed_jobs.append(
@@ -258,8 +285,8 @@ class EnergyRunStateStore:
             "jobs": jobs_summary,
         }
 
-    def write_summary_files(self, state: dict[str, Any]) -> dict[str, Any]:
-        summary = self.summarize(state)
+    def write_summary_files(self, state: dict[str, Any], *, collect_latency: bool = False) -> dict[str, Any]:
+        summary = self.summarize(state, collect_latency=collect_latency)
         self.summary_json_path.write_text(
             json.dumps(summary, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -352,6 +379,28 @@ class EnergyRunStateStore:
             return None
         return payload
 
+    @staticmethod
+    def _load_latency_summary(job: Mapping[str, Any]) -> Mapping[str, Any] | None:
+        artifacts = job.get("artifacts")
+        if not isinstance(artifacts, Mapping):
+            return None
+        path = artifacts.get("summary_json")
+        if not isinstance(path, str) or not path:
+            return None
+        try:
+            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return None
+        if not isinstance(payload, Mapping):
+            return None
+        summary = payload.get("summary")
+        if not isinstance(summary, Mapping):
+            return None
+        benchmark_metrics = summary.get("benchmark_metrics")
+        if not isinstance(benchmark_metrics, Mapping):
+            return None
+        return benchmark_metrics
+
     def _load_plan_jobs_by_id(self) -> dict[str, Mapping[str, Any]]:
         if not self.plan_copy_path.is_file():
             return {}
@@ -413,6 +462,8 @@ class EnergyRunStateStore:
         ]
         raw_jobs = summary.get("jobs")
         jobs = raw_jobs if isinstance(raw_jobs, list) else []
+        if any(_has_latency_fields(job) for job in jobs if isinstance(job, Mapping)):
+            fieldnames.extend(_LATENCY_COMPACT_FIELDS)
         with self.summary_csv_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
@@ -456,6 +507,63 @@ def _energy_metric_getter(*, job: Mapping[str, Any], energy_summary: Mapping[str
         return sum(values) / len(values)
 
     return get_metric
+
+
+def _latency_metrics(benchmark_metrics: Mapping[str, Any] | None) -> dict[str, float | None]:
+    return {
+        "mean_ttft_ms": _latency_value(benchmark_metrics, "mean_ttft_ms"),
+        "median_ttft_ms": _latency_value(benchmark_metrics, "median_ttft_ms"),
+        "std_ttft_ms": _latency_value(benchmark_metrics, "std_ttft_ms"),
+        "ttft_p50_ms": _latency_percentile(benchmark_metrics, "percentiles_ttft_ms", 50.0),
+        "ttft_p90_ms": _latency_percentile(benchmark_metrics, "percentiles_ttft_ms", 90.0),
+        "ttft_p95_ms": _latency_percentile(benchmark_metrics, "percentiles_ttft_ms", 95.0),
+        "ttft_p99_ms": _latency_percentile(benchmark_metrics, "percentiles_ttft_ms", 99.0),
+        "mean_tpot_ms": _latency_value(benchmark_metrics, "mean_tpot_ms"),
+        "median_tpot_ms": _latency_value(benchmark_metrics, "median_tpot_ms"),
+        "std_tpot_ms": _latency_value(benchmark_metrics, "std_tpot_ms"),
+        "tpot_p50_ms": _latency_percentile(benchmark_metrics, "percentiles_tpot_ms", 50.0),
+        "tpot_p90_ms": _latency_percentile(benchmark_metrics, "percentiles_tpot_ms", 90.0),
+        "tpot_p95_ms": _latency_percentile(benchmark_metrics, "percentiles_tpot_ms", 95.0),
+        "tpot_p99_ms": _latency_percentile(benchmark_metrics, "percentiles_tpot_ms", 99.0),
+        "mean_itl_ms": _latency_value(benchmark_metrics, "mean_itl_ms"),
+        "median_itl_ms": _latency_value(benchmark_metrics, "median_itl_ms"),
+        "std_itl_ms": _latency_value(benchmark_metrics, "std_itl_ms"),
+        "itl_p50_ms": _latency_percentile(benchmark_metrics, "percentiles_itl_ms", 50.0),
+        "itl_p90_ms": _latency_percentile(benchmark_metrics, "percentiles_itl_ms", 90.0),
+        "itl_p95_ms": _latency_percentile(benchmark_metrics, "percentiles_itl_ms", 95.0),
+        "itl_p99_ms": _latency_percentile(benchmark_metrics, "percentiles_itl_ms", 99.0),
+    }
+
+
+def _latency_value(benchmark_metrics: Mapping[str, Any] | None, key: str) -> float | None:
+    if benchmark_metrics is None:
+        return None
+    return _optional_finite_float(benchmark_metrics.get(key))
+
+
+def _latency_percentile(
+    benchmark_metrics: Mapping[str, Any] | None,
+    key: str,
+    percentile: float,
+) -> float | None:
+    if benchmark_metrics is None:
+        return None
+    raw_percentiles = benchmark_metrics.get(key)
+    if not isinstance(raw_percentiles, list):
+        return None
+    for pair in raw_percentiles:
+        if not isinstance(pair, list | tuple) or len(pair) != 2:
+            continue
+        raw_p, raw_value = pair
+        numeric_p = _optional_finite_float(raw_p)
+        if numeric_p is None or abs(numeric_p - percentile) > 1e-9:
+            continue
+        return _optional_finite_float(raw_value)
+    return None
+
+
+def _has_latency_fields(job: Mapping[str, Any]) -> bool:
+    return any(field in job for field in _LATENCY_COMPACT_FIELDS)
 
 
 def _repeat_statistics_mean(energy_summary: Mapping[str, Any] | None, metric: str) -> float | None:

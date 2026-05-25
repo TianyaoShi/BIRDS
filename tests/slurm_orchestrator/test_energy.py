@@ -268,7 +268,22 @@ def test_finalize_and_collect_energy_run_write_profiler_compatible_summary(
                 "summary": {
                     "successful_requests": 1,
                     "started_requests": 1,
-                    "benchmark_metrics": {"total_input_tokens": 10, "total_output_tokens": 5},
+                    "benchmark_metrics": {
+                        "total_input_tokens": 10,
+                        "total_output_tokens": 5,
+                        "mean_ttft_ms": 12.0,
+                        "median_ttft_ms": 11.0,
+                        "std_ttft_ms": 1.5,
+                        "percentiles_ttft_ms": [[50.0, 11.0], [90.0, 18.0], [95.0, 20.0], [99.0, 25.0]],
+                        "mean_tpot_ms": 3.0,
+                        "median_tpot_ms": 2.8,
+                        "std_tpot_ms": 0.3,
+                        "percentiles_tpot_ms": [[50.0, 2.8], [90.0, 3.4], [95.0, 3.8], [99.0, 4.2]],
+                        "mean_itl_ms": 2.9,
+                        "median_itl_ms": 2.7,
+                        "std_itl_ms": 0.2,
+                        "percentiles_itl_ms": [[50.0, 2.7], [90.0, 3.3], [95.0, 3.7], [99.0, 4.1]],
+                    },
                 }
             }
         ),
@@ -286,7 +301,7 @@ def test_finalize_and_collect_energy_run_write_profiler_compatible_summary(
 
     succeeded = finalize_energy_task(group_plan_path, 0, exit_code=0, trial_started=True)
     failed = finalize_energy_task(Path(run_plan["groups"][1]["plan_path"]), 0, exit_code=1, trial_started=False)
-    collected = collect_energy_run(run_plan["run_root"])
+    collected = collect_energy_run(run_plan["run_root"], collect_latency=True)
 
     assert succeeded["status"] == "succeeded"
     assert succeeded["gpu_ids"] == [2]
@@ -295,8 +310,18 @@ def test_finalize_and_collect_energy_run_write_profiler_compatible_summary(
     assert collected["summary"]["counts"]["failed"] == 1
     assert collected["summary"]["status"] == "failed"
     assert collected["summary"]["aggregate"]["total_energy_joules"] == 100.0
+    assert collected["summary"]["jobs"][0]["mean_ttft_ms"] == 12.0
+    assert collected["summary"]["jobs"][0]["ttft_p90_ms"] == 18.0
+    assert collected["summary"]["jobs"][0]["mean_tpot_ms"] == 3.0
+    assert collected["summary"]["jobs"][0]["tpot_p95_ms"] == 3.8
+    assert collected["summary"]["jobs"][0]["mean_itl_ms"] == 2.9
+    assert collected["summary"]["jobs"][0]["itl_p99_ms"] == 4.1
     assert (Path(run_plan["run_root"]) / "summary.json").is_file()
     assert (Path(run_plan["run_root"]) / "summary.md").is_file()
+    compact_header = (Path(run_plan["run_root"]) / "summary_compact.csv").read_text(encoding="utf-8").splitlines()[0]
+    assert "mean_ttft_ms" in compact_header
+    assert "tpot_p95_ms" in compact_header
+    assert "itl_p99_ms" in compact_header
 
 
 def test_energy_collect_cli_syncs_energy_summaries_without_raw_traces(
