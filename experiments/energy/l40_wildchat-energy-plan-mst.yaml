@@ -24,7 +24,7 @@ defaults:
   idle_baseline_s: 30.0
   traffic_warmup_s: 30.0
   cooldown_s: 15.0
-  repeats: 1
+  repeats: 3
   repeat_cooldown_s: 15.0
   warmup_each_repeat: false
   metrics_interval_s: 1.0

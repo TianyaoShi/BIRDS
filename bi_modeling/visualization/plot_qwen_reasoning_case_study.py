@@ -326,7 +326,7 @@ def plot_case_study(rows: pd.DataFrame, output_path: Path) -> None:
         ncol=2,
         frameon=False,
         fontsize=LEGEND_FONTSIZE + 6,
-        bbox_to_anchor=(0.5, 1.15),
+        bbox_to_anchor=(0.52, 1.17),
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
