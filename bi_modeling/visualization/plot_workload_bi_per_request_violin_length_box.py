@@ -135,7 +135,8 @@ def plot_violin_with_length_boxes(rows, output_path: Path) -> None:
             Patch(facecolor=OUTPUT_COLOR, edgecolor="black", alpha=0.45, label="Output"),
         ],
         frameon=False,
-        loc="upper right",
+        loc="upper left",
+        bbox_to_anchor=(0.01, 1.02),
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

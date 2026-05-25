@@ -114,12 +114,6 @@ REQUEST_LENGTHS_CSV = (
 CHAT_REQUEST_LENGTHS_CSV = (
     REPO_ROOT / "results" / "workload_length_distributions" / "chat_quality_request_lengths.csv"
 )
-SUPERGPQA_OUTPUT_SUMMARY_CSV = (
-    REPO_ROOT / "results" / "workload_length_distributions" / "supergpqa_real_output_length_summary.csv"
-)
-SUPERGPQA_FULL_OUTPUT_JSONL = (
-    REPO_ROOT / "results" / "workload_length_distributions" / "supergpqa_full_real_output_lengths_by_request.jsonl"
-)
 SUPERGPQA_HARD_OUTPUT_JSONL = (
     REPO_ROOT / "results" / "workload_length_distributions" / "supergpqa_hard_real_output_lengths_by_request.jsonl"
 )
@@ -246,9 +240,11 @@ def _canonical_length_workload(name: str) -> str:
 
 def _load_request_length_rows() -> pd.DataFrame:
     request_lengths = pd.read_csv(REQUEST_LENGTHS_CSV, low_memory=False)
+    request_lengths["raw_workload_name"] = request_lengths["workload_name"]
     request_lengths["dataset"] = request_lengths["workload_name"].map(_canonical_length_workload)
 
     chat_lengths = pd.read_csv(CHAT_REQUEST_LENGTHS_CSV, low_memory=False)
+    chat_lengths["raw_workload_name"] = chat_lengths["workload_name"]
     chat_lengths["dataset"] = chat_lengths["source"].map(
         {"sharegpt": "sharegpt", "wildchat": "wildchat"}
     )
@@ -260,26 +256,18 @@ def _load_request_length_rows() -> pd.DataFrame:
     return combined[combined["dataset"].notna()].copy()
 
 
-def _load_supergpqa_output_lengths() -> np.ndarray:
-    summary = pd.read_csv(SUPERGPQA_OUTPUT_SUMMARY_CSV)
-    easy_models = set(summary.loc[summary["split"] == "easy_medium", "model"])
-    hard_models = set(summary.loc[summary["split"] == "hard", "model"])
-    shared_models = easy_models & hard_models
-
+def _load_supergpqa_hard_output_lengths() -> np.ndarray:
     lengths: list[int] = []
-    for path in (SUPERGPQA_FULL_OUTPUT_JSONL, SUPERGPQA_HARD_OUTPUT_JSONL):
-        with path.open() as handle:
-            for line in handle:
-                record = json.loads(line)
-                for output in record.get("outputs", []):
-                    if output.get("model") not in shared_models:
-                        continue
-                    if not output.get("success"):
-                        continue
-                    actual_output_len = output.get("actual_output_len")
-                    if actual_output_len is None:
-                        continue
-                    lengths.append(int(actual_output_len))
+    with SUPERGPQA_HARD_OUTPUT_JSONL.open() as handle:
+        for line in handle:
+            record = json.loads(line)
+            for output in record.get("outputs", []):
+                if not output.get("success"):
+                    continue
+                actual_output_len = output.get("actual_output_len")
+                if actual_output_len is None:
+                    continue
+                lengths.append(int(actual_output_len))
     return np.asarray(lengths, dtype=float)
 
 
@@ -288,11 +276,13 @@ def _build_length_distributions() -> dict[str, dict[str, np.ndarray]]:
     distributions: dict[str, dict[str, np.ndarray]] = {}
     for spec in WORKLOAD_SPECS:
         dataset_rows = rows[rows["dataset"] == spec["dataset"]]
+        if spec["dataset"] == "supergpqa":
+            dataset_rows = dataset_rows[dataset_rows["raw_workload_name"] == "supergpqa_hard_reasoning"]
         input_values = dataset_rows["input_tokens"].dropna().to_numpy(dtype=float)
         if spec["dataset"] == "mmlu-pro":
             output_values = np.asarray([], dtype=float)
         elif spec["dataset"] == "supergpqa":
-            output_values = _load_supergpqa_output_lengths()
+            output_values = _load_supergpqa_hard_output_lengths()
         else:
             output_values = dataset_rows["output_tokens"].dropna().to_numpy(dtype=float)
         distributions[spec["dataset"]] = {
@@ -394,13 +384,14 @@ def plot_violin(rows: pd.DataFrame, output_path: Path) -> None:
     _draw_group_separators(length_ax, separator_positions)
     _draw_group_labels(length_ax, group_centers)
     _style_axes(length_ax)
-    length_ax.legend(
+    bi_ax.legend(
         handles=[
             Patch(facecolor=INPUT_COLOR, edgecolor="black", alpha=0.45, label="Input"),
             Patch(facecolor=OUTPUT_COLOR, edgecolor="black", alpha=0.45, label="Output"),
         ],
         frameon=False,
-        loc="upper right",
+        loc="lower right",
+        bbox_to_anchor=(0.985, -0.02),
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
