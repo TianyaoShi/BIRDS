@@ -30,14 +30,14 @@ from bi_modeling.visualization.plot_style import (  # noqa: E402
 WORKLOAD_SPECS = [
     {
         "dataset": "sharegpt",
-        "label": "ShareGPT",
+        "label": "Share\nGPT",
         "group": "Chat",
         "patterns": ("sharegpt",),
         "color": "#4C956C",
     },
     {
         "dataset": "wildchat",
-        "label": "WildChat",
+        "label": "Wild\nChat",
         "group": "Chat",
         "patterns": ("wildchat",),
         "color": "#4C956C",
@@ -65,7 +65,7 @@ WORKLOAD_SPECS = [
     },
     {
         "dataset": "repobench",
-        "label": "RepoBench",
+        "label": "Repo\nBench",
         "group": "Code",
         "patterns": ("repobench",),
         "color": "#BC6C25",
@@ -207,12 +207,12 @@ def _draw_group_labels(ax: plt.Axes, group_centers: dict[str, float]) -> None:
     for group, center in group_centers.items():
         ax.text(
             center,
-            -0.2,
+            -0.27,
             group,
             transform=ax.get_xaxis_transform(),
             ha="center",
             va="top",
-            fontsize=TICK_FONTSIZE,
+            fontsize=TICK_FONTSIZE+5,
         )
 
 

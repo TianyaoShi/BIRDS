@@ -25,12 +25,12 @@ from bi_modeling.visualization.plot_style import (  # noqa: E402
     apply_academic_style,
 )
 from bi_modeling.visualization.plot_workload_bi_per_request_violin import (  # noqa: E402
+    DATASET_STEP,
     GROUP_ORDER,
     INPUT_COLOR,
     LENGTH_OFFSET,
     OUTPUT_COLOR,
     WORKLOAD_SPECS,
-    _build_layout_positions,
     _build_length_distributions,
     _draw_group_labels,
     _draw_group_separators,
@@ -41,6 +41,37 @@ from bi_modeling.visualization.plot_workload_bi_per_request_violin import (  # n
 
 VIOLIN_WIDTH = 0.78
 BOX_WIDTH = 0.28
+BOX_GROUP_GAP = 0.15
+
+
+def _build_compact_layout_positions(rows):
+    positions = []
+    tick_labels = []
+    datasets = []
+    group_centers = {}
+    separator_positions = []
+
+    current_x = 1.0
+    for group in GROUP_ORDER:
+        group_specs = [spec for spec in WORKLOAD_SPECS if spec["group"] == group]
+        group_positions = []
+        for spec in group_specs:
+            subset = rows.loc[rows["dataset"] == spec["dataset"]]
+            if subset.size == 0:
+                continue
+            positions.append(current_x)
+            group_positions.append(current_x)
+            tick_labels.append(spec["label"])
+            datasets.append(spec["dataset"])
+            current_x += DATASET_STEP
+        if not group_positions:
+            continue
+        group_centers[group] = (group_positions[0] + group_positions[-1]) / 2.0
+        next_group_start = current_x + BOX_GROUP_GAP
+        separator_positions.append((group_positions[-1] + next_group_start) / 2.0)
+        current_x = next_group_start
+
+    return positions, tick_labels, datasets, group_centers, separator_positions
 
 
 def _style_boxplot(boxplot, *, facecolor: str, alpha: float) -> None:
@@ -60,14 +91,14 @@ def plot_violin_with_length_boxes(rows, output_path: Path) -> None:
     fig, axes = plt.subplots(
         2,
         1,
-        figsize=(28, 15.2),
+        figsize=(25, 13),
         constrained_layout=True,
         sharex=True,
         gridspec_kw={"height_ratios": [1.0, 1.0]},
     )
     bi_ax, length_ax = axes
 
-    positions, tick_labels, datasets, group_centers, separator_positions = _build_layout_positions(rows)
+    positions, tick_labels, datasets, group_centers, separator_positions = _build_compact_layout_positions(rows)
     bi_data = [rows.loc[rows["dataset"] == dataset, "bi_per_request"].dropna().to_numpy() for dataset in datasets]
     bi_colors = [
         next(spec["color"] for spec in WORKLOAD_SPECS if spec["dataset"] == dataset)
@@ -86,7 +117,7 @@ def plot_violin_with_length_boxes(rows, output_path: Path) -> None:
     all_bi_values = rows["bi_per_request"].dropna().to_numpy()
     bi_ax.set_yscale("log")
     bi_ax.set_ylim(all_bi_values.min() * 0.75, all_bi_values.max() * 1.6)
-    bi_ax.set_ylabel(r"BI$_{\mathrm{fu}}$ (species$\cdot$yr)", fontsize=FONTSIZE)
+    bi_ax.set_ylabel(r"BI$_{\mathrm{fu}}$ (species$\cdot$yr)", fontsize=FONTSIZE+2)
     bi_ax.tick_params(axis="x", labelbottom=False, width=0, length=0)
     bi_ax.set_xlim(min(positions) - 0.7, max(positions) + 0.7)
     _draw_group_separators(bi_ax, separator_positions)
@@ -121,10 +152,11 @@ def plot_violin_with_length_boxes(rows, output_path: Path) -> None:
     all_length_values = np.concatenate(combined_length_values)
     length_ax.set_yscale("log")
     length_ax.set_ylim(all_length_values.min() * 0.75, all_length_values.max() * 1.35)
-    length_ax.set_ylabel("Length (tokens)", fontsize=FONTSIZE)
+    length_ax.set_yticks([10,100,1000,10000])
+    length_ax.set_ylabel("Length (tokens)", fontsize=FONTSIZE+2)
     length_ax.set_xticks(positions)
     length_ax.set_xticklabels(tick_labels)
-    length_ax.tick_params(axis="x", labelsize=TICK_FONTSIZE - 2, width=0, length=0, pad=10)
+    length_ax.tick_params(axis="x", labelsize=TICK_FONTSIZE+4, width=0, length=0, pad=10)
     length_ax.set_xlim(min(positions) - 0.7, max(positions) + 0.7)
     _draw_group_separators(length_ax, separator_positions)
     _draw_group_labels(length_ax, group_centers)
@@ -135,8 +167,9 @@ def plot_violin_with_length_boxes(rows, output_path: Path) -> None:
             Patch(facecolor=OUTPUT_COLOR, edgecolor="black", alpha=0.45, label="Output"),
         ],
         frameon=False,
+        fontsize=TICK_FONTSIZE+3,
         loc="upper left",
-        bbox_to_anchor=(0.01, 1.02),
+        bbox_to_anchor=(0.0, 1.05),
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
