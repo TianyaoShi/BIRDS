@@ -48,7 +48,7 @@ GROUP_DISPLAY = {
 }
 DEFAULT_SUPPLEMENT_GPU = "a100"
 SUPPLEMENT_MAX_SIZE_B = 3.0
-BAR_WIDTH = 0.72
+BAR_WIDTH = 0.55
 BAR_STEP = 1.12
 GROUP_GAP = 0.42
 QUALITY_SCORES_PATH = REPO_ROOT / "results" / "quality_scores" / "quality_scores_compiled.csv"
@@ -216,7 +216,7 @@ def _scientific_tick(value: float, _: int) -> str:
 
 def plot_model_bars(rows: pd.DataFrame, output_path: Path) -> None:
     apply_academic_style()
-    fig, ax = plt.subplots(figsize=(30, 6.5), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(30, 5.25), constrained_layout=True)
     quality_ax = ax.twinx()
 
     positions = []
@@ -257,23 +257,23 @@ def plot_model_bars(rows: pd.DataFrame, output_path: Path) -> None:
     ax.set_yscale("log")
     ymin = float(plot_rows["bi_per_request"].min()) * 0.75
     ymax = float(plot_rows["bi_per_request"].max()) * 2.6
-    ax.set_ylim(ymin, ymax)
-    ax.set_ylabel("BI$_\\text{fu}$ (species$\\cdot$yr)", fontsize=FONTSIZE)
+    ax.set_ylim(ymin, ymax*1.1)
+    ax.set_ylabel("BI$_\\text{fu}$ (species$\\cdot$yr)", fontsize=FONTSIZE,y=0.35)
     ax.yaxis.set_major_formatter(FuncFormatter(_scientific_tick))
     ax.set_xticks(plot_rows["x"], plot_rows["display_label"])
-    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE - 2, width=0, length=0, pad=12)
-    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=10)
+    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE - 3, width=0, length=0, pad=12)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE - 3, width=LINEWIDTH * 0.45, length=10)
     ax.set_xlim(plot_rows["x"].min() - BAR_WIDTH * 1, plot_rows["x"].max() + BAR_WIDTH * 1)
 
     for family, center in group_centers.items():
         ax.text(
             center,
-            -0.25,
+            -0.33,
             GROUP_DISPLAY[family],
             ha="center",
             va="top",
             transform=ax.get_xaxis_transform(),
-            fontsize=TICK_FONTSIZE,
+            fontsize=TICK_FONTSIZE-1,
         )
 
     for separator in separator_positions[:-1]:
