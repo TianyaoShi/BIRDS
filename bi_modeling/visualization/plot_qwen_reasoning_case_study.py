@@ -49,6 +49,7 @@ SERIES_COLORS = {
     "Thinking": "#E07A5F",
 }
 QUALITY_LINE_COLOR = "#2F2F2F"
+BI_AXIS_SCALE = 1e-13
 SIZE_CENTER_OFFSETS = {
     "4B": 0.0,
     "30B": 0.0,
@@ -83,8 +84,16 @@ def _scientific_tick(value: float, _: int) -> str:
     return f"{value:.0e}"
 
 
+def _plain_log_tick(value: float, _: int) -> str:
+    if np.isclose(value, 1.0):
+        return "1"
+    if np.isclose(value, 10.0):
+        return "10"
+    return ""
+
+
 def _k_token_tick(value: float, _: int) -> str:
-    return f"{value / 1000.0:.1f}"
+    return f"{value / 1000.0:.0f}"
 
 
 def _load_output_length_stats() -> pd.DataFrame:
@@ -194,8 +203,8 @@ def _bar_positions(rows: pd.DataFrame) -> list[float]:
 
 
 def _style_axis(ax: plt.Axes) -> None:
-    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE, width=0, length=0, pad=8)
-    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=12)
+    ax.tick_params(axis="x", labelsize=TICK_FONTSIZE+2, width=0, length=0, pad=8)
+    ax.tick_params(axis="y", labelsize=TICK_FONTSIZE-2, width=LINEWIDTH * 0.45, length=12)
     for spine in ax.spines.values():
         spine.set_linewidth(LINEWIDTH * 0.45)
 
@@ -207,6 +216,8 @@ def _plot_grouped_bars(
     value_column: str,
     ylabel: str,
     log_scale: bool,
+    scale_factor: float = 1.0,
+    exponent_note: str | None = None,
 ) -> None:
     x_centers, offsets, size_index, bar_width = _base_positions()
     for series in SERIES_ORDER:
@@ -217,7 +228,7 @@ def _plot_grouped_bars(
         ]
         ax.bar(
             positions,
-            subset[value_column],
+            subset[value_column] / scale_factor,
             width=bar_width,
             color=SERIES_COLORS[series],
             edgecolor="black",
@@ -226,16 +237,27 @@ def _plot_grouped_bars(
         )
 
     if log_scale:
-        values = rows[value_column].to_numpy(dtype=float)
+        values = rows[value_column].to_numpy(dtype=float) / scale_factor
         values = values[np.isfinite(values) & (values > 0)]
         ax.set_yscale("log")
         ax.set_ylim(values.min() * 0.75, values.max() * 1.6)
-        ax.yaxis.set_major_formatter(FuncFormatter(_scientific_tick))
+        ax.set_yticks([1, 10])
+        ax.yaxis.set_major_formatter(FuncFormatter(_plain_log_tick))
 
     ax.set_ylabel(ylabel, fontsize=FONTSIZE)
     ax.set_xticks(_tick_positions())
     ax.set_xticklabels(SIZE_ORDER)
     _style_axis(ax)
+    if exponent_note:
+        ax.text(
+            0.0,
+            1.01,
+            exponent_note,
+            transform=ax.transAxes,
+            ha="left",
+            va="bottom",
+            fontsize=TICK_FONTSIZE - 8,
+        )
 
 
 def _plot_bi_with_quality(ax: plt.Axes, rows: pd.DataFrame) -> None:
@@ -245,6 +267,8 @@ def _plot_bi_with_quality(ax: plt.Axes, rows: pd.DataFrame) -> None:
         value_column="bi_per_request",
         ylabel=r"BI$_{\mathrm{fu}}$ (species$\cdot$yr)",
         log_scale=True,
+        scale_factor=BI_AXIS_SCALE,
+        exponent_note=r"$10^{-13}$",
     )
     quality_ax = ax.twinx()
     positions = _bar_positions(rows)
@@ -261,8 +285,8 @@ def _plot_bi_with_quality(ax: plt.Axes, rows: pd.DataFrame) -> None:
     quality_values = rows["normalized_quality_score"].to_numpy(dtype=float)
     quality_ax.set_ylim(max(0.0, quality_values.min() - 0.08), min(1.0, quality_values.max() + 0.08))
     quality_ax.set_ylabel(r"$Q(\theta)$", fontsize=FONTSIZE)
-    quality_ax.yaxis.set_label_coords(1.03, 0.45)
-    quality_ax.tick_params(axis="y", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=12)
+    # quality_ax.yaxis.set_label_coords(1.03, 0.45)
+    quality_ax.tick_params(axis="y", labelsize=TICK_FONTSIZE-2, width=LINEWIDTH * 0.45, length=12)
     for spine in quality_ax.spines.values():
         spine.set_linewidth(LINEWIDTH * 0.45)
 
@@ -296,7 +320,7 @@ def _plot_output_lengths(ax: plt.Axes, rows: pd.DataFrame) -> None:
     valid_values = valid_values[np.isfinite(valid_values) & (valid_values > 0)]
     if valid_values.size:
         ax.set_ylim(0.0, valid_values.max() * 1.1)
-    ax.set_ylabel("Output length (k tokens)", fontsize=FONTSIZE)
+    ax.set_ylabel("Output (k tokens)", fontsize=FONTSIZE)
     ax.yaxis.set_major_formatter(FuncFormatter(_k_token_tick))
     ax.set_xticks(_tick_positions())
     ax.set_xticklabels(SIZE_ORDER)
@@ -305,7 +329,7 @@ def _plot_output_lengths(ax: plt.Axes, rows: pd.DataFrame) -> None:
 
 def plot_case_study(rows: pd.DataFrame, output_path: Path) -> None:
     apply_academic_style()
-    fig, axes = plt.subplots(1, 3, figsize=(25, 7.2), constrained_layout=True)
+    fig, axes = plt.subplots(1, 3, figsize=(20, 6), constrained_layout=True)
 
     _plot_bi_with_quality(axes[0], rows)
     _plot_output_lengths(axes[1], rows)
@@ -315,6 +339,8 @@ def plot_case_study(rows: pd.DataFrame, output_path: Path) -> None:
         value_column="qnbi_per_request",
         ylabel=r"QNBI (species$\cdot$yr)",
         log_scale=True,
+        scale_factor=BI_AXIS_SCALE,
+        exponent_note=r"$10^{-13}$",
     )
 
     fig.legend(
