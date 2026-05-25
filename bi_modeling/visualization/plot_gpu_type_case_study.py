@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from matplotlib.ticker import FuncFormatter
 import pandas as pd
@@ -38,6 +39,12 @@ GPU_HATCHES = {
     "L40": "//",
     "A100": "xx",
     "H100": "..",
+}
+TP_MARKERS = {
+    1: "o",
+    2: "s",
+    4: "D",
+    8: "^",
 }
 MST_LINE_COLOR = "#2F2F2F"
 MODEL_SELECTIONS = {
@@ -91,7 +98,7 @@ def _mst_tick(value: float, _: int) -> str:
 
 
 def _figure_width(selection_key: str) -> float:
-    return 18 if selection_key == "qwen" else 11.5
+    return 15.5 if selection_key == "qwen" else 11.5
 
 
 def build_case_study_rows(
@@ -156,7 +163,7 @@ def plot_gpu_case_study(
     mst_ax = ax.twinx()
 
     group_centers = list(range(len(selected_models)))
-    bar_width = 0.3
+    bar_width = 0.22
     offsets = {
         "L40": -bar_width,
         "A100": 0.0,
@@ -172,26 +179,17 @@ def plot_gpu_case_study(
             subset[metric["column"]],
             width=bar_width,
             color=GPU_COLORS[gpu],
+            alpha=0.72,
             edgecolor="black",
             linewidth=LINEWIDTH * 0.45,
             hatch=GPU_HATCHES[gpu],
             label=gpu,
         )
-        for bar, (_, row) in zip(bars, subset.iterrows(), strict=True):
-            height = float(bar.get_height())
-            ax.text(
-                bar.get_x() + bar.get_width() / 2.0,
-                height * 1.06,
-                f"TP{int(row['tensor_parallel_size'])}",
-                ha="center",
-                va="bottom",
-                fontsize=TICK_FONTSIZE - 9,
-            )
 
     values = rows[metric["column"]].to_numpy(dtype=float)
     if metric["log_scale"]:
         ax.set_yscale("log")
-        ax.set_ylim(values.min() * 0.75, values.max() * 1.7)
+        ax.set_ylim(values.min() * 0.75, values.max() * 1.3)
         ax.yaxis.set_major_formatter(FuncFormatter(_scientific_tick))
 
     for model_order in range(len(selected_models)):
@@ -202,16 +200,24 @@ def plot_gpu_case_study(
             subset["mst_value"].to_numpy(dtype=float),
             color=MST_LINE_COLOR,
             linewidth=LINEWIDTH * 0.45,
-            marker="o",
-            markersize=16,
-            markerfacecolor="white",
-            markeredgecolor=MST_LINE_COLOR,
             zorder=4,
             alpha=0.85,
         )
+        for position, (_, row) in zip(positions, subset.iterrows(), strict=True):
+            tp = int(row["tensor_parallel_size"])
+            mst_ax.scatter(
+                [position],
+                [row["mst_value"]],
+                marker=TP_MARKERS.get(tp, "o"),
+                s=180,
+                facecolor="white",
+                edgecolor=MST_LINE_COLOR,
+                linewidth=LINEWIDTH * 0.35,
+                zorder=5,
+            )
 
     mst_values = rows["mst_value"].to_numpy(dtype=float)
-    mst_ax.set_ylim(-0.9, mst_values.max() * 1.15)
+    mst_ax.set_ylim(-1.5, mst_values.max() * 1.05)
     mst_ax.set_ylabel("MST (req/s)", fontsize=FONTSIZE)
     mst_ax.yaxis.set_major_formatter(FuncFormatter(_mst_tick))
     mst_ax.tick_params(axis="y", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=12)
@@ -231,17 +237,32 @@ def plot_gpu_case_study(
         handles=[
             Patch(
                 facecolor=GPU_COLORS[gpu],
+                alpha=0.72,
                 edgecolor="black",
                 hatch=GPU_HATCHES[gpu],
                 label=gpu,
             )
             for gpu in GPU_SERIES
+        ]
+        + [
+            Line2D(
+                [0],
+                [0],
+                color=MST_LINE_COLOR,
+                marker=TP_MARKERS[tp],
+                markerfacecolor="white",
+                markeredgecolor=MST_LINE_COLOR,
+                linewidth=0,
+                markersize=9,
+                label=f"TP{tp}",
+            )
+            for tp in sorted({int(tp) for tp in rows["tensor_parallel_size"].dropna().unique()})
         ],
         loc="upper center",
         ncol=3,
         frameon=False,
         fontsize=LEGEND_FONTSIZE,
-        bbox_to_anchor=(0.5, 1.15),
+        bbox_to_anchor=(0.5, 1.22),
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
