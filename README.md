@@ -7,6 +7,10 @@ results, and most experiment/config assets.
 ## Core File Tree
 
 ```text
+bi_modeling/
+  code/
+  visualization/
+
 profiler/
   gpu_monitor.py
   cpu_monitor.py
@@ -80,6 +84,11 @@ tests/
   mst_analyzer/
   slurm_orchestrator/
 ```
+
+## BI Modeling Map
+
+- `bi_modeling/code/`
+- `bi_modeling/visualization/`
 
 ## Profiler Modules
 
