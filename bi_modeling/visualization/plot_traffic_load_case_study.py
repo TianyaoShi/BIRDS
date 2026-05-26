@@ -39,6 +39,7 @@ DEFAULT_SWEEP_SUMMARY = (
     / "summary_compact.csv"
 )
 QUALITY_SCORES_PATH = REPO_ROOT / "results" / "quality_scores" / "quality_scores_compiled.csv"
+QNBI_AXIS_SCALE = 1e-14
 
 MODEL_SELECTIONS = {
     "qwen": [
@@ -95,10 +96,6 @@ def _normalize_quality_score(value: float) -> float:
     return numeric
 
 
-def _scientific_tick(value: float, _: int) -> str:
-    return f"{value:.0e}"
-
-
 def _plain_tick(value: float, _: int) -> str:
     if value >= 100:
         return f"{value:.0f}"
@@ -117,8 +114,16 @@ def _latency_log_tick(value: float, _: int) -> str:
     return ""
 
 
+def _integer_log_tick(value: float, _: int) -> str:
+    if value < 1:
+        return ""
+    if np.isclose(value, round(value)):
+        return f"{int(round(value))}"
+    return ""
+
+
 def _markevery_for_series(series_len: int) -> int:
-    return max(1, int(np.ceil(series_len / 10)))
+    return max(1, int(np.ceil(series_len / 7)))
 
 
 def build_case_study_rows(summary_path: Path, *, config: EnergyBiConfig) -> pd.DataFrame:
@@ -164,7 +169,7 @@ def build_case_study_rows(summary_path: Path, *, config: EnergyBiConfig) -> pd.D
 
 
 def _style_axis(ax: plt.Axes) -> None:
-    ax.tick_params(axis="both", labelsize=TICK_FONTSIZE, width=LINEWIDTH * 0.45, length=10)
+    ax.tick_params(axis="both", labelsize=TICK_FONTSIZE+2, width=LINEWIDTH * 0.45, length=10)
     for spine in ax.spines.values():
         spine.set_linewidth(LINEWIDTH * 0.45)
 
@@ -178,6 +183,8 @@ def _plot_metric_lines(
     ylabel: str,
     log_y: bool,
     latency_ticks: bool = False,
+    y_scale_factor: float = 1.0,
+    exponent_note: str | None = None,
 ) -> None:
     for model, label in MODEL_SELECTIONS[selection_key]:
         subset = rows[rows["model"] == model].sort_values("request_rate")
@@ -185,31 +192,43 @@ def _plot_metric_lines(
             continue
         ax.plot(
             subset["request_rate"],
-            subset[y_column],
+            subset[y_column] / y_scale_factor,
             color=MODEL_COLORS[model],
             marker=MODEL_MARKERS[model],
             markevery=_markevery_for_series(len(subset)),
-            markersize=MARKERSIZE*0.75,
+            markersize=MARKERSIZE,
             markerfacecolor="white",
-            markeredgewidth=LINEWIDTH * 0.28,
-            linewidth=LINEWIDTH,
+            markeredgewidth=LINEWIDTH * 0.35,
+            linewidth=LINEWIDTH*2,
             label=str(subset["legend_label"].iloc[0]),
         )
 
     if log_y:
         ax.set_yscale("log")
         values = rows.loc[rows["selection"] == selection_key, y_column].dropna().to_numpy(dtype=float)
+        values = values / y_scale_factor
         values = values[values > 0]
         ax.set_ylim(values.min() * 0.75, values.max() * 1.45)
         if latency_ticks:
             ax.set_yticks([10, 100, 1000])
             ax.yaxis.set_major_formatter(FuncFormatter(_latency_log_tick))
         else:
-            ax.yaxis.set_major_formatter(FuncFormatter(_scientific_tick))
+            ax.set_yticks([1, 10])
+            ax.yaxis.set_major_formatter(FuncFormatter(_integer_log_tick))
     else:
         ax.yaxis.set_major_formatter(FuncFormatter(_plain_tick))
     ax.set_xlabel("Request rate (req/s)", fontsize=FONTSIZE)
     ax.set_ylabel(ylabel, fontsize=FONTSIZE)
+    if exponent_note:
+        ax.text(
+            0.02,
+            1.01,
+            exponent_note,
+            transform=ax.transAxes,
+            ha="left",
+            va="bottom",
+            fontsize=FONTSIZE - 8,
+        )
     _style_axis(ax)
 
 
@@ -225,8 +244,8 @@ def _add_latency_slo_lines(ax: plt.Axes, selection_key: str, latency_kind: str) 
         lines.append((thresholds["large"], f"$\\geq$7B SLO={thresholds['large']}ms"))
 
     label_offsets = {
-        "ttft": [0.45, 2],
-        "tpot": [0.6, 1.55],
+        "ttft": [0.37, 2.5],
+        "tpot": [0.5, 1.8],
     }
     for idx, (threshold, label) in enumerate(lines):
         ax.axhline(
@@ -257,7 +276,7 @@ def plot_selection(
     latency_percentile: str,
 ) -> None:
     apply_academic_style()
-    fig, axes = plt.subplots(1, 3, figsize=(25, 7), constrained_layout=True)
+    fig, axes = plt.subplots(1, 3, figsize=(22, 6), constrained_layout=True)
     selection_rows = rows[rows["selection"] == selection_key].copy()
     latency_label = latency_percentile.upper()
 
@@ -268,6 +287,8 @@ def plot_selection(
         y_column="qnbi_per_request",
         ylabel=r"QNBI (species$\cdot$yr)",
         log_y=True,
+        y_scale_factor=QNBI_AXIS_SCALE,
+        exponent_note=r"$\times 10^{-14}$",
     )
     _plot_metric_lines(
         axes[1],
@@ -297,8 +318,8 @@ def plot_selection(
         loc="upper center",
         ncol=3,
         frameon=False,
-        fontsize=LEGEND_FONTSIZE + 2,
-        bbox_to_anchor=(0.5, 1.15),
+        fontsize=LEGEND_FONTSIZE + 5,
+        bbox_to_anchor=(0.5, 1.2),
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
