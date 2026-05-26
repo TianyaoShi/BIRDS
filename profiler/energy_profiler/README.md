@@ -4,6 +4,9 @@
 `local_orchestrator` result roots, generates reviewable fixed-rate energy
 profiling plans, and executes those plans with GPU power monitoring.
 
+This published repo keeps the code paths but does not bundle the original
+energy plan YAMLs or example workload manifests.
+
 The profiler does not change MST search behavior. MST search still finds the
 maximum stable throughput under workload and SLO constraints. Energy profiling
 uses those results as inputs and runs follow-up open-loop trials at selected
@@ -25,7 +28,7 @@ Generate a rounded-MST plan from one orchestrator run:
 ```bash
 PYTHONPATH=profiler:. python -m energy_profiler.cli plan-from-orchestrator \
   --orchestrator-run-root results/orchestrator/<run_id> \
-  --output-plan experiments/energy/<plan_id>.yaml \
+  --output-plan /path/to/<plan_id>.yaml \
   --mode mst-rounded \
   --rate-source max_slo
 ```
@@ -38,7 +41,7 @@ for the same `(model, workload, endpoint)` key:
 PYTHONPATH=profiler:. python -m energy_profiler.cli plan-from-orchestrator \
   --orchestrator-run-root results/orchestrator/<main_run_id> \
   --orchestrator-run-root results/orchestrator/<rerun_id> \
-  --output-plan experiments/energy/<plan_id>.yaml \
+  --output-plan /path/to/<plan_id>.yaml \
   --mode mst-rounded \
   --rate-source max_slo
 ```
@@ -78,7 +81,7 @@ Dry-run a generated plan:
 
 ```bash
 PYTHONPATH=profiler:. python -m energy_profiler.cli dry-run \
-  --plan experiments/energy/<plan_id>.yaml
+  --plan /path/to/<plan_id>.yaml
 ```
 
 ## Running A Managed Plan
@@ -87,7 +90,7 @@ Run a reviewed plan locally with GPU-aware parallel scheduling:
 
 ```bash
 PYTHONPATH=profiler:. python -m local_orchestrator.cli energy-run \
-  --plan experiments/energy/<plan_id>.yaml \
+  --plan /path/to/<plan_id>.yaml \
   --run-id <local_energy_run_id>
 ```
 
@@ -149,7 +152,7 @@ Example:
 PYTHONPATH=profiler:. python -m energy_profiler.cli run-live-trial \
   --trial-id live-gemma-4-e4b-it-synthetic-256-128-90s-gpu1 \
   --output-dir results/energy/live_gemma_4_e4b_it_synthetic_256_128_90s_gpu1 \
-  --workload experiments/energy/synthetic_fixed_256_128.yaml \
+  --workload /path/to/synthetic_fixed_256_128.yaml \
   --model google/gemma-4-E4B-it \
   --base-url http://127.0.0.1:9300 \
   --endpoint /v1/completions \
@@ -199,7 +202,7 @@ Reviewed plans can also be submitted through `slurm_orchestrator`:
 
 ```bash
 PYTHONPATH=profiler:. python -m slurm_orchestrator.cli energy-submit \
-  --plan experiments/energy/<plan_id>.yaml \
+  --plan /path/to/<plan_id>.yaml \
   --run-id <energy_slurm_run_id>
 ```
 

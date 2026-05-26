@@ -1,7 +1,8 @@
 # Profiler Code Map
 
-This repository contains profiling tools for measuring LLM serving throughput,
-stability, orchestration behavior, and energy usage.
+This published version keeps the core profiling and orchestration modules used
+by the paper while omitting local planning artifacts, helper scripts, generated
+results, and most experiment/config assets.
 
 ## Core File Tree
 
@@ -72,19 +73,12 @@ profiler/
     planning.py
     state.py
 
-experiments/
-  energy/
-
 tests/
   llm_mst_finder/
   local_orchestrator/
   energy_profiler/
   mst_analyzer/
   slurm_orchestrator/
-
-skills/
-  analyze-orchestrator-failures/
-  rerun-manifest-review/
 ```
 
 ## Profiler Modules
@@ -99,6 +93,5 @@ skills/
 - `cpu_monitor.py`: CPU-side monitoring helper.
 - `benchmark_serving.py` and `backend_request_func.py`: baseline serving benchmark utilities retained for direct benchmark compatibility.
 
-Package-specific usage details live in each module's own `README.md`.
-Repo-local Codex skills live under `skills/`; install or copy them into
-`${CODEX_HOME:-$HOME/.codex}/skills` when they should be auto-discovered.
+The stripped publishable tree intentionally excludes repo-local skills,
+operational helper scripts, and bundled experiment manifests.

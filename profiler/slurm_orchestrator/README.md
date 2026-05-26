@@ -2,6 +2,9 @@
 
 This package is the cluster-facing companion to `local_orchestrator`. It does not lease GPUs, allocate local slots, or schedule work across a single host. Instead, it reuses the already-expanded experiment jobs from `local_orchestrator.matrix.expand_manifest(...)` and submits them to Slurm.
 
+This published repo keeps the Slurm orchestration code but omits the original
+manifest library and local helper scripts.
+
 ## Commands
 
 Plan a run and materialize the job payloads, per-job state files, and sbatch scripts:
@@ -41,14 +44,14 @@ PYTHONPATH=/path/to/BioLLM/profiler \
 ```
 
 By default, `collect` also publishes a compact, shareable subset to the shared
-results tree at `/depot/yiding/data/BioLLM-results/results`. For a run root such
+results tree at `/path/to/shared/results`. For a run root such
 as `/scratch/.../results/orchestrator/my-slurm-run`, the published files keep
 their paths relative to the local `results/` root, for example:
 
 ```text
-/depot/yiding/data/BioLLM-results/results/orchestrator/my-slurm-run
-/depot/yiding/data/BioLLM-results/results/mst/<model>/<workload>/<server>
-/depot/yiding/data/BioLLM-results/results/analysis/my-slurm-run
+/path/to/shared/results/orchestrator/my-slurm-run
+/path/to/shared/results/mst/<model>/<workload>/<server>
+/path/to/shared/results/analysis/my-slurm-run
 ```
 
 The default publish set is intentionally small:
@@ -107,8 +110,8 @@ The shared results root must be a real directory, not a symlink into private
 scratch storage. If it is currently a symlink, replace it once:
 
 ```bash
-rm /depot/yiding/data/BioLLM-results/results
-mkdir -p /depot/yiding/data/BioLLM-results/results
+rm /path/to/shared/results
+mkdir -p /path/to/shared/results
 ```
 
 Submit a reviewed `energy_profiler` plan as Slurm arrays:
@@ -116,7 +119,7 @@ Submit a reviewed `energy_profiler` plan as Slurm arrays:
 ```bash
 PYTHONPATH=/path/to/BioLLM/profiler \
   /path/to/venv/bin/python -m slurm_orchestrator.cli energy-submit \
-  --plan /path/to/experiments/energy/<plan_id>.yaml \
+  --plan /path/to/<plan_id>.yaml \
   --run-id my-energy-slurm-run
 ```
 
@@ -148,7 +151,7 @@ The Slurm adapter reads the optional top-level `slurm` section:
 ```yaml
 slurm:
   partition: ai
-  account: yiding
+  account: your-slurm-account
   qos: preemptible
   time: 04:00:00
   modules:
@@ -167,7 +170,7 @@ slurm:
 
 `--cpus-per-task` defaults to `slurm.cpus_per_gpu * launch.gpu_count`.
 `slurm.cpus_per_gpu` defaults to `14` for backward compatibility with the original cluster.
-Set `slurm.cpus_per_gpu: 32` for Anvil-style 4xA100 nodes with 128 CPUs, or set
+Set `slurm.cpus_per_gpu: 32` for 4xA100 nodes with 128 CPUs, or set
 `slurm.cpus_per_task` to force a fixed CPU count for every Slurm group.
 
 ## Submission Model
@@ -264,7 +267,7 @@ shape and are submitted through separate Slurm commands:
 ```bash
 PYTHONPATH=/path/to/BioLLM/profiler \
   /path/to/venv/bin/python -m slurm_orchestrator.cli quality-submit \
-  --manifest experiments/quality/run.yaml \
+  --manifest /path/to/run.yaml \
   --run-id my-quality-run
 
 PYTHONPATH=/path/to/BioLLM/profiler \

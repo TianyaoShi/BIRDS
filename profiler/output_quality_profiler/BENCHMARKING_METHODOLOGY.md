@@ -8,7 +8,7 @@ It reflects the implemented behavior in:
 - `profiler/output_quality_profiler/scoring.py`
 - `profiler/output_quality_profiler/benchmark_adapters/`
 - `profiler/dataset_workload_materializer/datasets/code.py`
-- `experiments/quality/*.yaml`
+- user-supplied quality generation manifests
 
 ## 1. Chat quality score from win/tie rate
 

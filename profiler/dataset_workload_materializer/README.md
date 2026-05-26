@@ -4,6 +4,10 @@ This package prepares dataset-specific profiling workloads for
 `llm_mst_finder` without adding dataset-specific behavior to the request client,
 trial runner, search loop, or profiler paths.
 
+This published repo does not bundle the original experiment manifests or
+materialized workload trees. Supply your own config YAMLs and output
+directories when using the CLI.
+
 The import path is `dataset_workload_materializer`. Treat it as the dataset
 materialization boundary: raw dataset artifacts go in, offline JSONL shards and
 ordinary `llm_mst_finder` workload YAMLs come out.
@@ -65,55 +69,31 @@ appears to be conversation-oriented around the Harmony tokenizer and did not
 produce useful code-completion continuations through `/v1/completions` in the
 plain-prefix probe.
 
-## Configs
+## Config Shape
 
-Current code-completion real-dataset configs live under
-`experiments/code_workloads/`:
-
-```text
-experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic.yaml
-experiments/code_workloads/repobench_python_java_aggregate_cache_realistic.yaml
-experiments/code_workloads/repobench_python_java_aggregate_cache_realistic_8k_drop.yaml
-```
-
-These code-completion configs explicitly set:
+Code-completion configs should explicitly set:
 
 ```yaml
 dataset:
   prompt_template: plain_prefix
 ```
 
-LongBench profile materialization configs live under
-`experiments/longbench_workloads/`.
-
-Reasoning-question materialization configs live under
-`experiments/reasoning_workloads/`:
-
-```text
-experiments/reasoning_workloads/gpqa_diamond_reasoning.yaml
-experiments/reasoning_workloads/gpqa_extended_reasoning.yaml
-experiments/reasoning_workloads/mmlu_reasoning.yaml
-experiments/reasoning_workloads/mmlu_pro_reasoning.yaml
-experiments/reasoning_workloads/aime_2024_2026_reasoning.yaml
-experiments/reasoning_workloads/hard_reasoning_small_mixed.yaml
-experiments/reasoning_workloads/supergpqa_reasoning.yaml
-experiments/reasoning_workloads/supergpqa_hard_reasoning.yaml
-experiments/reasoning_workloads/natural_reasoning.yaml
-```
+LongBench and reasoning-question configs follow the same top-level materializer
+schema; this publishable tree simply omits the repo-specific examples.
 
 Download and normalize the public source artifacts with:
 
 ```bash
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m dataset_workload_materializer.download_reasoning_sources \
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m dataset_workload_materializer.download_reasoning_sources \
   --output-dir data/raw/reasoning
 ```
 
 To fetch only the larger replacement reasoning sources:
 
 ```bash
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m dataset_workload_materializer.download_reasoning_sources \
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m dataset_workload_materializer.download_reasoning_sources \
   --output-dir data/raw/reasoning \
   --datasets supergpqa natural_reasoning
 ```
@@ -136,16 +116,16 @@ Run from the repository root with the project environment:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 \
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m dataset_workload_materializer.cli prepare \
-  --config experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic.yaml
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m dataset_workload_materializer.cli prepare \
+  --config /path/to/materialization_config.yaml
 ```
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 \
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m dataset_workload_materializer.cli prepare \
-  --config experiments/code_workloads/repobench_python_java_aggregate_cache_realistic.yaml
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m dataset_workload_materializer.cli prepare \
+  --config /path/to/another_materialization_config.yaml
 ```
 
 The generated output directory contains:
@@ -158,9 +138,8 @@ shards/*.runner.jsonl
 workload_yamls/*.yaml
 ```
 
-The generated directories under `experiments/code_workloads/*/` are ignored by
-git; the same is true for generated directories under
-`experiments/reasoning_workloads/*/`. The source config YAMLs are tracked.
+In the original working repo, generated workload directories lived beside the
+source configs. This published version omits those generated trees.
 
 ## Reasoning QA Workloads
 
@@ -313,8 +292,8 @@ The downloader writes the HF rows into the local JSONL layout expected by the
 materializer:
 
 ```bash
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python \
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python \
   -m dataset_workload_materializer.download_longbench_expansion_sources \
   --output-dir data/raw/longbench_expansion
 ```
@@ -329,9 +308,8 @@ into a short-context QA workload. The character floor is an intentional cheap
 prefilter before exact tokenizer counting; rows that pass it still must satisfy
 the token floor.
 
-Expansion materialization configs live alongside the original bucket configs as
-`experiments/longbench_workloads/materialization/*_expanded_qwen3_8b.yaml`.
-They add `dataset.external_datasets`, use
+Expansion materialization configs can live alongside the original bucket
+configs. They add `dataset.external_datasets`, use
 `sampling.external_samples_per_dataset`, and keep
 `sampling.max_external_group_reuse: 1` so a generated workload selects at most
 one request per source document/paper/meeting unless the config explicitly
@@ -402,36 +380,23 @@ retrieved cross-file context. The `llm_mst_finder` workload path should remain a
 generic runner over already-materialized JSONL rows.
 
 The immediate drop-overlength option is config-only: lower
-`filtering.max_prompt_tokens` in
-`experiments/code_workloads/repobench_python_java_aggregate_cache_realistic.yaml`
-from its current 20k ceiling to 8k or 4k and rematerialize. That gives a strict,
+`filtering.max_prompt_tokens` in the RepoBench materialization config from its
+current 20k ceiling to 8k or 4k and rematerialize. That gives a strict,
 fail-fast dataset slice without adding dataset logic to sampling or request
 execution. A smarter future option is a materializer-side truncation policy that
 keeps the current file and cursor-near prefix intact, then truncates retrieved
 context blocks to a configured token budget before final token counting.
 
-The current 8k-drop config materializes to
-`experiments/code_workloads/repobench_python_java_aggregate_cache_realistic_8k_drop/`.
-Its report shows 6,416 rows dropped for `prompt_too_long`, reducing the prompt
+An 8k-drop materialization can be written to a dedicated output directory. One
+such run dropped 6,416 rows for `prompt_too_long`, reducing the prompt
 distribution from p90/p95 8,308/10,880 tokens to p90/p95 5,366/6,732 tokens.
 
-## Experiment Manifest
+## Orchestrator Integration
 
-The L40 single-GPU manifest for these workloads is:
-
-```text
-experiments/single_gpu_cached_models_l40_code_workloads.yaml
-```
-
-It uses `/v1/completions`, not chat completions, and runs one representative
-materialized shard per dataset:
-
-```text
-experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml
-experiments/code_workloads/repobench_python_java_aggregate_cache_realistic_8k_drop/workload_yamls/shard_000.yaml
-```
-
-The manifest intentionally does not expand over every RepoBench shard. RepoBench
+When these workloads are used from an orchestrator manifest, prefer
+`/v1/completions` for code-completion traces and point each experiment at one
+representative materialized shard per dataset rather than expanding over every
+physical shard. RepoBench
 is already aggregated across Python, Java, and the supported task modes before
 sharding. `shard_000` is therefore a representative profiling slice used to
 avoid multiplying each model by every shard. This is a throughput/goodput probe,
@@ -459,8 +424,8 @@ Generated YAMLs are ordinary workload YAMLs. Example:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 \
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -c "from llm_mst_finder.workload import prepare_workload_for_trial; p=prepare_workload_for_trial('experiments/code_workloads/crosscodeeval_rg1_unixcoder_cache_realistic/workload_yamls/shard_000.yaml', model_name='fake-model'); print(len(p.samples), p.samples[0].metadata['sampling_entry_selection'])"
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -c "from llm_mst_finder.workload import prepare_workload_for_trial; p=prepare_workload_for_trial('/path/to/workload_yamls/shard_000.yaml', model_name='fake-model'); print(len(p.samples), p.samples[0].metadata['sampling_entry_selection'])"
 ```
 
 `llm_mst_finder` caches JSONL workload manifests. The cache key includes a
@@ -470,15 +435,17 @@ If a probe unexpectedly shows old prompts, check for stale cache behavior first.
 ## Live Diagnostics
 
 `live_model_prompt_loop.py` runs a small response-inspection loop over one or
-more single-GPU models from `experiments/single_gpu_cached_models_l40.yaml`.
-Llama-2 models are excluded by default because their context length is usually
-too short for these workloads.
+more single-GPU models from a user-supplied orchestrator manifest. Llama-2
+models are excluded by default because their context length is usually too
+short for these workloads.
 
 Example single-model probe on GPU 0:
 
 ```bash
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m dataset_workload_materializer.live_model_prompt_loop \
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m dataset_workload_materializer.live_model_prompt_loop \
+  --manifest /path/to/single_gpu_manifest.yaml \
+  --workload /path/to/workload_yamls/shard_000.yaml \
   --model Qwen/Qwen3-8B \
   --samples-per-workload 8 \
   --max-output-tokens 64 \
@@ -506,8 +473,8 @@ Targeted tests:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 \
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m pytest \
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m pytest \
   tests/llm_mst_finder/test_workload.py \
   tests/dataset_workload_materializer/test_materialize.py \
   tests/dataset_workload_materializer/test_live_code_workloads.py \
@@ -522,7 +489,7 @@ CODE_WORKLOAD_LIVE_MODEL=google/gemma-4-E4B-it \
 CODE_WORKLOAD_LIVE_BASE_URL=http://127.0.0.1:8000 \
 CODE_WORKLOAD_LIVE_LOG_PATH=results/live_code_workload_smoke/decoded_responses.jsonl \
 PYTHONDONTWRITEBYTECODE=1 \
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m pytest \
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m pytest \
   tests/dataset_workload_materializer/test_live_code_workloads.py -q -s
 ```

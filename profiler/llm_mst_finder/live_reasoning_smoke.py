@@ -46,18 +46,6 @@ MODELS = [
     },
 ]
 
-WORKLOADS = [
-    {
-        "name": "mmlu_pro",
-        "path": Path("experiments/reasoning_workloads/mmlu_pro_reasoning/workload_yamls/shard_000.yaml"),
-    },
-    {
-        "name": "supergpqa_hard",
-        "path": Path("experiments/reasoning_workloads/supergpqa_hard_reasoning/workload_yamls/shard_000.yaml"),
-    },
-]
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run short live reasoning run-trial smoke tests.")
     parser.add_argument(
@@ -70,6 +58,14 @@ def main() -> int:
     parser.add_argument("--duration-s", type=float, default=120.0)
     parser.add_argument("--readiness-timeout-s", type=float, default=900.0)
     parser.add_argument("--max-model-len", type=int, default=8192)
+    parser.add_argument(
+        "--workload",
+        action="append",
+        nargs=2,
+        metavar=("NAME", "PATH"),
+        required=True,
+        help="repeat with a logical workload name and workload YAML path",
+    )
     args = parser.parse_args()
 
     if args.samples_per_workload <= 0:
@@ -77,6 +73,7 @@ def main() -> int:
     if args.max_tokens <= 0:
         raise ValueError("--max-tokens must be positive")
 
+    workloads = [{"name": name, "path": Path(path)} for name, path in args.workload]
     output_root = args.output_root.resolve()
     logs_dir = output_root / "logs"
     workloads_dir = output_root / "workloads"
@@ -91,7 +88,7 @@ def main() -> int:
             max_tokens=args.max_tokens,
             max_model_len=args.max_model_len,
         )
-        for workload in WORKLOADS
+        for workload in workloads
     }
 
     servers = []

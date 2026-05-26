@@ -13,7 +13,7 @@ from llm_mst_finder.cli import main
 LIVE_SERVER_ENV = "LLM_MST_FINDER_RUN_LIVE"
 MODEL_NAME = "meta-llama/Llama-2-7b-chat-hf"
 DATASET_PATH = (
-    "/local/scratch/a/shi676/llm_profiling/datasets/shareGPT/"
+    "/path/to/datasets/datasets/shareGPT/"
     "ShareGPT_V3_unfiltered_cleaned_split_no_imsorry.json"
 )
 REQUEST_RATES = (8.0, 10.0)

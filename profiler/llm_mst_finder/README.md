@@ -2,6 +2,9 @@
 
 `llm_mst_finder` estimates the maximum sustainable external request rate for one live OpenAI-compatible vLLM endpoint under one fixed serving configuration.
 
+This published repo keeps the runtime and analysis code but omits the original
+bundled workload YAML collection.
+
 The result should be read as:
 
 ```text
@@ -15,8 +18,8 @@ It is not a vLLM launcher, GPU scheduler, or server-configuration searcher. An u
 Use the shared uv-managed environment:
 
 ```bash
-export PYTHONPATH=/local/scratch/a/shi676/arr26/profiler
-/local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli --help
+export PYTHONPATH=/path/to/BioLLM/profiler
+/path/to/venv/bin/python -m llm_mst_finder.cli --help
 ```
 
 `scipy` is required for stability trend statistics. The package intentionally fails if `scipy.stats` is unavailable.
@@ -113,9 +116,10 @@ context_policy:
   over_limit: fail
 ```
 
-Tracked experiment workload templates should not contain cluster-specific raw
-dataset paths. For the standard ShareGPT workload, keep the tracked YAML pointed
-at `data/local/sharegpt/...` and set the local symlink once on each cluster:
+Tracked workload templates should not contain cluster-specific raw dataset
+paths. One practical pattern is to keep workload YAMLs pointed at a stable
+local alias such as `data/local/sharegpt/...` and set the local symlink once on
+each cluster:
 
 ```bash
 mkdir -p data/local
@@ -330,8 +334,8 @@ There is no E2E SLO interface.
 Run one open-loop trial:
 
 ```bash
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli run-trial \
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m llm_mst_finder.cli run-trial \
   --trial-id trial_r10 \
   --mode open-loop \
   --request-rate 10 \
@@ -347,8 +351,8 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 Run adaptive search:
 
 ```bash
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli search \
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m llm_mst_finder.cli search \
   --search-id SEARCH_ID \
   --search-mode open-loop \
   --output-dir results/mst/MODEL_WORKLOAD_SERVER \
@@ -370,21 +374,21 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 Analyze and report:
 
 ```bash
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli analyze \
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m llm_mst_finder.cli analyze \
   --trial-dir results/trial_r10
 
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli report \
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m llm_mst_finder.cli report \
   --result-dir results/mst/MODEL_WORKLOAD_SERVER
 ```
 
 Inspect a workload before profiling:
 
 ```bash
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m llm_mst_finder.cli inspect-workload \
-  --workload experiments/workloads/wildchat_hf.yaml \
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m llm_mst_finder.cli inspect-workload \
+  --workload /path/to/workload.yaml \
   --model google/gemma-4-E4B-it \
   --sample-size 4096 \
   --output results/mst/wildchat_inspection.json

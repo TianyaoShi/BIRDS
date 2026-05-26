@@ -42,7 +42,7 @@ from .quality import (
 from .state import collect_run, finalize_task, mark_task_running
 
 
-DEFAULT_RESULTS_SYNC_DEST = Path("/depot/yiding/data/BioLLM-results/results")
+DEFAULT_RESULTS_SYNC_DEST = Path("/path/to/shared/results")
 RESULTS_SYNC_DEST_ENV = "SLURM_ORCHESTRATOR_SYNC_RESULTS_TO"
 RESULTS_SYNC_EXISTING_ENV = "SLURM_ORCHESTRATOR_SYNC_RESULTS_EXISTING"
 RESULTS_SYNC_ROOT_ENV = "SLURM_ORCHESTRATOR_SYNC_RESULTS_ROOT"

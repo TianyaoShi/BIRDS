@@ -19,19 +19,22 @@ The V1 contract is intentionally fixed:
 This package must not run MST search, latency reporting, or energy monitoring.
 Its authoritative generation artifact is `responses.jsonl`.
 
+This published repo omits the original experiment manifests, judge templates,
+and scorebooks. Use equivalent user-supplied inputs with the same CLI shape.
+
 Current commands:
 
 ```bash
 PYTHONPATH=profiler:. python -m output_quality_profiler.cli validate-materialization \
-  --config experiments/quality/sharegpt_wildchat_10k.yaml
+  --config /path/to/materialization_config.yaml
 
 PYTHONPATH=profiler:. python -m output_quality_profiler.cli dry-run \
-  --manifest experiments/quality/run.yaml
+  --manifest /path/to/run.yaml
 
 PYTHONPATH=profiler:. python -m output_quality_profiler.cli run-live-generation \
   --job-id shard_000 \
   --output-dir results/quality/live-shard-000 \
-  --workload experiments/quality/sharegpt_wildchat_10k/workload_yamls/shard_000.yaml \
+  --workload /path/to/workload_yamls/shard_000.yaml \
   --model <model-name> \
   --base-url http://127.0.0.1:<port> \
   --endpoint /v1/chat/completions \
@@ -49,7 +52,7 @@ PYTHONPATH=profiler:. python -m output_quality_profiler.cli build-judge-batch \
   --responses-root results/quality/<run_id>/responses \
   --reference-model-slug meta-llama-llama-3-1-8b-instruct \
   --candidate-model-slug qwen-qwen3-8b \
-  --judge-template codex_plan/output_quality_profiler/llm_as_a_judge_template.md \
+  --judge-template /path/to/llm_as_a_judge_template.md \
   --output-dir results/quality/<run_id>/judge_batches/<batch_name> \
   --evaluator-model gpt-4.1-nano \
   --max-comparisons 100
@@ -71,7 +74,7 @@ judgments before reporting final scores.
 Phase F adds a two-step path for benchmarks with ground truth:
 
 1. select missing `(model, benchmark)` pairs from
-   `experiments/quality/benchmark-scores-1.xlsx`;
+   a benchmark score workbook;
 2. collect responses with the same Slurm quality generation path, then score
    saved response JSONL with benchmark adapters.
 
@@ -86,23 +89,18 @@ the original benchmark/evaluator contract. Code targets exclude `gpt-oss`
 models, and LongBench excludes Llama-2 models. LongBench is reported as a
 covered-task subset, not full LongBench v1.
 
-Do not use the latency/energy LongBench materializations under
-`experiments/longbench_workloads/materialization/*_qwen3_8b`: those shards use
-repeat expansion for profiling. Do not use the `*_expanded_qwen3_8b` variants
-either because they include external expansion rows without benchmark reference
-answers. The benchmark registry only accepts no-repeat original-task
-materializations under `experiments/longbench_workloads/benchmark_original/`
-and checks each materialization report before building response manifests.
+Use benchmark-compatible materializations with original-task reference answers.
+Do not point this path at profiling-only repeat-expanded workload trees.
 
 ```bash
 PYTHONPATH=profiler:. python -m output_quality_profiler.cli select-missing-benchmark-scores \
-  --scorebook experiments/quality/benchmark-scores-1.xlsx \
+  --scorebook /path/to/benchmark_scores.xlsx \
   --output-dir results/quality/<run_id>/benchmark_selection
 
 PYTHONPATH=profiler:. python -m output_quality_profiler.cli build-benchmark-generation-manifest \
   --missing-plan results/quality/<run_id>/benchmark_selection/missing_scores.json \
-  --base-manifest experiments/quality/h100_sharegpt_wildchat_10k_responses.yaml \
-  --output experiments/quality/<run_id>_benchmark_responses.yaml \
+  --base-manifest /path/to/base_generation_manifest.yaml \
+  --output /path/to/<run_id>_benchmark_responses.yaml \
   --include-benchmark CrossCodeEval
 
 PYTHONPATH=profiler:. python -m output_quality_profiler.cli score-benchmark-responses \

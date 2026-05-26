@@ -25,15 +25,14 @@ Both analyzer and plot commands accept repeated orchestrator run roots. When mul
 - `reporting.py` - JSON/Markdown report generation and rerun manifest output
 - `plotting.py` - reusable model-size scatter plotting helpers
 - `cli.py` - command-line entrypoint
-- `../../skills/rerun-manifest-review/SKILL.md` - repo-local checklist for reviewing generated rerun manifests before launch
 
 ## CLI
 
 Example:
 
 ```bash
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m mst_analyzer.cli analyze \
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m mst_analyzer.cli analyze \
   --orchestrator-run-root results/orchestrator/single-gpu-model-loop-run-sharegpt-000 \
   --output-dir results/analysis/single-gpu-model-loop-run-sharegpt-000
 ```
@@ -41,8 +40,8 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 Aggregate a main run plus rerun artifacts by listing the main root first and the rerun root last:
 
 ```bash
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m mst_analyzer.cli analyze \
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m mst_analyzer.cli analyze \
   --orchestrator-run-root results/orchestrator/single-gpu-model-loop-run-sharegpt-000 \
   --orchestrator-run-root results/orchestrator/chat-anomaly-rerun-000 \
   --output-dir results/analysis/single-gpu-model-loop-run-sharegpt-000-with-rerun
@@ -51,8 +50,8 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 With custom settings and explicit rerun-manifest generation:
 
 ```bash
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m mst_analyzer.cli analyze \
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m mst_analyzer.cli analyze \
   --orchestrator-run-root results/orchestrator/single-gpu-model-loop-run-sharegpt-000 \
   --output-dir results/analysis/single-gpu-model-loop-run-sharegpt-000-tuned \
   --emit-rerun-manifest \
@@ -62,8 +61,8 @@ PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
 Plot the model-size vs MST scatter from either the analyzer rows JSON or a completed orchestrator run:
 
 ```bash
-PYTHONPATH=/local/scratch/a/shi676/arr26/profiler \
-/local/scratch/a/shi676/.venv/bin/python -m mst_analyzer.cli plot \
+PYTHONPATH=/path/to/BioLLM/profiler \
+/path/to/venv/bin/python -m mst_analyzer.cli plot \
   --mst-rows-json results/analysis/single-gpu-model-loop-run-sharegpt-000/mst_rows.json \
   --output-path results/analysis/single-gpu-model-loop-run-sharegpt-000/model_size_vs_mst.png
 ```
@@ -90,7 +89,7 @@ The analyzer supports threshold and suppression overrides from YAML, but the def
 
 The template file is:
 
-- [settings_template.yaml](/local/scratch/a/shi676/arr26/profiler/mst_analyzer/settings_template.yaml)
+- [settings_template.yaml](/path/to/BioLLM/profiler/mst_analyzer/settings_template.yaml)
 
 Main settings groups:
 
