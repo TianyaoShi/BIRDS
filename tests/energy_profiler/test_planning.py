@@ -9,6 +9,7 @@ import yaml
 from energy_profiler.models import EnergyPlanRounding, EnergyPlanSelection, EnergyPlanSelectionSweep
 from energy_profiler.planning import (
     PlanningError,
+    build_sweep_rates,
     generate_plan_from_orchestrator,
     generate_plan_from_orchestrator_runs,
 )
@@ -216,9 +217,25 @@ def test_generate_sweep_plan_uses_coarser_step_to_respect_cap(tmp_path: Path, mo
         ),
     )
 
-    assert [job.request_rate for job in plan.jobs] == [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
+    assert [job.request_rate for job in plan.jobs] == [0.25, 0.75, 1.25, 1.75, 2.25, 2.75, 3.25, 3.75, 4.25]
     assert all(job.metadata["rounding_step"] == pytest.approx(0.5) for job in plan.jobs)
-    assert [job.metadata["sweep_rate_index"] for job in plan.jobs] == list(range(1, 9))
+    assert [job.metadata["sweep_rate_index"] for job in plan.jobs] == list(range(1, 10))
+    assert plan.jobs[-1].request_rate == pytest.approx(4.25)
+
+
+def test_build_sweep_rates_caps_large_mst_to_max_steps() -> None:
+    rates, step, clamped = build_sweep_rates(
+        68.9,
+        EnergyPlanRounding(mst_mode="floor_preferred", sweep_mode="floor_preferred"),
+        max_steps=20,
+    )
+
+    assert clamped is False
+    assert step == pytest.approx(4.0)
+    assert len(rates) == 18
+    assert rates[0] == pytest.approx(1.0)
+    assert rates[-1] == pytest.approx(68.0)
+    assert len(rates) <= 20
 
 
 def test_generate_explicit_plan_validates_requested_filters(tmp_path: Path, monkeypatch) -> None:

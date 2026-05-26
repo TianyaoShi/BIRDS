@@ -36,7 +36,7 @@ defaults:
   gpu_monitor_interval_s: 0.025
   gpu_monitor_truncate_s: 5.0
   monitor_clock: false
-  request_timeout_s: 21600
+  request_timeout_s: 21600.0
   safety_max_outstanding: null
 local_execution:
   allowed_gpu_ids:
@@ -115,90 +115,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
     sweep_rate_index: 1
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r2
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 2.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 2
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r3
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 3.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 3
-    sweep_rate_count: 48
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r4
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -235,90 +155,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 4
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r5
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 5.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 5
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r6
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 6.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 6
-    sweep_rate_count: 48
+    sweep_rate_index: 2
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r7
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -355,90 +195,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 7
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r8
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 8.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 8
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r9
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 9.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 9
-    sweep_rate_count: 48
+    sweep_rate_index: 3
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r10
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -475,90 +235,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 10
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r11
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 11.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 11
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r12
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 12.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 12
-    sweep_rate_count: 48
+    sweep_rate_index: 4
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r13
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -595,90 +275,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 13
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r14
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 14.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 14
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r15
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 15.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 15
-    sweep_rate_count: 48
+    sweep_rate_index: 5
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r16
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -715,90 +315,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 16
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r17
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 17.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 17
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r18
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 18.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 18
-    sweep_rate_count: 48
+    sweep_rate_index: 6
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r19
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -835,90 +355,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 19
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r20
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 20.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 20
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r21
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 21.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 21
-    sweep_rate_count: 48
+    sweep_rate_index: 7
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r22
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -955,90 +395,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 22
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r23
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 23.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 23
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r24
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 24.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 24
-    sweep_rate_count: 48
+    sweep_rate_index: 8
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r25
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -1075,90 +435,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 25
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r26
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 26.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 26
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r27
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 27.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 27
-    sweep_rate_count: 48
+    sweep_rate_index: 9
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r28
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -1195,90 +475,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 28
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r29
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 29.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 29
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r30
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 30.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 30
-    sweep_rate_count: 48
+    sweep_rate_index: 10
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r31
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -1315,90 +515,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 31
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r32
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 32.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 32
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r33
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 33.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 33
-    sweep_rate_count: 48
+    sweep_rate_index: 11
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r34
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -1435,90 +555,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 34
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r35
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 35.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 35
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r36
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 36.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 36
-    sweep_rate_count: 48
+    sweep_rate_index: 12
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r37
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -1555,90 +595,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 37
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r38
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 38.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 38
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r39
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 39.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 39
-    sweep_rate_count: 48
+    sweep_rate_index: 13
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r40
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -1675,90 +635,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 40
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r41
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 41.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 41
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r42
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 42.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 42
-    sweep_rate_count: 48
+    sweep_rate_index: 14
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r43
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -1795,90 +675,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 43
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r44
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 44.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 44
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r45
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 45.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 45
-    sweep_rate_count: 48
+    sweep_rate_index: 15
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r46
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -1915,50 +715,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 46
-    sweep_rate_count: 48
-- id: google-gemma-4-e4b-it-wildchat-hf-r47
-  source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
-  model: google/gemma-4-E4B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 47.0
-  mst_rate: 48.18654143200742
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 28b717c2575cfe5893d80876050d6ddd640ca8d1626d8dd30f733cd5b95d9e06
-  server_config_slug: server-734e821846d2
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-e4b-it-h100-wildchat-tp1
-    search_mode: hybrid
-    confirmation_trial_id: trial_015_openloop_r48_1865
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 47
-    sweep_rate_count: 48
+    sweep_rate_index: 16
+    sweep_rate_count: 17
 - id: google-gemma-4-e4b-it-wildchat-hf-r48
   source_experiment_id: gemma-4-e4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-e4b-it/wildchat-hf/server-734e821846d2
@@ -1995,10 +755,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_015_openloop_r48_1865
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 48.18654143200742
-    sweep_rate_index: 48
-    sweep_rate_count: 48
+    sweep_rate_index: 17
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r1
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -2035,90 +795,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
     sweep_rate_index: 1
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r2
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 2.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 2
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r3
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 3.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 3
-    sweep_rate_count: 47
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r4
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -2155,90 +835,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 4
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r5
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 5.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 5
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r6
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 6.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 6
-    sweep_rate_count: 47
+    sweep_rate_index: 2
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r7
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -2275,90 +875,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 7
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r8
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 8.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 8
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r9
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 9.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 9
-    sweep_rate_count: 47
+    sweep_rate_index: 3
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r10
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -2395,90 +915,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 10
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r11
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 11.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 11
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r12
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 12.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 12
-    sweep_rate_count: 47
+    sweep_rate_index: 4
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r13
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -2515,90 +955,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 13
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r14
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 14.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 14
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r15
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 15.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 15
-    sweep_rate_count: 47
+    sweep_rate_index: 5
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r16
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -2635,90 +995,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 16
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r17
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 17.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 17
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r18
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 18.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 18
-    sweep_rate_count: 47
+    sweep_rate_index: 6
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r19
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -2755,90 +1035,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 19
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r20
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 20.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 20
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r21
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 21.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 21
-    sweep_rate_count: 47
+    sweep_rate_index: 7
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r22
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -2875,90 +1075,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 22
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r23
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 23.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 23
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r24
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 24.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 24
-    sweep_rate_count: 47
+    sweep_rate_index: 8
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r25
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -2995,90 +1115,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 25
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r26
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 26.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 26
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r27
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 27.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 27
-    sweep_rate_count: 47
+    sweep_rate_index: 9
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r28
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -3115,90 +1155,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 28
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r29
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 29.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 29
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r30
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 30.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 30
-    sweep_rate_count: 47
+    sweep_rate_index: 10
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r31
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -3235,90 +1195,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 31
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r32
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 32.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 32
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r33
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 33.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 33
-    sweep_rate_count: 47
+    sweep_rate_index: 11
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r34
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -3355,90 +1235,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 34
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r35
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 35.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 35
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r36
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 36.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 36
-    sweep_rate_count: 47
+    sweep_rate_index: 12
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r37
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -3475,90 +1275,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 37
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r38
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 38.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 38
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r39
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 39.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 39
-    sweep_rate_count: 47
+    sweep_rate_index: 13
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r40
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -3595,90 +1315,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 40
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r41
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 41.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 41
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r42
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 42.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 42
-    sweep_rate_count: 47
+    sweep_rate_index: 14
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r43
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -3715,90 +1355,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 43
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r44
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 44.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 44
-    sweep_rate_count: 47
-- id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r45
-  source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
-  model: Qwen/Qwen3-4B-Instruct-2507
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 45.0
-  mst_rate: 47.29772642989177
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 1
-    gpu_count: 1
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 32768
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 7b711aa9c9553ae139908c34c12442967e14ea1e59d38f7f1d7b78f114fd9244
-  server_config_slug: server-853bd056a593
-  metadata:
-    source_orchestrator_run_id: rerun-chat-anomaly-000
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/rerun-chat-anomaly-000
-    search_id: chat-rerun-wildchat-qwen3-4b-instruct
-    search_mode: hybrid
-    confirmation_trial_id: trial_020_openloop_r47_2977
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 45
-    sweep_rate_count: 47
+    sweep_rate_index: 15
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r46
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -3835,10 +1395,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 46
-    sweep_rate_count: 47
+    sweep_rate_index: 16
+    sweep_rate_count: 17
 - id: qwen-qwen3-4b-instruct-2507-wildchat-hf-r47
   source_experiment_id: chat-rerun-wildchat-qwen3-4b-instruct
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/h100-chat-anomaly-rerun-000/qwen-qwen3-4b-instruct-2507/wildchat-hf/server-853bd056a593
@@ -3875,10 +1435,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_020_openloop_r47_2977
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 3.0
     rounded_from_rate: 47.29772642989177
-    sweep_rate_index: 47
-    sweep_rate_count: 47
+    sweep_rate_index: 17
+    sweep_rate_count: 17
 - id: google-gemma-4-31b-it-wildchat-hf-8192-r1
   source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
@@ -3915,50 +1475,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_024_openloop_r21_6438
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 2.0
     rounded_from_rate: 21.643814224350155
     sweep_rate_index: 1
-    sweep_rate_count: 21
-- id: google-gemma-4-31b-it-wildchat-hf-8192-r2
-  source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
-  model: google/gemma-4-31B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf_8192.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 2.0
-  mst_rate: 21.643814224350155
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 4
-    gpu_count: 4
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 8192
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 8932add9ce704301bea85277234168960d3ae9f33c0baa2239d40fb7f7366fd8
-  server_config_slug: server-c17c9ecefd8c
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-31b-it-h100-wildchat-tp4
-    search_mode: hybrid
-    confirmation_trial_id: trial_024_openloop_r21_6438
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 2
-    sweep_rate_count: 21
+    sweep_rate_count: 11
 - id: google-gemma-4-31b-it-wildchat-hf-8192-r3
   source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
@@ -3995,50 +1515,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_024_openloop_r21_6438
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 2.0
     rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 3
-    sweep_rate_count: 21
-- id: google-gemma-4-31b-it-wildchat-hf-8192-r4
-  source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
-  model: google/gemma-4-31B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf_8192.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 4.0
-  mst_rate: 21.643814224350155
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 4
-    gpu_count: 4
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 8192
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 8932add9ce704301bea85277234168960d3ae9f33c0baa2239d40fb7f7366fd8
-  server_config_slug: server-c17c9ecefd8c
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-31b-it-h100-wildchat-tp4
-    search_mode: hybrid
-    confirmation_trial_id: trial_024_openloop_r21_6438
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 4
-    sweep_rate_count: 21
+    sweep_rate_index: 2
+    sweep_rate_count: 11
 - id: google-gemma-4-31b-it-wildchat-hf-8192-r5
   source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
@@ -4075,50 +1555,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_024_openloop_r21_6438
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 2.0
     rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 5
-    sweep_rate_count: 21
-- id: google-gemma-4-31b-it-wildchat-hf-8192-r6
-  source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
-  model: google/gemma-4-31B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf_8192.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 6.0
-  mst_rate: 21.643814224350155
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 4
-    gpu_count: 4
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 8192
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 8932add9ce704301bea85277234168960d3ae9f33c0baa2239d40fb7f7366fd8
-  server_config_slug: server-c17c9ecefd8c
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-31b-it-h100-wildchat-tp4
-    search_mode: hybrid
-    confirmation_trial_id: trial_024_openloop_r21_6438
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 6
-    sweep_rate_count: 21
+    sweep_rate_index: 3
+    sweep_rate_count: 11
 - id: google-gemma-4-31b-it-wildchat-hf-8192-r7
   source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
@@ -4155,50 +1595,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_024_openloop_r21_6438
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 2.0
     rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 7
-    sweep_rate_count: 21
-- id: google-gemma-4-31b-it-wildchat-hf-8192-r8
-  source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
-  model: google/gemma-4-31B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf_8192.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 8.0
-  mst_rate: 21.643814224350155
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 4
-    gpu_count: 4
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 8192
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 8932add9ce704301bea85277234168960d3ae9f33c0baa2239d40fb7f7366fd8
-  server_config_slug: server-c17c9ecefd8c
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-31b-it-h100-wildchat-tp4
-    search_mode: hybrid
-    confirmation_trial_id: trial_024_openloop_r21_6438
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 8
-    sweep_rate_count: 21
+    sweep_rate_index: 4
+    sweep_rate_count: 11
 - id: google-gemma-4-31b-it-wildchat-hf-8192-r9
   source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
@@ -4235,50 +1635,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_024_openloop_r21_6438
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 2.0
     rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 9
-    sweep_rate_count: 21
-- id: google-gemma-4-31b-it-wildchat-hf-8192-r10
-  source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
-  model: google/gemma-4-31B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf_8192.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 10.0
-  mst_rate: 21.643814224350155
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 4
-    gpu_count: 4
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 8192
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 8932add9ce704301bea85277234168960d3ae9f33c0baa2239d40fb7f7366fd8
-  server_config_slug: server-c17c9ecefd8c
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-31b-it-h100-wildchat-tp4
-    search_mode: hybrid
-    confirmation_trial_id: trial_024_openloop_r21_6438
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 10
-    sweep_rate_count: 21
+    sweep_rate_index: 5
+    sweep_rate_count: 11
 - id: google-gemma-4-31b-it-wildchat-hf-8192-r11
   source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
@@ -4315,50 +1675,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_024_openloop_r21_6438
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 2.0
     rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 11
-    sweep_rate_count: 21
-- id: google-gemma-4-31b-it-wildchat-hf-8192-r12
-  source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
-  model: google/gemma-4-31B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf_8192.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 12.0
-  mst_rate: 21.643814224350155
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 4
-    gpu_count: 4
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 8192
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 8932add9ce704301bea85277234168960d3ae9f33c0baa2239d40fb7f7366fd8
-  server_config_slug: server-c17c9ecefd8c
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-31b-it-h100-wildchat-tp4
-    search_mode: hybrid
-    confirmation_trial_id: trial_024_openloop_r21_6438
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 12
-    sweep_rate_count: 21
+    sweep_rate_index: 6
+    sweep_rate_count: 11
 - id: google-gemma-4-31b-it-wildchat-hf-8192-r13
   source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
@@ -4395,50 +1715,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_024_openloop_r21_6438
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 2.0
     rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 13
-    sweep_rate_count: 21
-- id: google-gemma-4-31b-it-wildchat-hf-8192-r14
-  source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
-  model: google/gemma-4-31B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf_8192.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 14.0
-  mst_rate: 21.643814224350155
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 4
-    gpu_count: 4
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 8192
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 8932add9ce704301bea85277234168960d3ae9f33c0baa2239d40fb7f7366fd8
-  server_config_slug: server-c17c9ecefd8c
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-31b-it-h100-wildchat-tp4
-    search_mode: hybrid
-    confirmation_trial_id: trial_024_openloop_r21_6438
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 14
-    sweep_rate_count: 21
+    sweep_rate_index: 7
+    sweep_rate_count: 11
 - id: google-gemma-4-31b-it-wildchat-hf-8192-r15
   source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
@@ -4475,50 +1755,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_024_openloop_r21_6438
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 2.0
     rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 15
-    sweep_rate_count: 21
-- id: google-gemma-4-31b-it-wildchat-hf-8192-r16
-  source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
-  model: google/gemma-4-31B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf_8192.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 16.0
-  mst_rate: 21.643814224350155
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 4
-    gpu_count: 4
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 8192
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 8932add9ce704301bea85277234168960d3ae9f33c0baa2239d40fb7f7366fd8
-  server_config_slug: server-c17c9ecefd8c
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-31b-it-h100-wildchat-tp4
-    search_mode: hybrid
-    confirmation_trial_id: trial_024_openloop_r21_6438
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 16
-    sweep_rate_count: 21
+    sweep_rate_index: 8
+    sweep_rate_count: 11
 - id: google-gemma-4-31b-it-wildchat-hf-8192-r17
   source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
@@ -4555,50 +1795,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_024_openloop_r21_6438
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 2.0
     rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 17
-    sweep_rate_count: 21
-- id: google-gemma-4-31b-it-wildchat-hf-8192-r18
-  source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
-  model: google/gemma-4-31B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf_8192.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 18.0
-  mst_rate: 21.643814224350155
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 4
-    gpu_count: 4
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 8192
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 8932add9ce704301bea85277234168960d3ae9f33c0baa2239d40fb7f7366fd8
-  server_config_slug: server-c17c9ecefd8c
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-31b-it-h100-wildchat-tp4
-    search_mode: hybrid
-    confirmation_trial_id: trial_024_openloop_r21_6438
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 18
-    sweep_rate_count: 21
+    sweep_rate_index: 9
+    sweep_rate_count: 11
 - id: google-gemma-4-31b-it-wildchat-hf-8192-r19
   source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
@@ -4635,50 +1835,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_024_openloop_r21_6438
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 2.0
     rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 19
-    sweep_rate_count: 21
-- id: google-gemma-4-31b-it-wildchat-hf-8192-r20
-  source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
-  source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
-  model: google/gemma-4-31B-it
-  workload: /scratch/gautschi/shi676/BioLLM/experiments/workloads/wildchat_hf_8192.yaml
-  endpoint: /v1/chat/completions
-  request_rate: 20.0
-  mst_rate: 21.643814224350155
-  mst_rate_source: max_slo_satisfying_request_rate
-  launch:
-    template: null
-    executable: vllm
-    extra_args: []
-    env: {}
-    tensor_parallel_size: 4
-    gpu_count: 4
-    dtype: float16
-    quantization: null
-    tokenizer_mode: null
-    gpu_memory_utilization: 0.9
-    max_model_len: 8192
-    max_num_seqs: 1024.0
-    max_num_batched_tokens: 8192.0
-    host: 127.0.0.1
-    readiness_path: /v1/models
-    readiness_timeout_s: 1200.0
-    readiness_interval_s: 2.0
-  server_signature_key: 8932add9ce704301bea85277234168960d3ae9f33c0baa2239d40fb7f7366fd8
-  server_config_slug: server-c17c9ecefd8c
-  metadata:
-    source_orchestrator_run_id: run-wildchat-001
-    source_orchestrator_run_root: /scratch/gautschi/shi676/BioLLM/results/orchestrator/run-wildchat-001
-    search_id: gemma-4-31b-it-h100-wildchat-tp4
-    search_mode: hybrid
-    confirmation_trial_id: trial_024_openloop_r21_6438
-    rounding_policy: floor_preferred
-    rounding_step: 1.0
-    rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 20
-    sweep_rate_count: 21
+    sweep_rate_index: 10
+    sweep_rate_count: 11
 - id: google-gemma-4-31b-it-wildchat-hf-8192-r21
   source_experiment_id: gemma-4-31b-it-h100-wildchat-tp4
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-31b-it/wildchat-hf-8192/server-c17c9ecefd8c
@@ -4715,10 +1875,10 @@ jobs:
     search_mode: hybrid
     confirmation_trial_id: trial_024_openloop_r21_6438
     rounding_policy: floor_preferred
-    rounding_step: 1.0
+    rounding_step: 2.0
     rounded_from_rate: 21.643814224350155
-    sweep_rate_index: 21
-    sweep_rate_count: 21
+    sweep_rate_index: 11
+    sweep_rate_count: 11
 - id: google-gemma-4-26b-a4b-it-wildchat-hf-r1
   source_experiment_id: gemma-4-26b-a4b-it-h100-wildchat-tp1
   source_result_dir: /scratch/gautschi/shi676/BioLLM/results/mst/google-gemma-4-26b-a4b-it/wildchat-hf/server-f3b504f8af2a

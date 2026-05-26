@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import sys
-from decimal import Decimal, ROUND_FLOOR
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -668,25 +668,54 @@ def build_sweep_rates(
     if mst_rate < rounding.minimum_rate:
         return [rounding.minimum_rate], choose_display_step(mst_rate, rounding), True
 
-    chosen_step = float(rounding.preferred_steps[-1])
-    for step in rounding.preferred_steps:
-        point_count = int(_decimal_from_float(mst_rate) / _decimal_from_float(step))
-        if point_count <= max_steps:
-            chosen_step = float(step)
-            break
+    base_step = choose_display_step(mst_rate, rounding)
+    rounded_mst = _floor_to_step(mst_rate, base_step)
+    base_step_decimal = _decimal_from_float(base_step)
+    rounded_mst_decimal = _decimal_from_float(rounded_mst)
 
-    rounded_mst = _floor_to_step(mst_rate, chosen_step)
+    point_count = int(rounded_mst_decimal / base_step_decimal)
+    if point_count <= max_steps:
+        chosen_step = base_step
+        rates: list[float] = []
+        current = base_step_decimal
+        seen: set[float] = set()
+        while current <= rounded_mst_decimal and float(current) > 0.0:
+            rate = float(current)
+            if rate not in seen:
+                rates.append(rate)
+                seen.add(rate)
+            current += base_step_decimal
+        if not rates:
+            return [rounding.minimum_rate], chosen_step, True
+        return rates, chosen_step, False
+
+    if max_steps == 1:
+        return [rounded_mst], base_step, False
+
+    stride_units = (
+        (rounded_mst_decimal - base_step_decimal) / _decimal_from_float(max_steps - 1) / base_step_decimal
+    ).to_integral_value(rounding=ROUND_CEILING)
+    if stride_units <= 0:
+        stride_units = Decimal("1")
+    chosen_step = float(stride_units * base_step_decimal)
+
     rates: list[float] = []
-    current = _decimal_from_float(chosen_step)
-    limit = _decimal_from_float(rounded_mst)
+    current = base_step_decimal
+    limit = rounded_mst_decimal
     step_decimal = _decimal_from_float(chosen_step)
     seen: set[float] = set()
-    while current <= limit and float(current) > 0.0:
+    while current < limit and float(current) > 0.0:
         rate = float(current)
         if rate not in seen:
             rates.append(rate)
             seen.add(rate)
         current += step_decimal
+    final_rate = float(limit)
+    if final_rate not in seen:
+        if len(rates) >= max_steps:
+            rates[-1] = final_rate
+        else:
+            rates.append(final_rate)
     if not rates:
         rates = [rounding.minimum_rate]
         return rates, chosen_step, True
