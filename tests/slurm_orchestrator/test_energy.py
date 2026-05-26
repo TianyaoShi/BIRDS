@@ -218,6 +218,9 @@ def test_sweep_energy_plan_bundles_same_server_rates_into_one_slurm_task(tmp_pat
     task_shell = render_energy_task_shell(run_plan["groups"][0]["plan_path"], 0)
     assert "ENERGY_TASK_JOB_COUNT=2" in task_shell
     assert "job-a-r2" in task_shell
+    assert 'echo "skipping completed energy job ${ENERGY_JOB_ID}"' in Path(
+        run_plan["groups"][0]["script_path"]
+    ).read_text(encoding="utf-8")
 
 
 def test_materialize_energy_run_plan_uses_plan_slurm_config(tmp_path: Path) -> None:
