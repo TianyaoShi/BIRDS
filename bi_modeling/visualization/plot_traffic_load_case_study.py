@@ -43,14 +43,14 @@ QNBI_AXIS_SCALE = 1e-14
 
 MODEL_SELECTIONS = {
     "qwen": [
-        ("Qwen/Qwen3-4B-Instruct-2507", "Qwen3 4B"),
-        ("Qwen/Qwen3-30B-A3B-Instruct-2507", "Qwen3 30B-A3B"),
-        ("Qwen/Qwen3-235B-A22B-Instruct-2507", "Qwen3 235B-A22B"),
+        ("Qwen/Qwen3-4B-Instruct-2507", "4B"),
+        ("Qwen/Qwen3-30B-A3B-Instruct-2507", "30B-A3B"),
+        ("Qwen/Qwen3-235B-A22B-Instruct-2507", "235B-A22B"),
     ],
     "gemma": [
-        ("google/gemma-4-E4B-it", "Gemma4 4B"),
-        ("google/gemma-4-26B-A4B-it", "Gemma4 26B-A4B"),
-        ("google/gemma-4-31B-it", "Gemma4 31B"),
+        ("google/gemma-4-E4B-it", "E4B"),
+        ("google/gemma-4-26B-A4B-it", "26B-A4B"),
+        ("google/gemma-4-31B-it", "31B"),
     ],
 }
 MODEL_COLORS = {
@@ -169,7 +169,7 @@ def build_case_study_rows(summary_path: Path, *, config: EnergyBiConfig) -> pd.D
 
 
 def _style_axis(ax: plt.Axes) -> None:
-    ax.tick_params(axis="both", labelsize=TICK_FONTSIZE+2, width=LINEWIDTH * 0.45, length=10)
+    ax.tick_params(axis="both", labelsize=TICK_FONTSIZE+5, width=LINEWIDTH * 0.45, length=10)
     for spine in ax.spines.values():
         spine.set_linewidth(LINEWIDTH * 0.45)
 
@@ -217,8 +217,8 @@ def _plot_metric_lines(
             ax.yaxis.set_major_formatter(FuncFormatter(_integer_log_tick))
     else:
         ax.yaxis.set_major_formatter(FuncFormatter(_plain_tick))
-    ax.set_xlabel("Request rate (req/s)", fontsize=FONTSIZE)
-    ax.set_ylabel(ylabel, fontsize=FONTSIZE)
+    ax.set_xlabel("Requests/second", fontsize=FONTSIZE+4)
+    ax.set_ylabel(ylabel, fontsize=FONTSIZE+2)
     if exponent_note:
         ax.text(
             0.02,
@@ -256,16 +256,16 @@ def _add_latency_slo_lines(ax: plt.Axes, selection_key: str, latency_kind: str) 
             alpha=0.72,
             zorder=1,
         )
-        ax.text(
-            0.02,
-            threshold * label_offsets[latency_kind][idx],
-            label,
-            transform=ax.get_yaxis_transform(),
-            ha="left",
-            va="bottom" if idx == 0 else "top",
-            fontsize=TICK_FONTSIZE - 4,
-            color="#333333",
-        )
+        # ax.text(
+        #     0.02,
+        #     threshold * label_offsets[latency_kind][idx],
+        #     label,
+        #     transform=ax.get_yaxis_transform(),
+        #     ha="left",
+        #     va="bottom" if idx == 0 else "top",
+        #     fontsize=TICK_FONTSIZE - 4,
+        #     color="#333333",
+        # )
 
 
 def plot_selection(
@@ -318,7 +318,7 @@ def plot_selection(
         loc="upper center",
         ncol=3,
         frameon=False,
-        fontsize=LEGEND_FONTSIZE + 5,
+        fontsize=TICK_FONTSIZE+5,
         bbox_to_anchor=(0.5, 1.2),
     )
 
