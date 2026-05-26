@@ -114,17 +114,6 @@ def _load_output_length_stats() -> pd.DataFrame:
 
     stats_rows = []
     for model in TARGET_MODELS:
-        if "235B-A22B" in model:
-            stats_rows.append(
-                {
-                    "model": model,
-                    "output_length_mean": np.nan,
-                    "output_length_p50": np.nan,
-                    "output_length_p95": np.nan,
-                    "output_length_count": 0,
-                }
-            )
-            continue
         values = np.asarray(lengths_by_model[model], dtype=float)
         if values.size == 0:
             stats_rows.append(
