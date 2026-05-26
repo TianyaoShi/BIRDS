@@ -68,6 +68,24 @@ MODEL_MARKERS = {
     "google/gemma-4-26B-A4B-it": "s",
     "google/gemma-4-31B-it": "D",
 }
+MODEL_SIZE_B = {
+    "Qwen/Qwen3-4B-Instruct-2507": 4,
+    "Qwen/Qwen3-30B-A3B-Instruct-2507": 30,
+    "Qwen/Qwen3-235B-A22B-Instruct-2507": 235,
+    "google/gemma-4-E4B-it": 4,
+    "google/gemma-4-26B-A4B-it": 26,
+    "google/gemma-4-31B-it": 31,
+}
+SLO_THRESHOLDS_MS = {
+    "ttft": {
+        "small": 500,
+        "large": 1000,
+    },
+    "tpot": {
+        "small": 100,
+        "large": 150,
+    },
+}
 
 
 def _normalize_quality_score(value: float) -> float:
@@ -195,6 +213,42 @@ def _plot_metric_lines(
     _style_axis(ax)
 
 
+def _add_latency_slo_lines(ax: plt.Axes, selection_key: str, latency_kind: str) -> None:
+    selection = MODEL_SELECTIONS[selection_key]
+    has_small = any(MODEL_SIZE_B[model] < 7 for model, _ in selection)
+    has_large = any(MODEL_SIZE_B[model] >= 7 for model, _ in selection)
+    thresholds = SLO_THRESHOLDS_MS[latency_kind]
+    lines = []
+    if has_small:
+        lines.append((thresholds["small"], f"<7B SLO={thresholds['small']}ms"))
+    if has_large:
+        lines.append((thresholds["large"], f"$\\geq$7B SLO={thresholds['large']}ms"))
+
+    label_offsets = {
+        "ttft": [0.45, 2],
+        "tpot": [0.6, 1.55],
+    }
+    for idx, (threshold, label) in enumerate(lines):
+        ax.axhline(
+            threshold,
+            color="#333333",
+            linestyle=(0, (6, 6)),
+            linewidth=LINEWIDTH * 0.28,
+            alpha=0.72,
+            zorder=1,
+        )
+        ax.text(
+            0.02,
+            threshold * label_offsets[latency_kind][idx],
+            label,
+            transform=ax.get_yaxis_transform(),
+            ha="left",
+            va="bottom" if idx == 0 else "top",
+            fontsize=TICK_FONTSIZE - 4,
+            color="#333333",
+        )
+
+
 def plot_selection(
     rows: pd.DataFrame,
     selection_key: str,
@@ -224,6 +278,7 @@ def plot_selection(
         log_y=True,
         latency_ticks=True,
     )
+    _add_latency_slo_lines(axes[1], selection_key, "ttft")
     _plot_metric_lines(
         axes[2],
         selection_rows,
@@ -233,6 +288,7 @@ def plot_selection(
         log_y=True,
         latency_ticks=True,
     )
+    _add_latency_slo_lines(axes[2], selection_key, "tpot")
 
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(
