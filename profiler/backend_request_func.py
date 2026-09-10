@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+#
+# Derived from vLLM's serving benchmark utilities and modified for BIRDS.
+
 import json
 import os
 import sys

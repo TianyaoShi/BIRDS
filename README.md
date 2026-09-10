@@ -49,7 +49,7 @@ BIRDS follows three steps:
 - ⚖️ The model with the lowest impact per request is not always best after
   response quality is considered.
 - 🧠 Intermediate dense models and sparse mid-sized MoE models often offer
-  favorable QNBI, while long outputs, reasoning modes, older GPUs, and
+  favorable quality-normalized impact, while long outputs, reasoning modes, older GPUs, and
   multi-GPU overhead can increase impact.
 
 The evaluation covers conversational, reasoning, code-completion, and
@@ -111,7 +111,6 @@ If BIRDS is useful in your work, please cite:
   year      = {2026},
   eprint    = {2605.27480},
   archivePrefix = {arXiv},
-  primaryClass  = {q-bio.OT}
 }
 ```
 
@@ -120,3 +119,9 @@ If BIRDS is useful in your work, please cite:
 BIRDS builds on open-source LLM serving, evaluation, dataset, and lifecycle
 assessment ecosystems. Please see the paper for the complete methodology,
 datasets, tools, and references.
+
+## 📜 License
+
+BIRDS is released under the [Apache License 2.0](LICENSE). Portions of the
+serving benchmark implementation are derived from the Apache-2.0-licensed vLLM
+project. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for attribution.
