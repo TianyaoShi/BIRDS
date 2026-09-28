@@ -88,9 +88,11 @@ function render(
     tooltip,
   } = {},
 ) {
-  charts[id]?.destroy();
+  const values = datasets.flatMap((dataset) => dataset.data).filter((value) => Number.isFinite(value) && value > 0);
+  // Logarithmic bars start at the axis minimum, which must be below every value.
+  const logMin = log && values.length ? 10 ** (Math.ceil(Math.log10(Math.min(...values))) - 1) / 10 : undefined;
   const valueAxis = horizontal ? "x" : "y";
-  charts[id] = new Chart($(id), {
+  const config = {
     type: "bar",
     data: {
       labels,
@@ -102,6 +104,7 @@ function render(
     },
     options: {
       responsive: true,
+      animation: false,
       maintainAspectRatio: false,
       indexAxis: horizontal ? "y" : "x",
       interaction: { mode: "nearest", intersect: true },
@@ -123,6 +126,7 @@ function render(
         [valueAxis]: {
           type: log ? "logarithmic" : "linear",
           beginAtZero: !log,
+          ...(log ? { min: logMin } : {}),
           ...(percent ? { max: 100 } : {}),
           grid: { color: "#edf0ed" },
           title: { display: false },
@@ -141,7 +145,17 @@ function render(
         },
       },
     },
-  });
+  };
+  const chart = charts[id];
+  if (chart) {
+    chart.stop();
+    chart.data = config.data;
+    chart.options = config.options;
+    chart.resize();
+    chart.update("none");
+  } else {
+    charts[id] = new Chart($(id), config);
+  }
 }
 
 function composition() {

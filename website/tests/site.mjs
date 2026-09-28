@@ -70,7 +70,7 @@ try {
   ]) {
     const context = await browser.newContext({
       viewport: { width, height },
-      reducedMotion: "reduce",
+      reducedMotion: name === "small-mobile" ? "reduce" : "no-preference",
       hasTouch: width < 500,
     });
     const page = await context.newPage();
@@ -127,6 +127,39 @@ try {
       await page.selectOption("#model-metric", "qnbi");
     }
     await page.selectOption("#workload", "sharegpt");
+    await page.selectOption("#model-family", "gemma-4");
+    // Every Gemma row must contain a visible purple bar, including the minimum 26B value.
+    const visibleGemmaBars = async () => page.locator("#model-chart").evaluate((canvas) => {
+      const {width, height} = canvas;
+      const pixels = canvas.getContext("2d").getImageData(0, 0, width, height).data;
+      let groups = 0, inBar = false;
+      for (let y = 0; y < height; y++) {
+        let colored = 0;
+        for (let x = 0; x < width; x++) {
+          const i = (y * width + x) * 4;
+          if (pixels[i] === 119 && pixels[i + 1] === 92 && pixels[i + 2] === 133 && pixels[i + 3] > 200) colored++;
+        }
+        const bar = colored > 8;
+        if (bar && !inBar) groups++;
+        inBar = bar;
+      }
+      return groups;
+    });
+    await expect.poll(visibleGemmaBars).toBe(4);
+    for (let round = 0; round < 3; round++) {
+      await page.evaluate(() => {
+        for (const metric of ["bi", "qnbi", "bi", "qnbi"]) {
+          const select = document.getElementById("model-metric");
+          select.value = metric;
+          select.dispatchEvent(new Event("change", {bubbles: true}));
+        }
+      });
+      await expect.poll(visibleGemmaBars).toBe(4);
+      await page.selectOption("#model-family", "all");
+      await page.selectOption("#model-family", "gemma-4");
+      await expect.poll(visibleGemmaBars).toBe(4);
+    }
+    await page.locator("#model-chart").screenshot({path: `test-output/${name}-gemma.png`});
     await page.selectOption("#model-family", "qwen-3");
     assert.ok((await page.locator("#model-table tbody tr").count()) < 21);
     await page.selectOption("#model-family", "gpt-oss");
