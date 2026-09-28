@@ -1,0 +1,1825 @@
+{
+  "paper": "2605.27480v3",
+  "archive": "visualization_emnlp",
+  "units": "species-year per request",
+  "selection": "Archived paper-selected configurations; H100 with archived A100 supplements where applicable",
+  "energy_basis": "incremental (as recorded in archived figure inputs)",
+  "workloads": [
+    {
+      "key": "sharegpt",
+      "label": "Everyday chat",
+      "figures": "5, 6",
+      "rows": [
+        {
+          "model": "Llama-2-7b-chat-hf",
+          "gpu": "H100",
+          "bi": 9.805270050518043e-15,
+          "qnbi": 3.9314964336908704e-14,
+          "quality": 0.249403,
+          "family": "llama-2",
+          "size": 7.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-2-13b-chat-hf",
+          "gpu": "H100",
+          "bi": 2.0558362566821322e-14,
+          "qnbi": 6.834675631849374e-14,
+          "quality": 0.300795,
+          "family": "llama-2",
+          "size": 13.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-2-70b-chat-hf",
+          "gpu": "H100",
+          "bi": 4.243248112779624e-14,
+          "qnbi": 1.1908465132042433e-13,
+          "quality": 0.356322,
+          "family": "llama-2",
+          "size": 70.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.2-1B-Instruct",
+          "gpu": "A100",
+          "bi": 1.7187104641967349e-15,
+          "qnbi": 1.2948434581660715e-14,
+          "quality": 0.132735,
+          "family": "llama-3",
+          "size": 1.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.2-3B-Instruct",
+          "gpu": "H100",
+          "bi": 3.521665470795356e-15,
+          "qnbi": 1.0154569040891322e-14,
+          "quality": 0.346806,
+          "family": "llama-3",
+          "size": 3.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-8B-Instruct",
+          "gpu": "H100",
+          "bi": 5.566106156962384e-15,
+          "qnbi": 1.1132212313924767e-14,
+          "quality": 0.5,
+          "family": "llama-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-70B-Instruct",
+          "gpu": "H100",
+          "bi": 3.5887218847337834e-14,
+          "qnbi": 4.919150376378824e-14,
+          "quality": 0.729541,
+          "family": "llama-3",
+          "size": 70.0,
+          "moe": false
+        },
+        {
+          "model": "gpt-oss-20b",
+          "gpu": "H100",
+          "bi": 3.617408442884342e-15,
+          "qnbi": 5.069430097389254e-15,
+          "quality": 0.713573,
+          "family": "gpt-oss",
+          "size": 20.0,
+          "moe": true
+        },
+        {
+          "model": "gpt-oss-120b",
+          "gpu": "H100",
+          "bi": 1.5123585875207185e-14,
+          "qnbi": 1.9267432605719217e-14,
+          "quality": 0.78493,
+          "family": "gpt-oss",
+          "size": 120.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-0.6B",
+          "gpu": "A100",
+          "bi": 2.263798922532332e-15,
+          "qnbi": 1.1119237510780489e-14,
+          "quality": 0.203593,
+          "family": "qwen-3",
+          "size": 0.6,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-1.7B",
+          "gpu": "A100",
+          "bi": 3.0928679218876117e-15,
+          "qnbi": 7.633129943699528e-15,
+          "quality": 0.40519,
+          "family": "qwen-3",
+          "size": 1.7,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-4B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 4.134624422214422e-15,
+          "qnbi": 5.538627798820938e-15,
+          "quality": 0.746507,
+          "family": "qwen-3",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-8B",
+          "gpu": "H100",
+          "bi": 7.196940949776212e-15,
+          "qnbi": 9.329024106043775e-15,
+          "quality": 0.771457,
+          "family": "qwen-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-14B",
+          "gpu": "H100",
+          "bi": 1.3700640158829956e-14,
+          "qnbi": 1.6411293507456556e-14,
+          "quality": 0.83483,
+          "family": "qwen-3",
+          "size": 14.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-30B-A3B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 5.933250515183004e-15,
+          "qnbi": 6.892892842501787e-15,
+          "quality": 0.860778,
+          "family": "qwen-3",
+          "size": 30.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-32B",
+          "gpu": "H100",
+          "bi": 1.7144559095032823e-14,
+          "qnbi": 2.078506285389201e-14,
+          "quality": 0.82485,
+          "family": "qwen-3",
+          "size": 32.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-235B-A22B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 4.2107309174506466e-14,
+          "qnbi": 4.553859691332888e-14,
+          "quality": 0.924651,
+          "family": "qwen-3",
+          "size": 235.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-E2B-it",
+          "gpu": "A100",
+          "bi": 2.193160753707425e-15,
+          "qnbi": 2.8316751929702975e-15,
+          "quality": 0.77451,
+          "family": "gemma-4",
+          "size": 2.0,
+          "moe": false
+        },
+        {
+          "model": "gemma-4-E4B-it",
+          "gpu": "H100",
+          "bi": 2.9729962532674673e-15,
+          "qnbi": 3.4804940519738834e-15,
+          "quality": 0.854188,
+          "family": "gemma-4",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "gemma-4-26B-A4B-it",
+          "gpu": "H100",
+          "bi": 1.560000324150803e-15,
+          "qnbi": 1.685876276322416e-15,
+          "quality": 0.925335,
+          "family": "gemma-4",
+          "size": 26.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-31B-it",
+          "gpu": "H100",
+          "bi": 2.5782321144731575e-14,
+          "qnbi": 2.7808264442419613e-14,
+          "quality": 0.927146,
+          "family": "gemma-4",
+          "size": 31.0,
+          "moe": false
+        }
+      ]
+    },
+    {
+      "key": "crosscodeeval",
+      "label": "Code completion / CrossCodeEval",
+      "figures": "11, 19",
+      "rows": [
+        {
+          "model": "Llama-3.2-1B-Instruct",
+          "gpu": "A100",
+          "bi": 1.7654459595566813e-15,
+          "qnbi": 5.207049937791269e-15,
+          "quality": 0.33904916999999996,
+          "family": "llama-3",
+          "size": 1.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.2-3B-Instruct",
+          "gpu": "H100",
+          "bi": 2.783745291046282e-15,
+          "qnbi": 7.259075387796388e-15,
+          "quality": 0.38348483,
+          "family": "llama-3",
+          "size": 3.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-8B-Instruct",
+          "gpu": "H100",
+          "bi": 6.126777718608034e-15,
+          "qnbi": 1.4461051081127373e-14,
+          "quality": 0.42367444,
+          "family": "llama-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-70B-Instruct",
+          "gpu": "H100",
+          "bi": 7.091086272879885e-14,
+          "qnbi": 1.5458321273504023e-13,
+          "quality": 0.45872292000000003,
+          "family": "llama-3",
+          "size": 70.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-0.6B",
+          "gpu": "A100",
+          "bi": 1.132067085627091e-15,
+          "qnbi": 3.2853426582793174e-15,
+          "quality": 0.34458112999999996,
+          "family": "qwen-3",
+          "size": 0.6,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-1.7B",
+          "gpu": "A100",
+          "bi": 2.8352242290910524e-15,
+          "qnbi": 7.418609128623751e-15,
+          "quality": 0.38217733000000004,
+          "family": "qwen-3",
+          "size": 1.7,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-4B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 3.739840675666703e-15,
+          "qnbi": 8.851122616693363e-15,
+          "quality": 0.42252727,
+          "family": "qwen-3",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-8B",
+          "gpu": "H100",
+          "bi": 6.191275200349386e-15,
+          "qnbi": 1.4485709738160234e-14,
+          "quality": 0.42740572,
+          "family": "qwen-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-14B",
+          "gpu": "H100",
+          "bi": 1.1276367459207887e-14,
+          "qnbi": 2.571765087727011e-14,
+          "quality": 0.43846801999999996,
+          "family": "qwen-3",
+          "size": 14.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-30B-A3B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 7.172197579328911e-15,
+          "qnbi": 1.5578003889591206e-14,
+          "quality": 0.46040543,
+          "family": "qwen-3",
+          "size": 30.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-32B",
+          "gpu": "H100",
+          "bi": 2.9516763833252455e-14,
+          "qnbi": 6.677685112457907e-14,
+          "quality": 0.4420209,
+          "family": "qwen-3",
+          "size": 32.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-235B-A22B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 8.185180867805591e-14,
+          "qnbi": 1.674068579420188e-13,
+          "quality": 0.4889394,
+          "family": "qwen-3",
+          "size": 235.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-E2B-it",
+          "gpu": "A100",
+          "bi": 4.462145949783305e-15,
+          "qnbi": 1.5100652778254282e-14,
+          "quality": 0.29549358000000003,
+          "family": "gemma-4",
+          "size": 2.0,
+          "moe": false
+        },
+        {
+          "model": "gemma-4-E4B-it",
+          "gpu": "H100",
+          "bi": 4.703708645241838e-15,
+          "qnbi": 1.137251704367382e-14,
+          "quality": 0.41360313,
+          "family": "gemma-4",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "gemma-4-26B-A4B-it",
+          "gpu": "H100",
+          "bi": 9.810745520099708e-15,
+          "qnbi": 2.1688616126052946e-14,
+          "quality": 0.45234538999999996,
+          "family": "gemma-4",
+          "size": 26.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-31B-it",
+          "gpu": "H100",
+          "bi": 7.077940279968266e-14,
+          "qnbi": 1.2924516389236301e-13,
+          "quality": 0.54763676,
+          "family": "gemma-4",
+          "size": 31.0,
+          "moe": false
+        }
+      ]
+    },
+    {
+      "key": "repobench",
+      "label": "Code completion / RepoBench",
+      "figures": "12, 20",
+      "rows": [
+        {
+          "model": "Llama-3.2-1B-Instruct",
+          "gpu": "A100",
+          "bi": 3.5557636163918805e-15,
+          "qnbi": 2.2492447933048768e-14,
+          "quality": 0.158087,
+          "family": "llama-3",
+          "size": 1.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.2-3B-Instruct",
+          "gpu": "H100",
+          "bi": 3.424584699515631e-15,
+          "qnbi": 1.0695039178307867e-13,
+          "quality": 0.032020309999999996,
+          "family": "llama-3",
+          "size": 3.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-8B-Instruct",
+          "gpu": "H100",
+          "bi": 6.488426349847445e-15,
+          "qnbi": 7.955982995139352e-14,
+          "quality": 0.08155405,
+          "family": "llama-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-70B-Instruct",
+          "gpu": "H100",
+          "bi": 1.0717427413291093e-13,
+          "qnbi": 4.314638845793418e-13,
+          "quality": 0.24839686,
+          "family": "llama-3",
+          "size": 70.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-0.6B",
+          "gpu": "A100",
+          "bi": 3.632586141143597e-15,
+          "qnbi": 1.8345004879143482e-14,
+          "quality": 0.198015,
+          "family": "qwen-3",
+          "size": 0.6,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-1.7B",
+          "gpu": "A100",
+          "bi": 5.72841836736383e-15,
+          "qnbi": 1.249245364655487e-13,
+          "quality": 0.04585503,
+          "family": "qwen-3",
+          "size": 1.7,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-4B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 4.522830300257866e-15,
+          "qnbi": 4.9328594428679345e-14,
+          "quality": 0.0916878,
+          "family": "qwen-3",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-8B",
+          "gpu": "H100",
+          "bi": 7.63384227469921e-15,
+          "qnbi": 6.265717269712042e-14,
+          "quality": 0.12183509000000001,
+          "family": "qwen-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-14B",
+          "gpu": "H100",
+          "bi": 1.8944430971239737e-14,
+          "qnbi": 8.278012802679691e-14,
+          "quality": 0.22885239999999998,
+          "family": "qwen-3",
+          "size": 14.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-30B-A3B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 7.99085988525416e-15,
+          "qnbi": 6.956366153158833e-14,
+          "quality": 0.11487118,
+          "family": "qwen-3",
+          "size": 30.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-32B",
+          "gpu": "H100",
+          "bi": 4.496237063358133e-14,
+          "qnbi": 2.1946989019948412e-13,
+          "quality": 0.20486806000000002,
+          "family": "qwen-3",
+          "size": 32.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-235B-A22B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 1.0388438911249436e-13,
+          "qnbi": 2.9979248619973746e-13,
+          "quality": 0.34652099,
+          "family": "qwen-3",
+          "size": 235.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-E2B-it",
+          "gpu": "A100",
+          "bi": 9.858715263109217e-15,
+          "qnbi": 5.318567761022343e-13,
+          "quality": 0.01853641,
+          "family": "gemma-4",
+          "size": 2.0,
+          "moe": false
+        },
+        {
+          "model": "gemma-4-E4B-it",
+          "gpu": "H100",
+          "bi": 4.886400361056656e-15,
+          "qnbi": 5.824733469419384e-14,
+          "quality": 0.08389054,
+          "family": "gemma-4",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "gemma-4-26B-A4B-it",
+          "gpu": "H100",
+          "bi": 9.162935887326078e-15,
+          "qnbi": 1.6239049928872495e-13,
+          "quality": 0.05642532,
+          "family": "gemma-4",
+          "size": 26.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-31B-it",
+          "gpu": "H100",
+          "bi": 4.383971182012203e-14,
+          "qnbi": 2.4206975763060095e-13,
+          "quality": 0.18110363,
+          "family": "gemma-4",
+          "size": 31.0,
+          "moe": false
+        }
+      ]
+    },
+    {
+      "key": "mmlu-pro",
+      "label": "Reasoning / MMLU-Pro",
+      "figures": "13, 21",
+      "rows": [
+        {
+          "model": "Llama-3.2-3B-Instruct",
+          "gpu": "H100",
+          "bi": 1.7844482268750582e-14,
+          "qnbi": 1.4932621145397977e-13,
+          "quality": 0.1195,
+          "family": "llama-3",
+          "size": 3.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-8B-Instruct",
+          "gpu": "H100",
+          "bi": 1.0802661278471037e-13,
+          "qnbi": 2.441279384965206e-13,
+          "quality": 0.4425,
+          "family": "llama-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-70B-Instruct",
+          "gpu": "H100",
+          "bi": 8.099265079584077e-14,
+          "qnbi": 1.2888709547396684e-13,
+          "quality": 0.6284000000000001,
+          "family": "llama-3",
+          "size": 70.0,
+          "moe": false
+        },
+        {
+          "model": "gpt-oss-20b",
+          "gpu": "H100",
+          "bi": 2.947608306018456e-14,
+          "qnbi": 4.0049025896989895e-14,
+          "quality": 0.736,
+          "family": "gpt-oss",
+          "size": 20.0,
+          "moe": true
+        },
+        {
+          "model": "gpt-oss-120b",
+          "gpu": "H100",
+          "bi": 2.2804296163560737e-13,
+          "qnbi": 2.8223138816288044e-13,
+          "quality": 0.8079999999999999,
+          "family": "gpt-oss",
+          "size": 120.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-4B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 2.928551090845501e-14,
+          "qnbi": 4.20768834891595e-14,
+          "quality": 0.696,
+          "family": "qwen-3",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-8B",
+          "gpu": "H100",
+          "bi": 1.4428824806345885e-13,
+          "qnbi": 2.5434205546176426e-13,
+          "quality": 0.5672999999999999,
+          "family": "qwen-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-14B",
+          "gpu": "H100",
+          "bi": 2.370867074302915e-13,
+          "qnbi": 3.884756798792257e-13,
+          "quality": 0.6103000000000001,
+          "family": "qwen-3",
+          "size": 14.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-30B-A3B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 8.222740948865452e-14,
+          "qnbi": 1.048818998579777e-13,
+          "quality": 0.784,
+          "family": "qwen-3",
+          "size": 30.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-32B",
+          "gpu": "H100",
+          "bi": 2.9015927205412563e-13,
+          "qnbi": 4.427208911414794e-13,
+          "quality": 0.6554000000000001,
+          "family": "qwen-3",
+          "size": 32.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-235B-A22B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 5.925759078374212e-13,
+          "qnbi": 7.139468769125557e-13,
+          "quality": 0.83,
+          "family": "qwen-3",
+          "size": 235.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-E4B-it",
+          "gpu": "H100",
+          "bi": 1.2271456043259135e-14,
+          "qnbi": 1.7682213318817197e-14,
+          "quality": 0.6940000000000001,
+          "family": "gemma-4",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "gemma-4-26B-A4B-it",
+          "gpu": "H100",
+          "bi": 1.4953972999336286e-13,
+          "qnbi": 1.8104083534305431e-13,
+          "quality": 0.826,
+          "family": "gemma-4",
+          "size": 26.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-31B-it",
+          "gpu": "H100",
+          "bi": 5.306738296071374e-13,
+          "qnbi": 6.228566075201143e-13,
+          "quality": 0.852,
+          "family": "gemma-4",
+          "size": 31.0,
+          "moe": false
+        }
+      ]
+    },
+    {
+      "key": "supergpqa",
+      "label": "Reasoning / SuperGPQA",
+      "figures": "14, 22",
+      "rows": [
+        {
+          "model": "Llama-3.2-3B-Instruct",
+          "gpu": "H100",
+          "bi": 7.230505658133063e-14,
+          "qnbi": 3.900826274329466e-13,
+          "quality": 0.18535831000000003,
+          "family": "llama-3",
+          "size": 3.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-8B-Instruct",
+          "gpu": "H100",
+          "bi": 1.1751380811415783e-13,
+          "qnbi": 5.594770809133414e-13,
+          "quality": 0.21004221999999997,
+          "family": "llama-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-70B-Instruct",
+          "gpu": "H100",
+          "bi": 2.348192443981806e-13,
+          "qnbi": 6.636533144369129e-13,
+          "quality": 0.35382818,
+          "family": "llama-3",
+          "size": 70.0,
+          "moe": false
+        },
+        {
+          "model": "gpt-oss-20b",
+          "gpu": "H100",
+          "bi": 4.8634700485969616e-14,
+          "qnbi": 1.0829369959022406e-13,
+          "quality": 0.44909999999999994,
+          "family": "gpt-oss",
+          "size": 20.0,
+          "moe": true
+        },
+        {
+          "model": "gpt-oss-120b",
+          "gpu": "H100",
+          "bi": 1.912563610748925e-13,
+          "qnbi": 3.687225006263592e-13,
+          "quality": 0.5186999999999999,
+          "family": "gpt-oss",
+          "size": 120.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-4B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 8.020180139103922e-14,
+          "qnbi": 1.8738738642766174e-13,
+          "quality": 0.428,
+          "family": "qwen-3",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-8B",
+          "gpu": "H100",
+          "bi": 1.6627056254759303e-13,
+          "qnbi": 5.255074669645797e-13,
+          "quality": 0.3164,
+          "family": "qwen-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-14B",
+          "gpu": "H100",
+          "bi": 2.502963554805263e-13,
+          "qnbi": 7.303657878042787e-13,
+          "quality": 0.3427,
+          "family": "qwen-3",
+          "size": 14.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-30B-A3B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 1.4175550129014942e-13,
+          "qnbi": 2.654597402437255e-13,
+          "quality": 0.534,
+          "family": "qwen-3",
+          "size": 30.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-32B",
+          "gpu": "H100",
+          "bi": 3.493539525931112e-13,
+          "qnbi": 8.782150643366295e-13,
+          "quality": 0.3978,
+          "family": "qwen-3",
+          "size": 32.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-235B-A22B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 2.091702327501989e-12,
+          "qnbi": 3.3413775199712284e-12,
+          "quality": 0.626,
+          "family": "qwen-3",
+          "size": 235.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-E4B-it",
+          "gpu": "H100",
+          "bi": 1.1030173336226506e-14,
+          "qnbi": 2.7318498761935444e-14,
+          "quality": 0.40376206000000003,
+          "family": "gemma-4",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "gemma-4-26B-A4B-it",
+          "gpu": "H100",
+          "bi": 1.4056885333825255e-13,
+          "qnbi": 2.4688893749784856e-13,
+          "quality": 0.56936068,
+          "family": "gemma-4",
+          "size": 26.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-31B-it",
+          "gpu": "H100",
+          "bi": 5.234532504499901e-13,
+          "qnbi": 8.40586252719126e-13,
+          "quality": 0.62272402,
+          "family": "gemma-4",
+          "size": 31.0,
+          "moe": false
+        }
+      ]
+    },
+    {
+      "key": "longbench_long_output_summarization",
+      "label": "LongBench / Long summarization",
+      "figures": "15, 23",
+      "rows": [
+        {
+          "model": "Llama-3.2-3B-Instruct",
+          "gpu": "H100",
+          "bi": 8.04205451955035e-14,
+          "qnbi": 2.2253444312988086e-13,
+          "quality": 0.36138471000000005,
+          "family": "llama-3",
+          "size": 3.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-8B-Instruct",
+          "gpu": "H100",
+          "bi": 1.2787766209915632e-13,
+          "qnbi": 3.490042474035479e-13,
+          "quality": 0.36640718,
+          "family": "llama-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-70B-Instruct",
+          "gpu": "H100",
+          "bi": 7.945001879040891e-13,
+          "qnbi": 2.1065965381085985e-12,
+          "quality": 0.37714872,
+          "family": "llama-3",
+          "size": 70.0,
+          "moe": false
+        },
+        {
+          "model": "gpt-oss-20b",
+          "gpu": "H100",
+          "bi": 4.5982245688165685e-14,
+          "qnbi": 1.4879404783034116e-13,
+          "quality": 0.30903283,
+          "family": "gpt-oss",
+          "size": 20.0,
+          "moe": true
+        },
+        {
+          "model": "gpt-oss-120b",
+          "gpu": "H100",
+          "bi": 1.0037962192363019e-13,
+          "qnbi": 3.4895064959062866e-13,
+          "quality": 0.28766137,
+          "family": "gpt-oss",
+          "size": 120.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-4B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 1.124203151961919e-13,
+          "qnbi": 3.63847437974225e-13,
+          "quality": 0.30897652000000003,
+          "family": "qwen-3",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-8B",
+          "gpu": "H100",
+          "bi": 1.4024138089247335e-13,
+          "qnbi": 4.1829641304059443e-13,
+          "quality": 0.33526795,
+          "family": "qwen-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-14B",
+          "gpu": "H100",
+          "bi": 5.846979804289047e-13,
+          "qnbi": 1.7425433532661213e-12,
+          "quality": 0.33554286,
+          "family": "qwen-3",
+          "size": 14.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-30B-A3B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 1.3256588855863203e-13,
+          "qnbi": 4.191615230818134e-13,
+          "quality": 0.31626445000000003,
+          "family": "qwen-3",
+          "size": 30.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-32B",
+          "gpu": "H100",
+          "bi": 4.642851496792883e-13,
+          "qnbi": 1.3956039794270283e-12,
+          "quality": 0.33267685999999996,
+          "family": "qwen-3",
+          "size": 32.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-235B-A22B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 1.5627116577441407e-12,
+          "qnbi": 4.808317375453496e-12,
+          "quality": 0.32500177,
+          "family": "qwen-3",
+          "size": 235.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-E4B-it",
+          "gpu": "H100",
+          "bi": 5.69347497400576e-14,
+          "qnbi": 1.779278263938601e-13,
+          "quality": 0.31998789,
+          "family": "gemma-4",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "gemma-4-26B-A4B-it",
+          "gpu": "H100",
+          "bi": 1.0774245311195724e-13,
+          "qnbi": 3.2742783277418187e-13,
+          "quality": 0.3290571,
+          "family": "gemma-4",
+          "size": 26.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-31B-it",
+          "gpu": "H100",
+          "bi": 4.837003500315485e-13,
+          "qnbi": 1.5053980948201816e-12,
+          "quality": 0.32131059,
+          "family": "gemma-4",
+          "size": 31.0,
+          "moe": false
+        }
+      ]
+    },
+    {
+      "key": "longbench_medium_output_summarization",
+      "label": "LongBench / Medium summarization",
+      "figures": "16, 24",
+      "rows": [
+        {
+          "model": "Llama-3.2-3B-Instruct",
+          "gpu": "H100",
+          "bi": 2.2180978531916767e-14,
+          "qnbi": 9.729631919398322e-14,
+          "quality": 0.22797346000000002,
+          "family": "llama-3",
+          "size": 3.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-8B-Instruct",
+          "gpu": "H100",
+          "bi": 3.253739357687861e-14,
+          "qnbi": 1.3591053937781824e-13,
+          "quality": 0.23940302,
+          "family": "llama-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-70B-Instruct",
+          "gpu": "H100",
+          "bi": 3.1864289992732766e-13,
+          "qnbi": 1.3394464565411406e-12,
+          "quality": 0.23789148000000002,
+          "family": "llama-3",
+          "size": 70.0,
+          "moe": false
+        },
+        {
+          "model": "gpt-oss-20b",
+          "gpu": "H100",
+          "bi": 1.9735819425122697e-14,
+          "qnbi": 1.0633678662615547e-13,
+          "quality": 0.18559729,
+          "family": "gpt-oss",
+          "size": 20.0,
+          "moe": true
+        },
+        {
+          "model": "gpt-oss-120b",
+          "gpu": "H100",
+          "bi": 4.577041515415642e-14,
+          "qnbi": 2.567882635540218e-13,
+          "quality": 0.17824185,
+          "family": "gpt-oss",
+          "size": 120.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-4B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 2.7844529960913482e-14,
+          "qnbi": 1.3565359688777032e-13,
+          "quality": 0.20526201,
+          "family": "qwen-3",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-8B",
+          "gpu": "H100",
+          "bi": 3.1002990848511404e-14,
+          "qnbi": 1.423923690955301e-13,
+          "quality": 0.2177293,
+          "family": "qwen-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-14B",
+          "gpu": "H100",
+          "bi": 7.248968846995657e-14,
+          "qnbi": 3.2755154313840085e-13,
+          "quality": 0.22130773,
+          "family": "qwen-3",
+          "size": 14.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-30B-A3B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 4.0845886092306154e-14,
+          "qnbi": 2.0564820772906397e-13,
+          "quality": 0.19862019,
+          "family": "qwen-3",
+          "size": 30.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-32B",
+          "gpu": "H100",
+          "bi": 1.4515846772910356e-13,
+          "qnbi": 6.603508436535254e-13,
+          "quality": 0.21982022,
+          "family": "qwen-3",
+          "size": 32.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-235B-A22B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 2.9982923416453697e-13,
+          "qnbi": 1.4902613074209068e-12,
+          "quality": 0.20119239,
+          "family": "qwen-3",
+          "size": 235.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-E4B-it",
+          "gpu": "H100",
+          "bi": 1.9421100071904115e-14,
+          "qnbi": 8.988070087381175e-14,
+          "quality": 0.21607642,
+          "family": "gemma-4",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "gemma-4-26B-A4B-it",
+          "gpu": "H100",
+          "bi": 4.581384833971184e-14,
+          "qnbi": 2.193867921076609e-13,
+          "quality": 0.20882683,
+          "family": "gemma-4",
+          "size": 26.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-31B-it",
+          "gpu": "H100",
+          "bi": 1.710169957816216e-13,
+          "qnbi": 7.881280982816118e-13,
+          "quality": 0.21699137000000002,
+          "family": "gemma-4",
+          "size": 31.0,
+          "moe": false
+        }
+      ]
+    },
+    {
+      "key": "longbench_medium_answer_rag_qa",
+      "label": "LongBench / RAG QA",
+      "figures": "17, 25",
+      "rows": [
+        {
+          "model": "Llama-3.2-3B-Instruct",
+          "gpu": "H100",
+          "bi": 2.988325536860795e-14,
+          "qnbi": 8.048896668086908e-14,
+          "quality": 0.37127145,
+          "family": "llama-3",
+          "size": 3.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-8B-Instruct",
+          "gpu": "H100",
+          "bi": 5.492978068075242e-14,
+          "qnbi": 1.5894567259998435e-13,
+          "quality": 0.34558839999999996,
+          "family": "llama-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-70B-Instruct",
+          "gpu": "H100",
+          "bi": 7.057761902713041e-13,
+          "qnbi": 2.1618766993115674e-12,
+          "quality": 0.32646459,
+          "family": "llama-3",
+          "size": 70.0,
+          "moe": false
+        },
+        {
+          "model": "gpt-oss-20b",
+          "gpu": "H100",
+          "bi": 2.987806871638099e-14,
+          "qnbi": 1.510802364587911e-13,
+          "quality": 0.19776292,
+          "family": "gpt-oss",
+          "size": 20.0,
+          "moe": true
+        },
+        {
+          "model": "gpt-oss-120b",
+          "gpu": "H100",
+          "bi": 7.113450088460897e-14,
+          "qnbi": 3.235026709434214e-13,
+          "quality": 0.21988845,
+          "family": "gpt-oss",
+          "size": 120.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-4B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 3.0921164600207295e-14,
+          "qnbi": 1.1714894233760277e-13,
+          "quality": 0.26394745000000003,
+          "family": "qwen-3",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-8B",
+          "gpu": "H100",
+          "bi": 4.474169335197542e-14,
+          "qnbi": 1.6639419446808747e-13,
+          "quality": 0.26888975,
+          "family": "qwen-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-14B",
+          "gpu": "H100",
+          "bi": 7.632627966853487e-14,
+          "qnbi": 2.461063997861542e-13,
+          "quality": 0.31013529,
+          "family": "qwen-3",
+          "size": 14.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-30B-A3B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 5.286319244883777e-14,
+          "qnbi": 2.153281335727642e-13,
+          "quality": 0.24550063000000003,
+          "family": "qwen-3",
+          "size": 30.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-32B",
+          "gpu": "H100",
+          "bi": 2.067315161197178e-13,
+          "qnbi": 7.018407495525396e-13,
+          "quality": 0.29455616,
+          "family": "qwen-3",
+          "size": 32.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-235B-A22B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 4.3920595706035563e-13,
+          "qnbi": 1.717782547481379e-12,
+          "quality": 0.25568193,
+          "family": "qwen-3",
+          "size": 235.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-E4B-it",
+          "gpu": "H100",
+          "bi": 3.402731422909049e-14,
+          "qnbi": 1.2491452693704745e-13,
+          "quality": 0.27240478,
+          "family": "gemma-4",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "gemma-4-26B-A4B-it",
+          "gpu": "H100",
+          "bi": 6.482978163738067e-14,
+          "qnbi": 2.4722663874815524e-13,
+          "quality": 0.26222814,
+          "family": "gemma-4",
+          "size": 26.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-31B-it",
+          "gpu": "H100",
+          "bi": 2.8467856175561205e-13,
+          "qnbi": 1.137559760372841e-12,
+          "quality": 0.25025372,
+          "family": "gemma-4",
+          "size": 31.0,
+          "moe": false
+        }
+      ]
+    },
+    {
+      "key": "longbench_short_answer_document_qa",
+      "label": "LongBench / Document QA",
+      "figures": "18, 26",
+      "rows": [
+        {
+          "model": "Llama-3.2-3B-Instruct",
+          "gpu": "H100",
+          "bi": 1.43738583381588e-14,
+          "qnbi": 2.89270848513554e-14,
+          "quality": 0.49689965,
+          "family": "llama-3",
+          "size": 3.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-8B-Instruct",
+          "gpu": "H100",
+          "bi": 2.9724726002384985e-14,
+          "qnbi": 5.554773156835927e-14,
+          "quality": 0.53512043,
+          "family": "llama-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Llama-3.1-70B-Instruct",
+          "gpu": "H100",
+          "bi": 3.0989665844941697e-13,
+          "qnbi": 5.6245597032926e-13,
+          "quality": 0.55097052,
+          "family": "llama-3",
+          "size": 70.0,
+          "moe": false
+        },
+        {
+          "model": "gpt-oss-20b",
+          "gpu": "H100",
+          "bi": 1.6877032338050867e-14,
+          "qnbi": 4.823068936589458e-14,
+          "quality": 0.34992310000000004,
+          "family": "gpt-oss",
+          "size": 20.0,
+          "moe": true
+        },
+        {
+          "model": "gpt-oss-120b",
+          "gpu": "H100",
+          "bi": 4.381425447382333e-14,
+          "qnbi": 1.2510387159833768e-13,
+          "quality": 0.35022301,
+          "family": "gpt-oss",
+          "size": 120.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-4B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 1.9918904932006025e-14,
+          "qnbi": 3.899720407175517e-14,
+          "quality": 0.51077777,
+          "family": "qwen-3",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-8B",
+          "gpu": "H100",
+          "bi": 3.058955512077494e-14,
+          "qnbi": 5.903531822540176e-14,
+          "quality": 0.5181568599999999,
+          "family": "qwen-3",
+          "size": 8.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-14B",
+          "gpu": "H100",
+          "bi": 5.1775767385014874e-14,
+          "qnbi": 9.693780019032079e-14,
+          "quality": 0.5341132900000001,
+          "family": "qwen-3",
+          "size": 14.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-30B-A3B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 3.445020110605955e-14,
+          "qnbi": 6.501496487808218e-14,
+          "quality": 0.5298811,
+          "family": "qwen-3",
+          "size": 30.0,
+          "moe": true
+        },
+        {
+          "model": "Qwen3-32B",
+          "gpu": "H100",
+          "bi": 1.413336827754466e-13,
+          "qnbi": 2.656996278938173e-13,
+          "quality": 0.5319303,
+          "family": "qwen-3",
+          "size": 32.0,
+          "moe": false
+        },
+        {
+          "model": "Qwen3-235B-A22B-Instruct-2507",
+          "gpu": "H100",
+          "bi": 3.06139947277259e-13,
+          "qnbi": 5.710680066252761e-13,
+          "quality": 0.5360831699999999,
+          "family": "qwen-3",
+          "size": 235.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-E4B-it",
+          "gpu": "H100",
+          "bi": 1.9779796689462056e-14,
+          "qnbi": 3.6625939837594425e-14,
+          "quality": 0.54004885,
+          "family": "gemma-4",
+          "size": 4.0,
+          "moe": false
+        },
+        {
+          "model": "gemma-4-26B-A4B-it",
+          "gpu": "H100",
+          "bi": 4.1392619378913656e-14,
+          "qnbi": 7.573761440644599e-14,
+          "quality": 0.54652658,
+          "family": "gemma-4",
+          "size": 26.0,
+          "moe": true
+        },
+        {
+          "model": "gemma-4-31B-it",
+          "gpu": "H100",
+          "bi": 1.8989229091992732e-13,
+          "qnbi": 3.379637569254723e-13,
+          "quality": 0.56187176,
+          "family": "gemma-4",
+          "size": 31.0,
+          "moe": false
+        }
+      ]
+    }
+  ],
+  "lifecycle": [
+    {
+      "label": "operational",
+      "share": 0.9568697269605442
+    },
+    {
+      "label": "manufacturing",
+      "share": 0.025930654050905097
+    },
+    {
+      "label": "transportation",
+      "share": 0.017117676431116724
+    },
+    {
+      "label": "recycling",
+      "share": 8.194255743397059e-05
+    }
+  ],
+  "midpoint": [
+    {
+      "horizon": 20,
+      "label": "GWP",
+      "share": 0.7109837347056802
+    },
+    {
+      "horizon": 20,
+      "label": "WC",
+      "share": 7.513122816093239e-06
+    },
+    {
+      "horizon": 20,
+      "label": "AP",
+      "share": 0.18254404436387894
+    },
+    {
+      "horizon": 20,
+      "label": "POFP",
+      "share": 0.10596944749676579
+    },
+    {
+      "horizon": 20,
+      "label": "Others",
+      "share": 0.0004952603108589669
+    },
+    {
+      "horizon": 100,
+      "label": "GWP",
+      "share": 0.8911340769222375
+    },
+    {
+      "horizon": 100,
+      "label": "WC",
+      "share": 0.03997853074439165
+    },
+    {
+      "horizon": 100,
+      "label": "AP",
+      "share": 0.04348777323909142
+    },
+    {
+      "horizon": 100,
+      "label": "POFP",
+      "share": 0.025281501853380985
+    },
+    {
+      "horizon": 100,
+      "label": "Others",
+      "share": 0.00011811724089848642
+    },
+    {
+      "horizon": 1000,
+      "label": "GWP",
+      "share": 0.9865008285555994
+    },
+    {
+      "horizon": 1000,
+      "label": "WC",
+      "share": 0.004956407149248892
+    },
+    {
+      "horizon": 1000,
+      "label": "AP",
+      "share": 0.005392317627577635
+    },
+    {
+      "horizon": 1000,
+      "label": "POFP",
+      "share": 0.0031357970261201304
+    },
+    {
+      "horizon": 1000,
+      "label": "Others",
+      "share": 1.4649641453968889e-05
+    }
+  ],
+  "reasoning": [
+    {
+      "model": "Qwen3-4B-Instruct-2507",
+      "gpu": "H100",
+      "bi": 2.928551090845501e-14,
+      "qnbi": 4.20768834891595e-14,
+      "quality": 0.696,
+      "size": "4B",
+      "mode": "Instruct"
+    },
+    {
+      "model": "Qwen3-4B-Thinking-2507",
+      "gpu": "H100",
+      "bi": 8.237042048179516e-14,
+      "qnbi": 1.1131137902945293e-13,
+      "quality": 0.74,
+      "size": "4B",
+      "mode": "Thinking"
+    },
+    {
+      "model": "Qwen3-30B-A3B-Instruct-2507",
+      "gpu": "H100",
+      "bi": 8.222740948865452e-14,
+      "qnbi": 1.048818998579777e-13,
+      "quality": 0.784,
+      "size": "30B",
+      "mode": "Instruct"
+    },
+    {
+      "model": "Qwen3-30B-A3B-Thinking-2507",
+      "gpu": "H100",
+      "bi": 1.5974088424330414e-13,
+      "qnbi": 1.9745473948492476e-13,
+      "quality": 0.809,
+      "size": "30B",
+      "mode": "Thinking"
+    },
+    {
+      "model": "Qwen3-235B-A22B-Instruct-2507",
+      "gpu": "H100",
+      "bi": 5.925759078374212e-13,
+      "qnbi": 7.139468769125557e-13,
+      "quality": 0.83,
+      "size": "235B",
+      "mode": "Instruct"
+    },
+    {
+      "model": "Qwen3-235B-A22B-Thinking-2507",
+      "gpu": "H100",
+      "bi": 2.030951706062345e-12,
+      "qnbi": 2.4063408839601243e-12,
+      "quality": 0.8440000000000001,
+      "size": "235B",
+      "mode": "Thinking"
+    }
+  ],
+  "gpus": {
+    "qwen": [
+      {
+        "model": "Qwen3-4B-Instruct-2507",
+        "gpu": "L40",
+        "bi": 1.0996282151954303e-14,
+        "qnbi": 1.4730313516087996e-14,
+        "quality": 0.746507
+      },
+      {
+        "model": "Qwen3-4B-Instruct-2507",
+        "gpu": "A100",
+        "bi": 6.353540059159087e-15,
+        "qnbi": 8.511025427971991e-15,
+        "quality": 0.746507
+      },
+      {
+        "model": "Qwen3-4B-Instruct-2507",
+        "gpu": "H100",
+        "bi": 4.134624422214422e-15,
+        "qnbi": 5.538627798820938e-15,
+        "quality": 0.746507
+      },
+      {
+        "model": "Qwen3-8B",
+        "gpu": "L40",
+        "bi": 1.856642950502957e-14,
+        "qnbi": 2.4066706900098868e-14,
+        "quality": 0.771457
+      },
+      {
+        "model": "Qwen3-8B",
+        "gpu": "A100",
+        "bi": 9.003795524474196e-15,
+        "qnbi": 1.167115668724789e-14,
+        "quality": 0.771457
+      },
+      {
+        "model": "Qwen3-8B",
+        "gpu": "H100",
+        "bi": 7.196940949776212e-15,
+        "qnbi": 9.329024106043775e-15,
+        "quality": 0.771457
+      },
+      {
+        "model": "Qwen3-14B",
+        "gpu": "L40",
+        "bi": 9.555784281286375e-14,
+        "qnbi": 1.1446383432898166e-13,
+        "quality": 0.83483
+      },
+      {
+        "model": "Qwen3-14B",
+        "gpu": "A100",
+        "bi": 6.887508238481045e-14,
+        "qnbi": 8.250192540374741e-14,
+        "quality": 0.83483
+      },
+      {
+        "model": "Qwen3-14B",
+        "gpu": "H100",
+        "bi": 1.3700640158829956e-14,
+        "qnbi": 1.6411293507456556e-14,
+        "quality": 0.83483
+      },
+      {
+        "model": "Qwen3-30B-A3B-Instruct-2507",
+        "gpu": "L40",
+        "bi": 1.9633917554819335e-14,
+        "qnbi": 2.2809502049098994e-14,
+        "quality": 0.860778
+      },
+      {
+        "model": "Qwen3-30B-A3B-Instruct-2507",
+        "gpu": "A100",
+        "bi": 1.7838206849844186e-14,
+        "qnbi": 2.0723353582275786e-14,
+        "quality": 0.860778
+      },
+      {
+        "model": "Qwen3-30B-A3B-Instruct-2507",
+        "gpu": "H100",
+        "bi": 5.616867849637827e-15,
+        "qnbi": 6.525338530536128e-15,
+        "quality": 0.860778
+      },
+      {
+        "model": "Qwen3-32B",
+        "gpu": "L40",
+        "bi": 5.286870439193269e-13,
+        "qnbi": 6.409493167476837e-13,
+        "quality": 0.82485
+      },
+      {
+        "model": "Qwen3-32B",
+        "gpu": "A100",
+        "bi": 4.281653219862932e-14,
+        "qnbi": 5.190826477375198e-14,
+        "quality": 0.82485
+      },
+      {
+        "model": "Qwen3-32B",
+        "gpu": "H100",
+        "bi": 1.7144559095032823e-14,
+        "qnbi": 2.078506285389201e-14,
+        "quality": 0.82485
+      }
+    ],
+    "gemma": [
+      {
+        "model": "gemma-4-E4B-it",
+        "gpu": "L40",
+        "bi": 8.072592730203794e-15,
+        "qnbi": 9.45060423490355e-15,
+        "quality": 0.854188
+      },
+      {
+        "model": "gemma-4-E4B-it",
+        "gpu": "A100",
+        "bi": 4.887323272525768e-15,
+        "qnbi": 5.721601418570348e-15,
+        "quality": 0.854188
+      },
+      {
+        "model": "gemma-4-E4B-it",
+        "gpu": "H100",
+        "bi": 2.7042472028908875e-15,
+        "qnbi": 3.165868875342299e-15,
+        "quality": 0.854188
+      },
+      {
+        "model": "gemma-4-26B-A4B-it",
+        "gpu": "L40",
+        "bi": 1.875118519708474e-14,
+        "qnbi": 2.0264212633354124e-14,
+        "quality": 0.925335
+      },
+      {
+        "model": "gemma-4-26B-A4B-it",
+        "gpu": "A100",
+        "bi": 1.467167852548547e-14,
+        "qnbi": 1.5855531807924125e-14,
+        "quality": 0.925335
+      },
+      {
+        "model": "gemma-4-26B-A4B-it",
+        "gpu": "H100",
+        "bi": 1.560000324150803e-15,
+        "qnbi": 1.685876276322416e-15,
+        "quality": 0.925335
+      },
+      {
+        "model": "gemma-4-31B-it",
+        "gpu": "L40",
+        "bi": 6.180454832326974e-13,
+        "qnbi": 6.666107422484672e-13,
+        "quality": 0.927146
+      },
+      {
+        "model": "gemma-4-31B-it",
+        "gpu": "A100",
+        "bi": 4.390506887591147e-14,
+        "qnbi": 4.7355075550033616e-14,
+        "quality": 0.927146
+      },
+      {
+        "model": "gemma-4-31B-it",
+        "gpu": "H100",
+        "bi": 2.5782321144731575e-14,
+        "qnbi": 2.7808264442419613e-14,
+        "quality": 0.927146
+      }
+    ]
+  },
+  "provenance": [
+    {
+      "file": "h100_sharegpt_model_qnbi_selected_configs.csv",
+      "sha256": "8a2c93845d264d183b52b3cb2616d7c7bf2dc169c68e9785d78e954ea1b20f5d"
+    },
+    {
+      "file": "workload_comparison/h100_crosscodeeval_model_qnbi_selected_configs.csv",
+      "sha256": "a76833dfe8800bb1d6cdf41a3771f4e18d56aa4d5d06d29dd576e075f99ba586"
+    },
+    {
+      "file": "workload_comparison/h100_repobench_model_qnbi_selected_configs.csv",
+      "sha256": "2af258727ae37e99d960b16a45231cdebd236604bf4d0e21d4407e65fad83247"
+    },
+    {
+      "file": "workload_comparison/h100_mmlu-pro_model_qnbi_selected_configs.csv",
+      "sha256": "92b0a37dea447d3a67d0accd3f1b796826b2cb0f57506e694ac8ffb5f4d6d396"
+    },
+    {
+      "file": "workload_comparison/h100_supergpqa_model_qnbi_selected_configs.csv",
+      "sha256": "3db0f4b74c6035628ba714a8b95313ff2485f61314120a9aaff08c6e5d155362"
+    },
+    {
+      "file": "workload_comparison/h100_longbench_long_output_summarization_model_qnbi_selected_configs.csv",
+      "sha256": "d52d2ff9f9f448a501f3b4db36cb81ca8df29407271afb156bd4f50e72fe9521"
+    },
+    {
+      "file": "workload_comparison/h100_longbench_medium_output_summarization_model_qnbi_selected_configs.csv",
+      "sha256": "bdb4791966e6151768e897890882aed2fc111eafff51f4be48b12f7f50b33256"
+    },
+    {
+      "file": "workload_comparison/h100_longbench_medium_answer_rag_qa_model_qnbi_selected_configs.csv",
+      "sha256": "fa348f0adcef1171b1a942f8990cace46896252b835245f733c500ea6f8b012f"
+    },
+    {
+      "file": "workload_comparison/h100_longbench_short_answer_document_qa_model_qnbi_selected_configs.csv",
+      "sha256": "fc68fd32f75719457ab55d97a3b2c17a39ffea2e6117f2e9ab736244025ef967"
+    },
+    {
+      "file": "combined_h100_a100_lifecycle_stage_ratio_summary.csv",
+      "sha256": "6c516a25bba4a686852ba5dfb8ace90aab54a14765c9ee523bc11eef184969db"
+    },
+    {
+      "file": "combined_h100_a100_midpoint_perspective_mean_ratio_summary.csv",
+      "sha256": "39a80bddb0e872b0b9df8935b9e7f355fcfdfc86a423c0fc85b7ab0147d4349e"
+    },
+    {
+      "file": "qwen_reasoning_mmlu_case_study_rows.csv",
+      "sha256": "d0ef3fd53b8e049c69c094334a352a5f756ce4c4c4146565b18db5182dad7239"
+    },
+    {
+      "file": "sharegpt_qwen_gpu_type_case_study_rows.csv",
+      "sha256": "d3cbc790fb40cd5d160ffbfa0e4f7d3b80d27533bcf640514b7def4a9ffc7592"
+    },
+    {
+      "file": "sharegpt_gemma_gpu_type_case_study_rows.csv",
+      "sha256": "d7ead27eba37ea11cec7ba630ef75fe0d324ea430e610a99e5b1f2174b0653dd"
+    }
+  ]
+}

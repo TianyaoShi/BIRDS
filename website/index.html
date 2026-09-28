@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#173f35" />
+    <title>BIRDS | The biodiversity impact of LLM serving</title>
+    <meta
+      name="description"
+      content="Explore how AI serving affects ecosystems. BIRDS connects biodiversity impact, model quality, and computing choices. Findings of EMNLP 2026, Purdue University."
+    />
+    <meta
+      property="og:title"
+      content="BIRDS: AI serving through an ecological lens"
+    />
+    <meta
+      property="og:description"
+      content="Interactive findings on biodiversity, model quality, and GPU choice from Findings of EMNLP 2026."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://tianyaoshi.github.io/BIRDS/" />
+    <meta
+      property="og:image"
+      content="https://tianyaoshi.github.io/BIRDS/forest.jpg"
+    />
+    <link rel="canonical" href="https://tianyaoshi.github.io/BIRDS/" />
+    <link rel="icon" href="./dove.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="wordmark" href="#" aria-label="BIRDS home"
+        ><i class="fas fa-dove" aria-hidden="true"></i> BIRDS</a
+      >
+      <nav aria-label="Main navigation">
+        <a href="#story">Why biodiversity</a><a href="#results">Findings</a
+        ><a href="#sources">Sources</a
+        ><a href="https://arxiv.org/abs/2605.27480v3"
+          >Paper <i class="fas fa-arrow-up" aria-hidden="true"></i
+        ></a>
+      </nav>
+    </header>
+    <main id="main">
+      <section class="hero" aria-labelledby="title">
+        <div class="hero-inner">
+          <p class="eyebrow">
+            Purdue University <span>/</span> Findings of EMNLP 2026
+          </p>
+          <h1 id="title">
+            <i class="fas fa-dove" aria-hidden="true"></i> BIRDS
+          </h1>
+          <p class="paper-title">
+            Characterizing and Understanding Biodiversity Impact of Large
+            Language Model Serving
+          </p>
+          <p class="hero-subtitle">
+            AI runs on infrastructure.<br />Its footprint reaches into
+            ecosystems.
+          </p>
+          <p class="authors">
+            <a href="mailto:shi676@purdue.edu">Tianyao Shi</a><span>&</span
+            ><a href="mailto:yiding@purdue.edu">Yi Ding</a>
+          </p>
+          <div class="hero-links">
+            <a class="button light" href="https://arxiv.org/abs/2605.27480v3"
+              ><i class="far fa-file-alt" aria-hidden="true"></i> Read the
+              paper</a
+            ><a
+              class="button outline"
+              href="https://github.com/TianyaoShi/BIRDS"
+              ><i class="fab fa-github" aria-hidden="true"></i> Explore the
+              code</a
+            ><a class="text-link" href="#results"
+              >Explore the findings
+              <i class="fas fa-arrow-down" aria-hidden="true"></i
+            ></a>
+          </div>
+        </div>
+        <span class="photo-caption">An ecological lens on computing</span>
+      </section>
+      <section class="intro wrap" id="story">
+        <p class="eyebrow">01 / Beyond carbon and water</p>
+        <div class="intro-grid">
+          <h2>What does an AI request<br />mean for the living world?</h2>
+          <div>
+            <p class="lead">
+              The infrastructure behind a response has a life beyond the screen.
+              Electricity generation, chip manufacturing, transport, and
+              disposal all contribute to environmental pressures.
+            </p>
+            <p>
+              BIRDS connects those activities to modeled ecosystem damage, then
+              asks how much impact is associated with a completed request and
+              the quality of its answer.
+            </p>
+          </div>
+        </div>
+        <div class="pathway">
+          <div>
+            <i class="fas fa-comment-alt" aria-hidden="true"></i>
+            <h3>A completed request</h3>
+            <p>A defined task, model, and serving configuration.</p>
+          </div>
+          <div>
+            <i class="fas fa-microchip" aria-hidden="true"></i>
+            <h3>A physical footprint</h3>
+            <p>Electricity use and the lifecycle of serving hardware.</p>
+          </div>
+          <div>
+            <i class="fas fa-leaf" aria-hidden="true"></i>
+            <h3>An ecological impact</h3>
+            <p>Climate, water, pollution, and other ecosystem pathways.</p>
+          </div>
+        </div>
+        <aside class="community">
+          <h3>For communities and the people reporting on AI</h3>
+          <p>
+            Carbon and water are parts of a larger picture. The results help
+            explain why energy supply and computing choices matter. They
+            describe modeled lifecycle impacts, not measured species losses or a
+            site-specific assessment of a proposed data center. Impacts can
+            occur along global supply chains as well as near electricity
+            production.
+          </p>
+        </aside>
+      </section>
+      <section class="results-band" id="results">
+        <div class="wrap">
+          <p class="eyebrow">02 / Explore the evidence</p>
+          <h2>Different choices. Different footprints.</h2>
+          <p class="section-lead">
+            Selected results from the camera-ready paper. Each comparison keeps
+            the task and measurement assumptions in view.
+          </p>
+          <div class="definitions">
+            <p>
+              <strong>BI per request</strong><br />Modeled biodiversity impact
+              of one completed request, in species·year.
+            </p>
+            <p>
+              <strong>QNBI</strong><br />BI per request divided by task quality.
+              Lower means less impact per unit of achieved quality.
+            </p>
+          </div>
+          <noscript
+            ><p class="notice">
+              Interactive results require JavaScript. All figures and methods
+              are available in the
+              <a href="https://arxiv.org/pdf/2605.27480v3">paper PDF</a>.
+            </p></noscript
+          >
+          <article class="result" id="composition">
+            <div class="result-heading">
+              <span class="figure-label">FIGURE 4</span>
+              <h3>Where does the impact come from?</h3>
+              <p>
+                Operation accounts for about 95.7% of total BI on average in the
+                archived H100/A100 results. The relative contributions of
+                ecological pathways change with the assessment horizon.
+              </p>
+            </div>
+            <div class="controls">
+              <label
+                >Contribution view<select id="composition-view">
+                  <option value="lifecycle">Hardware lifecycle</option>
+                  <option value="midpoint">Environmental pathways</option>
+                </select></label
+              ><label id="horizon-label" hidden
+                >Assessment horizon<select id="horizon">
+                  <option value="20">20 years</option>
+                  <option value="100" selected>100 years</option>
+                  <option value="1000">1,000 years</option>
+                </select></label
+              >
+            </div>
+            <p class="chart-caption" id="composition-caption"></p>
+            <div class="chart-frame" style="--chart-height: 300px">
+              <canvas
+                id="composition-chart"
+                role="img"
+                aria-label="Average biodiversity impact contribution shares"
+              ></canvas>
+            </div>
+            <details>
+              <summary>Values and interpretation</summary>
+              <p>
+                Mean contribution shares across the archived serving
+                configurations. This view summarizes Figure 4; its lifecycle
+                panel uses means rather than reproducing the paper's boxplots.
+                Lifecycle shares use the 100-year horizon. An assessment horizon
+                is a modeling choice, not a forecast date.
+              </p>
+              <div class="table-scroll" id="composition-table"></div>
+            </details>
+          </article>
+          <article class="result" id="models">
+            <div class="result-heading">
+              <span class="figure-label" id="model-figures">FIGURES 5 & 6</span>
+              <h3>The smallest model is not always the best tradeoff.</h3>
+              <p>
+                Lower impact per request does not guarantee lower
+                quality-normalized impact. Compare models within one task to see
+                how accounting for quality changes the picture.
+              </p>
+            </div>
+            <div class="controls">
+              <label>Workload<select id="workload"></select></label
+              ><label
+                >Metric<select id="model-metric">
+                  <option value="bi">BI per request</option>
+                  <option value="qnbi" selected>QNBI</option>
+                </select></label
+              ><label
+                >Model family<select id="model-family">
+                  <option value="all">All families</option>
+                </select></label
+              ><label class="check"
+                ><input type="checkbox" id="log-scale" checked /> Logarithmic
+                scale</label
+              >
+            </div>
+            <p class="chart-caption" id="model-caption"></p>
+            <div class="chart-frame" id="model-frame">
+              <canvas
+                id="model-chart"
+                role="img"
+                aria-label="Model biodiversity impact comparison"
+              ></canvas>
+            </div>
+            <p class="result-note">
+              QNBI is comparable within a workload and quality metric. Quality
+              scores across different tasks are not interchangeable.
+              Only models with available quality scores are included in this view.
+            </p>
+            <details>
+              <summary>Values and serving configurations</summary>
+              <div class="table-scroll" id="model-table"></div>
+            </details>
+          </article>
+          <article class="result" id="reasoning">
+            <div class="result-heading">
+              <span class="figure-label">FIGURE 8</span>
+              <h3>More reasoning comes with a tradeoff.</h3>
+              <p>
+                Thinking variants improve MMLU-Pro accuracy, but their
+                additional serving impact can outweigh the quality gain. The
+                appropriate choice depends on the task.
+              </p>
+            </div>
+            <div class="controls">
+              <label
+                >Metric<select id="reasoning-metric">
+                  <option value="bi">BI per request</option>
+                  <option value="qnbi" selected>QNBI</option>
+                  <option value="quality">Answer quality</option>
+                </select></label
+              >
+            </div>
+            <p class="chart-caption" id="reasoning-caption"></p>
+            <div class="chart-frame" style="--chart-height: 320px">
+              <canvas
+                id="reasoning-chart"
+                role="img"
+                aria-label="Qwen3 Instruct and Thinking comparison on MMLU-Pro"
+              ></canvas>
+            </div>
+            <details>
+              <summary>Values and interpretation</summary>
+              <p>
+                Selected Qwen3 configurations on MMLU-Pro. Quality is normalized
+                benchmark accuracy. This view shows the BI, quality, and QNBI
+                comparisons; response-length distributions remain in the paper.
+              </p>
+              <div class="table-scroll" id="reasoning-table"></div>
+            </details>
+          </article>
+          <article class="result" id="hardware">
+            <div class="result-heading">
+              <span class="figure-label" id="gpu-figures">FIGURE 10</span>
+              <h3>Hardware efficiency changes the outcome.</h3>
+              <p>
+                GPU generations differ in the useful work they sustain. The
+                selected configurations show how hardware choice changes the
+                impact of serving the same model and workload.
+              </p>
+            </div>
+            <div class="controls">
+              <label
+                >Model family<select id="gpu-family">
+                  <option value="qwen">Qwen3</option>
+                  <option value="gemma">Gemma 4</option>
+                </select></label
+              ><label
+                >Metric<select id="gpu-metric">
+                  <option value="qnbi">QNBI</option>
+                  <option value="bi">BI per request</option>
+                </select></label
+              >
+            </div>
+            <p class="chart-caption" id="gpu-caption"></p>
+            <div class="chart-frame" style="--chart-height: 380px">
+              <canvas
+                id="gpu-chart"
+                role="img"
+                aria-label="GPU generation comparison"
+              ></canvas>
+            </div>
+            <details>
+              <summary>Values and interpretation</summary>
+              <p>
+                ShareGPT; the archived most energy-efficient configuration for
+                each model and GPU. The paper also reports throughput and tensor
+                parallelism. This page shows processed impact values only.
+              </p>
+              <div class="table-scroll" id="gpu-table"></div>
+            </details>
+          </article>
+          <details class="methods">
+            <summary>Measurement scope and figure provenance</summary>
+            <p>
+              Results are pinned to arXiv:2605.27480v3 and exported from the
+              preserved EMNLP figure inputs. Comparisons use the archived model
+              selections, principally H100 with A100 supplements where recorded.
+              Operational modeling uses US grid conditions; reported impact
+              includes hardware lifecycle contributions.
+            </p>
+            <p>
+              The archived figure inputs use incremental GPU energy above the
+              idle baseline, with datacenter overhead included in the modeling.
+              This page preserves those processed values; it does not recompute
+              impacts or release environmental intensity data. The paper
+              describes the broader profiling protocol. Source filenames and
+              checksums are recorded with the exported dataset.
+            </p>
+            <p>
+              Species·year is a lifecycle assessment indicator of ecosystem
+              damage integrated over time, not a literal count of locally
+              observed extinctions. QNBI depends on the task-specific quality
+              evaluation. These results do not cover every effect of data
+              centers, training, or agentic systems.
+            </p>
+            <a href="https://arxiv.org/html/2605.27480v3"
+              >Read the complete methodology
+              <i class="fas fa-arrow-right" aria-hidden="true"></i
+            ></a>
+          </details>
+        </div>
+      </section>
+      <section class="wrap sources" id="sources">
+        <p class="eyebrow">03 / Follow the sources</p>
+        <h2>The evidence behind the estimates.</h2>
+        <p class="section-lead">
+          The sources in Appendix B.3, organized by their role in the lifecycle
+          model. Links lead to the original providers or publications; source
+          datasets are not redistributed here.
+        </p>
+        <div id="source-list"></div>
+      </section>
+      <section class="citation-band" id="cite">
+        <div class="wrap citation-grid">
+          <div>
+            <p class="eyebrow">04 / Build on this work</p>
+            <h2>Research is a shared effort.</h2>
+            <p>Tianyao Shi and Yi Ding<br />Purdue University</p>
+            <p>
+              <a href="mailto:shi676@purdue.edu"
+                >Research & media inquiries
+                <i class="far fa-envelope" aria-hidden="true"></i
+              ></a>
+            </p>
+          </div>
+          <div>
+            <div class="citation-heading">
+              <h3>Cite BIRDS</h3>
+              <button
+                id="copy-citation"
+                aria-label="Copy BibTeX citation"
+                title="Copy BibTeX citation"
+              >
+                <i class="far fa-copy" aria-hidden="true"></i>
+              </button>
+            </div>
+            <pre id="bibtex">
+@inproceedings{shi2026birds,
+  title = {{BIRDS}: Characterizing and Understanding
+    Biodiversity Impact of Large Language Model Serving},
+  author = {Shi, Tianyao and Ding, Yi},
+  booktitle = {Findings of the Association for
+    Computational Linguistics: EMNLP 2026},
+  year = {2026},
+  eprint = {2605.27480},
+  archivePrefix = {arXiv}
+}</pre>
+            <p id="copy-status" role="status"></p>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer class="wrap">
+      <a class="wordmark" href="#"
+        ><i class="fas fa-dove" aria-hidden="true"></i> BIRDS</a
+      >
+      <p>
+        Paper: arXiv v3 · Findings of EMNLP 2026<br />Forest photograph:
+        <a
+          href="https://unsplash.com/photos/trees-on-forest-with-sun-rays-sp-p7uuT0tw"
+          >Sebastian Unrau / Unsplash</a
+        >
+        · Dove: Font Awesome 5
+      </p>
+      <a href="https://github.com/TianyaoShi/BIRDS"
+        >Code & documentation <i class="fab fa-github" aria-hidden="true"></i
+      ></a>
+    </footer>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

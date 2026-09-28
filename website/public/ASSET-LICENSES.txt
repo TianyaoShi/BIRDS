@@ -1,0 +1,11 @@
+Forest photograph
+Photographer: Sebastian Unrau / Unsplash
+Source: https://unsplash.com/photos/trees-on-forest-with-sun-rays-sp-p7uuT0tw
+License: https://unsplash.com/license
+
+Font Awesome Free 5.15.4 by Fonticons, Inc.
+Source: https://fontawesome.com/
+SVG icons: CC BY 4.0, https://creativecommons.org/licenses/by/4.0/
+Fonts: SIL OFL 1.1, https://scripts.sil.org/OFL
+Code: MIT
+See FONT-AWESOME-LICENSE.txt for the distributed license text.

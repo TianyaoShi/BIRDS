@@ -13,7 +13,7 @@ performance, and response quality.
 
 The paper was accepted to **Findings of EMNLP 2026**.
 
-📄 [Paper](https://arxiv.org/abs/2605.27480) · 💻 [Code](https://github.com/TianyaoShi/BIRDS)
+📄 [Paper](https://arxiv.org/abs/2605.27480) · 💻 [Code](https://github.com/TianyaoShi/BIRDS) · 🌿 [Project Page](https://tianyaoshi.github.io/BIRDS/)
 
 ## 🌿 Why BIRDS?
 
@@ -74,6 +74,7 @@ profiler/
 
 tests/                   Unit and integration tests
 requirements/            Profiler and vLLM dependency sets
+website/                 Project page, interactive results, and data sources
 ```
 
 ## 🚀 Getting Started
