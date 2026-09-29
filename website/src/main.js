@@ -15,12 +15,12 @@ const familyNames = {
 const familyColor = Object.fromEntries(
   Object.keys(familyNames).map((name, i) => [name, palette[i]]),
 );
-const displayModel = (name) => name.replace(/(\d)b\b/g, "$1B");
-const shortModel = (name) =>
-  displayModel(name)
-    .replace(/-2507|-Instruct|-chat-hf|-it/g, "")
-    .replace(/^gemma/, "Gemma")
-    .replace(/^gpt-oss/, "GPT-OSS");
+const displayModel = (name) => name
+  .replace(/(\d)b\b/g, "$1B")
+  .replace(/-chat-hf$/, "-Chat")
+  .replace(/-2507$/, "")
+  .replace(/^gemma/, "Gemma")
+  .replace(/^gpt-oss/, "GPT-OSS");
 const sci = (n) => (n === 0 ? "0" : Number(n).toExponential(2));
 const metricName = (metric) =>
   ({ bi: "BI per request", qnbi: "QNBI", quality: "Answer quality" })[metric];
@@ -141,6 +141,11 @@ function render(
           grid: { display: false },
           ticks: {
             autoSkip: false,
+            callback: function (value) {
+              const label = this.getLabelForValue(value);
+              const match = label.match(/^(.*)(-(?:Instruct|Thinking|Chat|it))$/);
+              return match ? [match[1], match[2].slice(1)] : label;
+            },
             font: { size: matchMedia("(max-width: 500px)").matches ? 10 : 12 },
           },
         },
@@ -225,7 +230,7 @@ function models() {
   );
   render(
     "model-chart",
-    rows.map((r) => shortModel(r.model)),
+    rows.map((r) => displayModel(r.model)),
     [
       {
         label: metricName(metric),
@@ -287,7 +292,7 @@ function gpu() {
         rows.find((r) => r.model === model && r.gpu === gpu)?.[metric] ?? null,
     ),
   }));
-  render("gpu-chart", models.map(shortModel), sets, {
+  render("gpu-chart", models.map(displayModel), sets, {
     legend: true,
     log: true,
   });

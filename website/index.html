@@ -155,7 +155,7 @@
               <h3>Where does the impact come from?</h3>
               <p>
                 Operation accounts for about 95.7% of total BI on average in the
-                archived H100/A100 results. The relative contributions of
+                evaluated H100/A100 configurations. The relative contributions of
                 ecological pathways change with the assessment horizon.
               </p>
             </div>
@@ -184,7 +184,7 @@
             <details>
               <summary>Values and interpretation</summary>
               <p>
-                Mean contribution shares across the archived serving
+                Mean contribution shares across the evaluated serving
                 configurations. This view summarizes Figure 4; its lifecycle
                 panel uses means rather than reproducing the paper's boxplots.
                 Lifecycle shares use the 100-year horizon. An assessment horizon
@@ -308,7 +308,7 @@
             <details>
               <summary>Values and interpretation</summary>
               <p>
-                ShareGPT; the archived most energy-efficient configuration for
+                ShareGPT; the most energy-efficient evaluated configuration for
                 each model and GPU. The paper also reports throughput and tensor
                 parallelism. This page shows processed impact values only.
               </p>
@@ -318,19 +318,20 @@
           <details class="methods">
             <summary>Measurement scope and figure provenance</summary>
             <p>
-              Results are pinned to arXiv:2605.27480v3 and exported from the
-              preserved EMNLP figure inputs. Comparisons use the archived model
-              selections, principally H100 with A100 supplements where recorded.
+              Results correspond to the EMNLP camera-ready paper (arXiv v3).
+              Model comparisons primarily use H100 GPUs, with A100 results for
+              some smaller models; each value table identifies the GPU used.
               Operational modeling uses US grid conditions; reported impact
               includes hardware lifecycle contributions.
             </p>
             <p>
-              The archived figure inputs use incremental GPU energy above the
+              Energy accounting uses incremental GPU energy above the
               idle baseline, with datacenter overhead included in the modeling.
-              This page preserves those processed values; it does not recompute
-              impacts or release environmental intensity data. The paper
-              describes the broader profiling protocol. Source filenames and
-              checksums are recorded with the exported dataset.
+              The figures show processed biodiversity-impact results. The paper
+              provides the complete measurement and modeling methodology.
+              Model names follow the appendix overview, including Chat,
+              Instruct, Thinking, and it variants. Qwen3 Instruct and Thinking
+              variants use the 2507 release.
             </p>
             <p>
               Species·year is a lifecycle assessment indicator of ecosystem
