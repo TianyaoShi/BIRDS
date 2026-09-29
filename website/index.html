@@ -89,7 +89,9 @@
               disposal all contribute to environmental pressures.
             </p>
             <p>
-              BIRDS connects those activities to modeled ecosystem damage, then
+              Large language models (LLMs) are artificial intelligence (AI)
+              systems that generate language. Serving means running a model to
+              answer requests. BIRDS connects those activities to modeled ecosystem damage, then
               asks how much impact is associated with a completed request and
               the quality of its answer.
             </p>
@@ -99,7 +101,7 @@
           <div>
             <i class="fas fa-comment-alt" aria-hidden="true"></i>
             <h3>A completed request</h3>
-            <p>A defined task, model, and serving configuration.</p>
+            <p>A defined task and model, running on a specified hardware setup.</p>
           </div>
           <div>
             <i class="fas fa-microchip" aria-hidden="true"></i>
@@ -129,16 +131,24 @@
           <p class="eyebrow">02 / Explore the evidence</p>
           <h2>Different choices. Different footprints.</h2>
           <p class="section-lead">
-            Selected results from the camera-ready paper. Each comparison keeps
-            the task and measurement assumptions in view.
+            Selected results from the final accepted paper. Biodiversity is the
+            variety of living organisms and the ecosystems they form.
+            <strong>Biodiversity impact (BI)</strong> is the modeled damage to
+            ecosystems associated with activities such as electricity use and
+            hardware production. Each comparison keeps the task and measurement
+            assumptions in view.
           </p>
           <div class="definitions">
             <p>
               <strong>BI per request</strong><br />Modeled biodiversity impact
-              of one completed request, in species·year.
+              of one completed request. Its unit, <strong>species·year</strong>,
+              expresses potential species loss integrated over time. It is an
+              assessment indicator, not a count of observed local extinctions.
             </p>
             <p>
-              <strong>QNBI</strong><br />BI per request divided by task quality.
+              <strong>Quality-Normalized Biodiversity Impact (QNBI)</strong><br />
+              BI per request divided by the model's task-specific quality score.
+              Quality measures how well the answer performs on that task.
               Lower means less impact per unit of achieved quality.
             </p>
           </div>
@@ -154,9 +164,13 @@
               <span class="figure-label">FIGURE 4</span>
               <h3>Where does the impact come from?</h3>
               <p>
-                Operation dominates total BI on average in the
-                evaluated H100/A100 configurations. The relative contributions of
-                ecological pathways change with the assessment horizon.
+                Graphics processing units (GPUs) are the chips that run the
+                models; H100 and A100 are GPU types. Operation means using
+                electricity to serve requests, and it dominates total BI on
+                average in these configurations. An assessment horizon is the
+                period over which environmental effects are counted. The
+                contributions of pathways such as climate change and water use
+                change with that horizon.
               </p>
             </div>
             <div class="controls">
@@ -201,6 +215,23 @@
                 quality-normalized impact. Compare models within one task to see
                 how accounting for quality changes the picture.
               </p>
+              <p>
+                A workload is a type of task, such as chat or summarization.
+                QA means question answering; retrieval-augmented generation
+                (RAG) supplies reference context for the answer.
+              </p>
+              <p>
+                In model names, B denotes billions of parameters, the learned
+                values that determine model behavior. For example, 26B-A4B
+                indicates total and active parameter counts. Dense models use
+                all their parameters for each generated token (a piece of text);
+                mixture-of-experts (MoE) models activate a subset of experts.
+                Chat denotes conversation tuning; Instruct and it denote
+                instruction tuning; Thinking denotes extended reasoning before
+                answering.
+                A logarithmic scale shows equal ratios as equal distances;
+                a linear scale shows equal differences as equal distances.
+              </p>
             </div>
             <div class="controls">
               <label>Workload<select id="workload"></select></label
@@ -237,6 +268,9 @@
               <span class="figure-label">FIGURE 8</span>
               <h3>More reasoning comes with a tradeoff.</h3>
               <p>
+                MMLU-Pro is a multiple-choice knowledge and reasoning benchmark.
+                Instruct variants are tuned to follow instructions; Thinking
+                variants generate extended reasoning before answering.
                 Thinking variants improve MMLU-Pro accuracy, but their
                 additional serving impact can outweigh the quality gain. The
                 appropriate choice depends on the task.
@@ -276,6 +310,7 @@
                 GPU generations differ in the useful work they sustain. The
                 selected configurations show how hardware choice changes the
                 impact of serving the same model and workload.
+                This comparison uses ShareGPT, a dataset of user-chatbot conversations.
               </p>
             </div>
             <div class="controls">
@@ -302,9 +337,11 @@
             <details>
               <summary>Interpretation</summary>
               <p>
-                ShareGPT; the most energy-efficient evaluated configuration for
-                each model and GPU. The paper also reports throughput and tensor
-                parallelism. This view compares the modeled impacts.
+                ShareGPT is a dataset of user-chatbot conversations. This view
+                uses the most energy-efficient evaluated configuration for each
+                model and GPU. The paper also reports throughput (requests
+                completed per unit time) and tensor parallelism (splitting a
+                model's computations across GPUs).
               </p>
             </details>
           </article>
@@ -318,12 +355,14 @@
               includes hardware lifecycle contributions.
             </p>
             <p>
-              Energy accounting uses incremental GPU energy above the
-              idle baseline, with datacenter overhead included in the modeling.
+              Energy accounting uses the additional GPU energy consumed while
+              serving requests, above the energy used when idle. The modeling
+              also accounts for datacenter overhead such as cooling.
               The figures show processed biodiversity-impact results. The paper
               provides the complete measurement and modeling methodology.
               Model names follow the appendix overview, including Chat,
-              Instruct, Thinking, and it variants. Qwen3 Instruct and Thinking
+              Instruct, Thinking, and it (instruction-tuned) variants.
+              Chat variants are tuned for conversation. Qwen3 Instruct and Thinking
               variants use the 2507 release.
             </p>
             <p>
@@ -331,7 +370,8 @@
               damage integrated over time, not a literal count of locally
               observed extinctions. QNBI depends on the task-specific quality
               evaluation. These results do not cover every effect of data
-              centers, training, or agentic systems.
+              centers, model training, or agentic systems that perform multistep
+              tasks and use external tools.
             </p>
             <a href="https://arxiv.org/html/2605.27480v3"
               >Read the complete methodology
