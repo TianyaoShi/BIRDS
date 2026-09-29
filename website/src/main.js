@@ -21,7 +21,6 @@ const displayModel = (name) => name
   .replace(/-2507$/, "")
   .replace(/^gemma/, "Gemma")
   .replace(/^gpt-oss/, "GPT-OSS");
-const sci = (n) => (n === 0 ? "0" : Number(n).toExponential(2));
 const metricName = (metric) =>
   ({ bi: "BI per request", qnbi: "QNBI", quality: "Answer quality" })[metric];
 const unit = (metric) =>
@@ -37,45 +36,6 @@ Chart.defaults.animation = matchMedia("(prefers-reduced-motion: reduce)")
   .matches
   ? false
   : { duration: 250 };
-
-function table(id, headings, rows) {
-  const table = document.createElement("table");
-  const head = table.createTHead().insertRow();
-  headings.forEach((text) => {
-    const cell = document.createElement("th");
-    cell.scope = "col";
-    cell.textContent = text;
-    head.append(cell);
-  });
-  const body = table.createTBody();
-  rows.forEach((row) => {
-    const tr = body.insertRow();
-    row.forEach((text) => {
-      tr.insertCell().textContent = text;
-    });
-  });
-  $(id).replaceChildren(table);
-}
-
-function valuesTable(id, rows) {
-  table(
-    id,
-    [
-      "Model",
-      "GPU",
-      "BI / request (species·yr)",
-      "QNBI (species·yr / request / quality)",
-      "Quality (%)",
-    ],
-    rows.map((r) => [
-      displayModel(r.model),
-      r.gpu,
-      sci(r.bi),
-      sci(r.qnbi),
-      (r.quality * 100).toFixed(2),
-    ]),
-  );
-}
 
 function render(
   id,
@@ -117,8 +77,7 @@ function render(
         },
         tooltip: {
           callbacks: {
-            label: (ctx) =>
-              `${ctx.dataset.label}: ${percent ? ctx.raw.toFixed(2) + "%" : sci(ctx.raw)}`,
+            label: (ctx) => ctx.dataset.label,
             afterLabel: tooltip || (() => ""),
           },
         },
@@ -133,7 +92,7 @@ function render(
           title: { display: false },
           ticks: {
             maxTicksLimit: 6,
-            callback: (v) => (percent ? `${v}%` : sci(v)),
+            display: false,
             font: { size: 11 },
           },
         },
@@ -196,11 +155,6 @@ function composition() {
     ],
     { percent: true },
   );
-  table(
-    "composition-table",
-    ["Contribution", "Mean share (%)"],
-    rows.map((r) => [names[r.label], (100 * r.share).toFixed(4)]),
-  );
 }
 
 data.workloads.forEach((w) => $("workload").add(new Option(w.label, w.key)));
@@ -244,12 +198,10 @@ function models() {
         const r = rows[ctx.dataIndex];
         return [
           `${r.gpu} · ${r.moe ? "MoE" : "Dense"} · ${r.size}B total parameters`,
-          `Quality: ${(r.quality * 100).toFixed(2)}%`,
         ];
       },
     },
   );
-  valuesTable("model-table", rows);
 }
 
 function reasoning() {
@@ -273,7 +225,6 @@ function reasoning() {
     sets,
     { legend: true, percent, log: !percent },
   );
-  valuesTable("reasoning-table", data.reasoning);
 }
 
 function gpu() {
@@ -296,7 +247,6 @@ function gpu() {
     legend: true,
     log: true,
   });
-  valuesTable("gpu-table", rows);
 }
 
 for (const [ids, callback] of [

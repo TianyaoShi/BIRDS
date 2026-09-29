@@ -113,16 +113,11 @@ try {
     await page.screenshot({ path: `test-output/${name}.png`, fullPage: true });
     await page.selectOption("#composition-view", "midpoint");
     await page.selectOption("#horizon", "20");
-    assert.match(
-      await page.locator("#composition-table").textContent(),
-      /71\.0984/,
-    );
+    assert.equal(await page.locator(".result table").count(), 0);
+    assert.match(await page.locator("#composition-caption").textContent(), /20-year/);
     for (const workload of data.workloads) {
       await page.selectOption("#workload", workload.key);
-      assert.equal(
-        await page.locator("#model-table tbody tr").count(),
-        workload.rows.length,
-      );
+      assert.match(await page.locator("#model-caption").textContent(), new RegExp(`${workload.rows.length} models`));
       await page.selectOption("#model-metric", "bi");
       await page.selectOption("#model-metric", "qnbi");
     }
@@ -161,7 +156,8 @@ try {
     }
     await page.locator("#model-chart").screenshot({path: `test-output/${name}-gemma.png`});
     await page.selectOption("#model-family", "qwen-3");
-    assert.ok((await page.locator("#model-table tbody tr").count()) < 21);
+    const qwenCount = data.workloads[0].rows.filter(r => r.family === "qwen-3").length;
+    assert.match(await page.locator("#model-caption").textContent(), new RegExp(`${qwenCount} models`));
     await page.selectOption("#model-family", "gpt-oss");
     await page.selectOption("#workload", "crosscodeeval");
     assert.equal(await page.locator("#model-family").inputValue(), "all");
@@ -175,7 +171,7 @@ try {
     assert.deepEqual(errors, []);
     await context.close();
     console.log(
-      `${name}: figures, assets, interactions, data tables, and layout passed`,
+      `${name}: figures, assets, interactions, and layout passed`,
     );
   }
   const context = await browser.newContext({ javaScriptEnabled: false });

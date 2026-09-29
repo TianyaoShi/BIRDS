@@ -44,6 +44,11 @@ finite nonnegative values, unique models, and contribution-share totals. It excl
 raw energy, profiling traces, environmental intensities, filesystem paths, and job IDs.
 Published values are downloadable by anyone visiting the page.
 
+The public interface emphasizes visual comparisons: it omits result tables,
+numerical value-axis labels, and numerical result tooltips. Model identifiers,
+assessment horizons, units, and scale descriptions remain visible. This is a
+presentation choice, not a restriction on access to the bundled processed data.
+
 | Page view | Paper | Published data |
 | --- | --- | --- |
 | Composition | Figure 4 | Mean lifecycle shares and horizon-specific pathway shares |

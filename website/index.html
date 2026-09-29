@@ -154,7 +154,7 @@
               <span class="figure-label">FIGURE 4</span>
               <h3>Where does the impact come from?</h3>
               <p>
-                Operation accounts for about 95.7% of total BI on average in the
+                Operation dominates total BI on average in the
                 evaluated H100/A100 configurations. The relative contributions of
                 ecological pathways change with the assessment horizon.
               </p>
@@ -182,7 +182,7 @@
               ></canvas>
             </div>
             <details>
-              <summary>Values and interpretation</summary>
+              <summary>Interpretation</summary>
               <p>
                 Mean contribution shares across the evaluated serving
                 configurations. This view summarizes Figure 4; its lifecycle
@@ -190,7 +190,6 @@
                 Lifecycle shares use the 100-year horizon. An assessment horizon
                 is a modeling choice, not a forecast date.
               </p>
-              <div class="table-scroll" id="composition-table"></div>
             </details>
           </article>
           <article class="result" id="models">
@@ -232,10 +231,6 @@
               scores across different tasks are not interchangeable.
               Only models with available quality scores are included in this view.
             </p>
-            <details>
-              <summary>Values and serving configurations</summary>
-              <div class="table-scroll" id="model-table"></div>
-            </details>
           </article>
           <article class="result" id="reasoning">
             <div class="result-heading">
@@ -265,13 +260,12 @@
               ></canvas>
             </div>
             <details>
-              <summary>Values and interpretation</summary>
+              <summary>Interpretation</summary>
               <p>
                 Selected Qwen3 configurations on MMLU-Pro. Quality is normalized
                 benchmark accuracy. This view shows the BI, quality, and QNBI
                 comparisons; response-length distributions remain in the paper.
               </p>
-              <div class="table-scroll" id="reasoning-table"></div>
             </details>
           </article>
           <article class="result" id="hardware">
@@ -306,13 +300,12 @@
               ></canvas>
             </div>
             <details>
-              <summary>Values and interpretation</summary>
+              <summary>Interpretation</summary>
               <p>
                 ShareGPT; the most energy-efficient evaluated configuration for
                 each model and GPU. The paper also reports throughput and tensor
-                parallelism. This page shows processed impact values only.
+                parallelism. This view compares the modeled impacts.
               </p>
-              <div class="table-scroll" id="gpu-table"></div>
             </details>
           </article>
           <details class="methods">
@@ -320,7 +313,7 @@
             <p>
               Results correspond to the EMNLP camera-ready paper (arXiv v3).
               Model comparisons primarily use H100 GPUs, with A100 results for
-              some smaller models; each value table identifies the GPU used.
+              some smaller models; model tooltips identify the GPU used.
               Operational modeling uses US grid conditions; reported impact
               includes hardware lifecycle contributions.
             </p>
