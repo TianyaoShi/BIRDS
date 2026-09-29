@@ -31,7 +31,18 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npm test
+      - name: Test website in Chromium
+        run: |
+          set -o pipefail
+          mkdir -p test-output
+          node tests/site.mjs 2>&1 | tee test-output/browser-tests.log
+      - name: Save browser test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-test-diagnostics
+          path: website/test-output/
+          retention-days: 7
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name != 'pull_request'
         with:
