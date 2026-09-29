@@ -186,8 +186,9 @@ nav a:hover {
 }
 .authors {
   display: flex;
+  flex-wrap: wrap;
   gap: 13px;
-  font-size: 14px;
+  font-size: 16px;
 }
 .authors a {
   text-decoration: none;
@@ -326,6 +327,7 @@ nav a:hover {
   margin-bottom: 18px;
 }
 .result-heading p {
+  font-size: 18px;
   max-width: 820px;
   color: var(--muted);
 }
@@ -368,7 +370,7 @@ nav a:hover {
   display: none !important;
 }
 .chart-caption {
-  font-size: 12px;
+  font-size: 15px;
   color: var(--muted);
   min-height: 20px;
 }
@@ -382,13 +384,13 @@ nav a:hover {
   border-radius: 4px;
 }
 .result-note {
-  font-size: 12px;
+  font-size: 15px;
   color: var(--muted);
   margin-top: 14px;
 }
 .result details {
   margin-top: 18px;
-  font-size: 14px;
+  font-size: 17px;
 }
 .result details p {
   margin-top: 16px;
@@ -408,7 +410,7 @@ summary {
 table {
   border-collapse: collapse;
   width: 100%;
-  font-size: 12px;
+  font-size: 15px;
 }
 th,
 td {
@@ -422,7 +424,7 @@ th {
 }
 .methods {
   margin-top: 30px;
-  font-size: 14px;
+  font-size: 17px;
 }
 .methods p {
   max-width: 850px;
