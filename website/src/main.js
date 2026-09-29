@@ -15,8 +15,9 @@ const familyNames = {
 const familyColor = Object.fromEntries(
   Object.keys(familyNames).map((name, i) => [name, palette[i]]),
 );
+const displayModel = (name) => name.replace(/(\d)b\b/g, "$1B");
 const shortModel = (name) =>
-  name
+  displayModel(name)
     .replace(/-2507|-Instruct|-chat-hf|-it/g, "")
     .replace(/^gemma/, "Gemma")
     .replace(/^gpt-oss/, "GPT-OSS");
@@ -67,7 +68,7 @@ function valuesTable(id, rows) {
       "Quality (%)",
     ],
     rows.map((r) => [
-      r.model,
+      displayModel(r.model),
       r.gpu,
       sci(r.bi),
       sci(r.qnbi),
